@@ -1,0 +1,498 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "contact": {}
+    },
+    "paths": {
+        "/api/v1/users": {
+            "post": {
+                "description": "Register a new user with email, phone number, and password. Auto-generates account number.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Create New User",
+                "parameters": [
+                    {
+                        "description": "User Registration Details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.CreateUserRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "User Created Successfully",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.CreateUserResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid Input / Validation Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.Response"
+                        }
+                    },
+                    "409": {
+                        "description": "User Already Exists (Email or Phone)",
+                        "schema": {
+                            "$ref": "#/definitions/models.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/users/me": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get user information by access token",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Get User By Access Token",
+                "responses": {
+                    "200": {
+                        "description": "User Information Retrieved Successfully",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.GetUserByAccountNumberResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid Input / Validation Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "User Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/models.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/users/tokens": {
+            "post": {
+                "description": "Get tokens for a user",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Get Tokens",
+                "parameters": [
+                    {
+                        "description": "User Token Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.GetUserTokenRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "User Tokens Retrieved Successfully",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.GetUserTokenResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid Input / Validation Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "User Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/models.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/health": {
+            "get": {
+                "description": "Check the health status of the service and its dependencies",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Health"
+                ],
+                "summary": "Check health status",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/models.HealthDetailResponse"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "models.CreateUserRequest": {
+            "type": "object",
+            "required": [
+                "name",
+                "password"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "john.doe@example.com"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "John Doe"
+                },
+                "password": {
+                    "type": "string",
+                    "example": "password123"
+                },
+                "phoneNumber": {
+                    "$ref": "#/definitions/models.PhoneNumber"
+                }
+            }
+        },
+        "models.CreateUserResponse": {
+            "type": "object",
+            "properties": {
+                "accountNumber": {
+                    "type": "string",
+                    "example": "1234567890"
+                },
+                "createdAt": {
+                    "type": "string",
+                    "example": "2026-01-24T15:57:37+07:00"
+                },
+                "email": {
+                    "type": "string",
+                    "example": "john.doe@example.com"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "John Doe"
+                },
+                "phoneNumber": {
+                    "$ref": "#/definitions/models.PhoneNumber"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "user"
+                },
+                "updatedAt": {
+                    "type": "string",
+                    "example": "2026-01-24T15:57:37+07:00"
+                }
+            }
+        },
+        "models.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "errors": {},
+                "message": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/models.Metadata"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.GetUserByAccountNumberResponse": {
+            "type": "object",
+            "properties": {
+                "accountNumber": {
+                    "type": "string",
+                    "example": "1234567890"
+                },
+                "createdAt": {
+                    "type": "string",
+                    "example": "2026-01-24T15:57:37+07:00"
+                },
+                "email": {
+                    "type": "string",
+                    "example": "john.doe@example.com"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "John Doe"
+                },
+                "phoneNumber": {
+                    "$ref": "#/definitions/models.PhoneNumber"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "user"
+                },
+                "updatedAt": {
+                    "type": "string",
+                    "example": "2026-01-24T15:57:37+07:00"
+                }
+            }
+        },
+        "models.GetUserTokenRequest": {
+            "type": "object",
+            "required": [
+                "password"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "john.doe@example.com"
+                },
+                "password": {
+                    "type": "string",
+                    "example": "password123"
+                },
+                "phoneNumber": {
+                    "$ref": "#/definitions/models.PhoneNumber"
+                }
+            }
+        },
+        "models.GetUserTokenResponse": {
+            "type": "object",
+            "properties": {
+                "accountNumber": {
+                    "type": "string",
+                    "example": "1234567890"
+                },
+                "email": {
+                    "type": "string",
+                    "example": "john.doe@example.com"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "John Doe"
+                },
+                "phoneNumber": {
+                    "$ref": "#/definitions/models.PhoneNumber"
+                },
+                "tokens": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.Token"
+                    }
+                },
+                "type": {
+                    "type": "string",
+                    "example": "user"
+                }
+            }
+        },
+        "models.HealthDetailResponse": {
+            "type": "object",
+            "properties": {
+                "component": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.Metadata": {
+            "type": "object",
+            "properties": {
+                "requestId": {
+                    "type": "string"
+                },
+                "timestamp": {
+                    "type": "string"
+                },
+                "totalRows": {
+                    "type": "integer"
+                }
+            }
+        },
+        "models.PaginationOutput": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "next": {
+                    "type": "string"
+                },
+                "prev": {
+                    "type": "string"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "models.PhoneNumber": {
+            "type": "object",
+            "properties": {
+                "countryCode": {
+                    "type": "string",
+                    "example": "ID"
+                },
+                "number": {
+                    "type": "string",
+                    "example": "6281234567890"
+                }
+            }
+        },
+        "models.Response": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer",
+                    "example": 200
+                },
+                "data": {},
+                "errors": {},
+                "message": {
+                    "type": "string",
+                    "example": "Request has been successfully processed."
+                },
+                "metadata": {
+                    "$ref": "#/definitions/models.Metadata"
+                },
+                "pagination": {
+                    "$ref": "#/definitions/models.PaginationOutput"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "OK"
+                }
+            }
+        },
+        "models.Token": {
+            "type": "object",
+            "properties": {
+                "expiredIn": {
+                    "type": "integer",
+                    "example": 300
+                },
+                "token": {
+                    "type": "string",
+                    "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                },
+                "type": {
+                    "type": "string",
+                    "example": "accessToken"
+                }
+            }
+        }
+    }
+}

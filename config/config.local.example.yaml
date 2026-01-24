@@ -1,0 +1,40 @@
+# Essential 
+application:
+  name:
+  port:
+  version: 
+  environment: 
+  host: 
+  timeout:
+  timezone: "Asia/Jakarta"
+postgresql:
+  name:
+  user:
+  password:
+  host:
+  port:
+  ssl_mode: disable
+  max_idle_conns: 10
+  max_open_conns: 100
+  conn_max_lifetime: "1h"
+authorization:
+  issuer:
+  bearer:
+    secret:
+    duration:
+  refresh:
+    secret:
+    duration:
+  api_key:
+hash:
+  salt:
+cors:
+  headers_allowed: ["X-API-Key, X-Api-Key, x-api-key"]
+
+# Third Party
+google:
+  client_id: ""
+  client_secret: ""
+  redirect_uri: ""
+  state: ""
+  user_info_url: "https://www.googleapis.com/oauth2/v2/userinfo"

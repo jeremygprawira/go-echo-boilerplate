@@ -1,0 +1,323 @@
+definitions:
+  models.CreateUserRequest:
+    properties:
+      email:
+        example: john.doe@example.com
+        type: string
+      name:
+        example: John Doe
+        type: string
+      password:
+        example: password123
+        type: string
+      phoneNumber:
+        $ref: '#/definitions/models.PhoneNumber'
+    required:
+    - name
+    - password
+    type: object
+  models.CreateUserResponse:
+    properties:
+      accountNumber:
+        example: "1234567890"
+        type: string
+      createdAt:
+        example: "2026-01-24T15:57:37+07:00"
+        type: string
+      email:
+        example: john.doe@example.com
+        type: string
+      name:
+        example: John Doe
+        type: string
+      phoneNumber:
+        $ref: '#/definitions/models.PhoneNumber'
+      type:
+        example: user
+        type: string
+      updatedAt:
+        example: "2026-01-24T15:57:37+07:00"
+        type: string
+    type: object
+  models.ErrorResponse:
+    properties:
+      code:
+        type: integer
+      errors: {}
+      message:
+        type: string
+      metadata:
+        $ref: '#/definitions/models.Metadata'
+      status:
+        type: string
+    type: object
+  models.GetUserByAccountNumberResponse:
+    properties:
+      accountNumber:
+        example: "1234567890"
+        type: string
+      createdAt:
+        example: "2026-01-24T15:57:37+07:00"
+        type: string
+      email:
+        example: john.doe@example.com
+        type: string
+      name:
+        example: John Doe
+        type: string
+      phoneNumber:
+        $ref: '#/definitions/models.PhoneNumber'
+      type:
+        example: user
+        type: string
+      updatedAt:
+        example: "2026-01-24T15:57:37+07:00"
+        type: string
+    type: object
+  models.GetUserTokenRequest:
+    properties:
+      email:
+        example: john.doe@example.com
+        type: string
+      password:
+        example: password123
+        type: string
+      phoneNumber:
+        $ref: '#/definitions/models.PhoneNumber'
+    required:
+    - password
+    type: object
+  models.GetUserTokenResponse:
+    properties:
+      accountNumber:
+        example: "1234567890"
+        type: string
+      email:
+        example: john.doe@example.com
+        type: string
+      name:
+        example: John Doe
+        type: string
+      phoneNumber:
+        $ref: '#/definitions/models.PhoneNumber'
+      tokens:
+        items:
+          $ref: '#/definitions/models.Token'
+        type: array
+      type:
+        example: user
+        type: string
+    type: object
+  models.HealthDetailResponse:
+    properties:
+      component:
+        type: string
+      description:
+        type: string
+      status:
+        type: string
+      type:
+        type: string
+    type: object
+  models.Metadata:
+    properties:
+      requestId:
+        type: string
+      timestamp:
+        type: string
+      totalRows:
+        type: integer
+    type: object
+  models.PaginationOutput:
+    properties:
+      limit:
+        type: integer
+      next:
+        type: string
+      prev:
+        type: string
+      total:
+        type: integer
+    type: object
+  models.PhoneNumber:
+    properties:
+      countryCode:
+        example: ID
+        type: string
+      number:
+        example: "6281234567890"
+        type: string
+    type: object
+  models.Response:
+    properties:
+      code:
+        example: 200
+        type: integer
+      data: {}
+      errors: {}
+      message:
+        example: Request has been successfully processed.
+        type: string
+      metadata:
+        $ref: '#/definitions/models.Metadata'
+      pagination:
+        $ref: '#/definitions/models.PaginationOutput'
+      status:
+        example: OK
+        type: string
+    type: object
+  models.Token:
+    properties:
+      expiredIn:
+        example: 300
+        type: integer
+      token:
+        example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        type: string
+      type:
+        example: accessToken
+        type: string
+    type: object
+info:
+  contact: {}
+paths:
+  /api/v1/users:
+    post:
+      consumes:
+      - application/json
+      description: Register a new user with email, phone number, and password. Auto-generates
+        account number.
+      parameters:
+      - description: User Registration Details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.CreateUserRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: User Created Successfully
+          schema:
+            allOf:
+            - $ref: '#/definitions/models.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.CreateUserResponse'
+              type: object
+        "400":
+          description: Invalid Input / Validation Error
+          schema:
+            $ref: '#/definitions/models.Response'
+        "409":
+          description: User Already Exists (Email or Phone)
+          schema:
+            $ref: '#/definitions/models.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.Response'
+      summary: Create New User
+      tags:
+      - Users
+  /api/v1/users/me:
+    get:
+      consumes:
+      - application/json
+      description: Get user information by access token
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User Information Retrieved Successfully
+          schema:
+            allOf:
+            - $ref: '#/definitions/models.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.GetUserByAccountNumberResponse'
+              type: object
+        "400":
+          description: Invalid Input / Validation Error
+          schema:
+            $ref: '#/definitions/models.Response'
+        "404":
+          description: User Not Found
+          schema:
+            $ref: '#/definitions/models.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.Response'
+      security:
+      - BearerAuth: []
+      summary: Get User By Access Token
+      tags:
+      - Users
+  /api/v1/users/tokens:
+    post:
+      consumes:
+      - application/json
+      description: Get tokens for a user
+      parameters:
+      - description: User Token Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.GetUserTokenRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User Tokens Retrieved Successfully
+          schema:
+            allOf:
+            - $ref: '#/definitions/models.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.GetUserTokenResponse'
+              type: object
+        "400":
+          description: Invalid Input / Validation Error
+          schema:
+            $ref: '#/definitions/models.Response'
+        "404":
+          description: User Not Found
+          schema:
+            $ref: '#/definitions/models.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.Response'
+      summary: Get Tokens
+      tags:
+      - Users
+  /health:
+    get:
+      consumes:
+      - application/json
+      description: Check the health status of the service and its dependencies
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/models.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/models.HealthDetailResponse'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Check health status
+      tags:
+      - Health
+swagger: "2.0"
