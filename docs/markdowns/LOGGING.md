@@ -1,168 +1,262 @@
-# Canonical Log Lines - Usage Guide
+# Wide Event Logging Guidelines
 
-Simple guide for using the canonical log lines pattern (from [loggingsucks.com](https://loggingsucks.com/)) in your Go Echo application.
+This document serves as the **single source of truth** for logging in our Go Echo application. It consolidates concepts, usage patterns, security guidelines, and examples.
 
-## Quick Start
+## 1. Philosophy: Wide Events
 
-The logging system is centrally managed via `internal/pkg/logger`. It uses `context.Context` to propagate log data throughout the request lifecycle.
+We follow the "Wide Events" pattern (popularized by [loggingsucks.com](https://loggingsucks.com/)).
 
-- **`WideEvent`** - The canonical log structure (stored in context)
-- **`logger.EnrichContext`** - Add data to the log
-- **`logger.SetErrorContext`** - Add error details
+- **Traditional Logging**: Emits multiple log lines per request (e.g., "Request started", "Querying DB", "Payment failed"). This is hard to query and debug because context is scattered.
+- **Wide Events**: Emits **one canonical log line per request** at the end of the lifecycle. This line contains _all_ relevant context enriched throughout the request (input, output, errors, latency, user info, business metrics).
 
-## Handler Example
+### Why?
+
+- **Querying**: You can ask complex questions like `latency > 500ms AND user_tier = 'premium' AND error_code != null`.
+- **Context**: You always have the full story. No need to grep multiple lines or join by request ID manually.
+- **Cleanliness**: Keeps logs distinct and meaningful.
+
+---
+
+## 2. Core Concepts
+
+### The Mechanism
+
+The logging system uses `context.Context` to carry a "Wide Event" object throughout the request lifecycle.
+
+1.  **Middleware** initializes the Wide Event at the start of a request.
+2.  **Handlers/Services** enrich this event using `logger` functions.
+3.  **Middleware** writes the final JSON log line when the request finishes.
+
+### Key Components
+
+- **`internal/pkg/logger`**: The core package you will import.
+- **`Enrichment`**: adding key-value pairs to the event.
+- **`Masking`**: Automatically hiding sensitive data (passwords, tokens).
+
+---
+
+## 3. Quick Start
+
+### Basic Usage (Handlers)
+
+Import `go-echo-boilerplate/internal/pkg/logger`.
 
 ```go
-import "go-echo-boilerplate/internal/pkg/logger"
-
-func YourHandler(c echo.Context) error {
-    // Get context (middleware ensures it has log event)
+func (h *Handler) CreateOrder(c echo.Context) error {
+    // 1. Get context
     ctx := c.Request().Context()
 
-    var req YourRequest
+    var req OrderRequest
     if err := c.Bind(&req); err != nil {
         return err
     }
 
-    // Enrich logs
-    logger.EnrichContext(ctx, "handler_action", "start_processing")
+    // 2. Enrich with request data
+    // Use EnrichContextMap for multiple fields
+    logger.EnrichContextMap(ctx, map[string]any{
+        "order_type":      req.Type,
+        "items_count":     len(req.Items),
+        "shipping_method": req.ShippingMethod,
+    })
 
-    // Pass context to service
-    result, err := yourService.DoSomething(ctx, req)
+    // 3. Call Service
+    order, err := h.service.Process(ctx, req)
     if err != nil {
+        // 4. Handle Errors
+        // SetErrorContext adds detailed error info to the log
+        logger.SetErrorContext(ctx, &logger.ErrorContext{
+             Type:      "OrderProcessingError",
+             Code:      "PROCESSING_FAILED",
+             Message:   err.Error(),
+             Retriable: false,
+        })
         return err
     }
 
-    return c.JSON(200, result)
+    // 5. Enrich with success data
+    logger.EnrichContext(ctx, "order_id", order.ID)
+
+    return c.JSON(201, order)
 }
 ```
 
-## Service Example
+---
+
+## 4. Enrichment API
+
+The `logger` package provides flexible methods to add data to your logs.
+
+### Basic Methods
+
+| Method                            | Description                                                   | Example                                             |
+| :-------------------------------- | :------------------------------------------------------------ | :-------------------------------------------------- |
+| `EnrichContext(ctx, key, val)`    | Add a single field.                                           | `logger.EnrichContext(ctx, "user_id", "123")`       |
+| `EnrichContextMap(ctx, map)`      | Add multiple fields via a map. **Recommended** for bulk data. | `logger.EnrichContextMap(ctx, dataMap)`             |
+| `EnrichContextMany(ctx, k, v...)` | Add multiple fields via variadic arguments.                   | `logger.EnrichContextMany(ctx, "k1", v1, "k2", v2)` |
+| `EnrichContextWith(ctx, ...)`     | The most flexible; accepts maps, keys, values mixed.          | `logger.EnrichContextWith(ctx, "id", 1, mapData)`   |
+
+### Thread Safety
+
+All enrichment methods are **thread-safe**. You can call them from concurrent goroutines safely.
 
 ```go
-func (s *YourService) DoSomething(ctx context.Context, req Request) (*Result, error) {
-    // Enrich log with business data
-    logger.EnrichContextMap(ctx, map[string]interface{}{
-        "request_id": req.ID,
-        "type": req.Type,
-    })
-
-    // Do business logic
-    data, err := s.repo.GetData(ctx, req.ID)
-    if err != nil {
-        // Set error context for the canonical log
-        logger.SetErrorContext(ctx, &logger.ErrorContext{
-            Type: "DatabaseError",
-            Code: "NOT_FOUND",
-            Message: err.Error(),
-            Retriable: false,
-        })
-        return nil, err
-    }
-
-    // Enrich with result data
-    logger.EnrichContextMap(ctx, map[string]interface{}{
-        "result_id": data.ID,
-        "result_count": data.Count,
-    })
-
-    return &Result{Data: data}, nil
-}
+go func() {
+    logger.EnrichContext(ctx, "async_task_status", "completed") // Safe!
+}()
 ```
 
-## Complex Example (Checkout Flow)
+---
+
+## 5. Security: Credential Masking
+
+**NEVER log sensitive data in plain text.**
+Our logger has built-in masking capabilities.
+
+### Safe Enrichment Methods (Recommended)
+
+Use these methods to automatically mask sensitive fields.
+
+| Method                               | Description                              |
+| :----------------------------------- | :--------------------------------------- |
+| `EnrichContextSafe(ctx, key, val)`   | Masks value if key is sensitive.         |
+| `EnrichContextMapSafe(ctx, map)`     | Recursively masks all values in the map. |
+| `EnrichContextHeaders(ctx, headers)` | Specifically for masking HTTP headers.   |
+
+### What gets masked?
+
+The system automatically detects keys like:
+
+- `password`, `passwd`, `pwd`
+- `secret`, `token`, `auth`, `authorization`, `bearer`
+- `api_key`, `apikey`, `access_token`, `session_id`
+- `credit_card`, `cvv`, `ssn`
+- `db_password`, `connection_string`
+
+### Example: Safe Logging
 
 ```go
-func (s *CheckoutService) ProcessCheckout(ctx context.Context, req CheckoutRequest) (*CheckoutResult, error) {
-    // Step 1: Get cart
-    cart, err := s.cartRepo.GetByID(ctx, req.CartID)
-    if err != nil {
-        logger.SetErrorContext(ctx, &logger.ErrorContext{
-            Type: "CartError",
-            Code: "CART_NOT_FOUND",
-            Message: err.Error(),
-            Retriable: false,
-        })
-        return nil, err
-    }
+// Even though "password" is in the map, it will be masked in the logs!
+logger.EnrichContextMapSafe(ctx, map[string]any{
+    "username": "john_doe",
+    "password": "superSecretPassword123", // -> "***MASKED***"
+    "api_key":  "sk_live_123456",         // -> "***MASKED***"
+})
+```
 
-    // Enrich with cart data
-    logger.EnrichContextMap(ctx, map[string]interface{}{
-        "cart_id": cart.ID,
-        "cart_items": len(cart.Items),
-        "cart_total": cart.Total,
-        "cart_coupon": cart.Coupon,
+---
+
+## 6. Error Handling
+
+Don't just return errors; log them with context using `SetErrorContext`.
+
+```go
+if err != nil {
+    logger.SetErrorContext(ctx, &logger.ErrorContext{
+        Type:      "PaymentGatewayError",  // Broad category
+        Code:      "INSUFFICIENT_FUNDS",   // Specific machine-readable code
+        Message:   err.Error(),            // Human readable message
+        Retriable: false,                  // Can we retry this?
     })
-
-    // Step 2: Process payment
-    payment, err := s.paymentProvider.Charge(ctx, cart)
-
-    // Enrich with payment data
-    logger.EnrichContextMap(ctx, map[string]interface{}{
-        "payment_method": payment.Method,
-        "payment_provider": payment.Provider,
-        "payment_latency": payment.Latency,
-    })
-
-    if err != nil {
-        logger.SetErrorContext(ctx, &logger.ErrorContext{
-            Type: "PaymentError",
-            Code: payment.ErrorCode,
-            Message: err.Error(),
-            Retriable: payment.IsRetriable,
-        })
-        return nil, err
-    }
-
-    return &CheckoutResult{OrderID: payment.OrderID}, nil
+    return err
 }
 ```
 
-## Log Output Example
+This ensures your logs have a standardized `error` object:
 
-**One canonical log line per request:**
+```json
+"error": {
+  "type": "PaymentGatewayError",
+  "code": "INSUFFICIENT_FUNDS",
+  "message": "upstream connection failed",
+  "retriable": false
+}
+```
+
+---
+
+## 7. Advanced: Service Layer Pattern
+
+Ideally, your handlers should be thin. Business logic—and the logging of business data—should live in the Service layer.
+
+### Approach 1: Pass `context.Context` (Standard)
+
+Simply pass the context to your service methods.
+
+```go
+// Service
+func (s *Service) Charge(ctx context.Context, amount int) error {
+    // Enrich deep inside business logic
+    logger.EnrichContext(ctx, "charge_amount", amount)
+    // ...
+}
+```
+
+### Approach 2: WideEventContext Wrapper (Type-Safe)
+
+If you prefer a more explicit contract, use `middleware.WideEventContext`.
+
+```go
+// Handler
+func Handler(c echo.Context) error {
+    // Get wrapper (injected by middleware)
+    wCtx := middleware.GetWideEventCtx(c)
+    return service.DoWork(wCtx)
+}
+
+// Service
+func (s *Service) DoWork(ctx *middleware.WideEventContext) error {
+    ctx.Enrich("status", "working")
+    // ...
+}
+```
+
+---
+
+## 8. Best Practices
+
+### ✅ DO
+
+- **Enrich as you go**: Add data as soon as you have it (parsed request, DB result, etc.).
+- **Use Maps**: Group related fields (e.g., `user_data`, `payment_info`). It's cleaner.
+- **Use Snake Case**: Use `snake_case` for log keys (e.g., `user_id`, not `userId`).
+- **Log Metrics**: Log data useful for analytics (e.g., `cart_items_count`, `processing_time_ms`).
+
+### ❌ DON'T
+
+- **Don't Log Raw Credentials**: Always use `*Safe` methods.
+- **Don't Log Massive Blobs**: Avoid logging entire huge JSON bodies unless necessary for debugging.
+- **Don't Use Generic Keys**: Avoid keys like `data` or `info`. Be specific: `payment_response_data`.
+
+---
+
+## 9. Example Log Output
+
+What does a final log line look like?
 
 ```json
 {
   "level": "info",
-  "timestamp": "2026-01-11T23:01:22Z",
+  "timestamp": "2026-02-02T12:00:00Z",
   "message": "Request completed",
-  "request_id": "abc123",
-  "trace_id": "xyz789",
+  "request_id": "req-12345",
+  "trace_id": "trace-9876",
   "method": "POST",
-  "path": "/api/checkout",
-  "status_code": 200,
-  "duration_ms": 1247,
-  "bytes_out": 156,
-  "outcome": "success",
-  "remote_ip": "192.168.1.1",
-  "user_agent": "Mozilla/5.0",
-  "request_data": {
-    "cart_id": "cart_xyz",
-    "cart_total": 15999
+  "path": "/api/orders",
+  "status_code": 201,
+  "duration_ms": 150,
+  "remote_ip": "10.0.0.1",
+  "user_agent": "Mozilla/5.0...",
+  "user": {
+    "id": "u-456",
+    "email": "alex@example.com"
   },
-  "service": "checkout-service",
-  "version": "1.0.0",
-  "environment": "production"
+  "business_data": {
+    "order_type": "subscription",
+    "items_count": 3,
+    "order_id": "order-789",
+    "payment_provider": "stripe"
+  },
+  "service": "order-service",
+  "env": "production"
 }
 ```
-
-## Benefits
-
-✅ **One log line per request** - Complete story in one place  
-✅ **Powerful querying** - `cart_items > 5 AND outcome = "error"`  
-✅ **No boilerplate** - Context managed by middleware  
-✅ **Service layer enrichment** - Add context where business logic lives  
-✅ **Better debugging** - Full context immediately available
-
-## Helper Functions
-
-See `internal/pkg/logger/context.go` for all available methods:
-
-- `logger.EnrichContext(ctx, key, val)`
-- `logger.EnrichContextMap(ctx, map)`
-- `logger.EnrichContextSafe(ctx, key, val)` (Masks credentials)
-- `logger.SetUserContext(ctx, user)`
-- `logger.SetErrorContext(ctx, err)`
-
-Refer to [Logger Enrichment Examples](LOGGER_ENRICHMENT_EXAMPLES.md) for more usage patterns.
