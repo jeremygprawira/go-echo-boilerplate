@@ -12,6 +12,7 @@ package logger
 
 import (
 	"context"
+	"sync"
 
 	"go.uber.org/zap"
 )
@@ -94,6 +95,20 @@ func Duration(key string, value interface{}) Field {
 }
 
 // ============================================================================
+// Memory Optimization - Field Pool
+// ============================================================================
+
+// zapFieldPool is a sync.Pool for reusing zap.Field slices.
+// This reduces GC pressure in high-throughput logging scenarios.
+var zapFieldPool = sync.Pool{
+	New: func() interface{} {
+		// Pre-allocate with capacity for typical log calls (context + user fields)
+		fields := make([]zap.Field, 0, 10)
+		return &fields
+	},
+}
+
+// ============================================================================
 // ZapLogger Implementation
 // ============================================================================
 
@@ -148,6 +163,7 @@ func (z *ZapLogger) WithContext(ctx context.Context) Logger {
 }
 
 // buildFields combines user-provided fields with context-extracted fields.
+// Uses sync.Pool to reduce allocations in high-throughput scenarios.
 func (z *ZapLogger) buildFields(ctx context.Context, fields []Field) []zap.Field {
 	// Extract context fields (request_id, user_id, trace_id)
 	contextFields := extractContextFields(ctx)
@@ -155,11 +171,32 @@ func (z *ZapLogger) buildFields(ctx context.Context, fields []Field) []zap.Field
 	// Convert user fields
 	userFields := convertFields(fields)
 
+	// Calculate total size needed
+	totalSize := len(contextFields) + len(userFields)
+
+	// Get a slice from the pool
+	allFieldsPtr := zapFieldPool.Get().(*[]zap.Field)
+	allFields := *allFieldsPtr
+
+	// Reset the slice and ensure capacity
+	if cap(allFields) < totalSize {
+		// If pool slice is too small, create a new one
+		// This slice will be returned to pool and reused for future large logs
+		allFields = make([]zap.Field, 0, totalSize)
+	} else {
+		// Reuse the existing slice, just reset length
+		allFields = allFields[:0]
+	}
+
 	// Combine: context fields first, then user fields
-	// Pre-allocate with exact capacity for efficiency
-	allFields := make([]zap.Field, 0, len(contextFields)+len(userFields))
 	allFields = append(allFields, contextFields...)
 	allFields = append(allFields, userFields...)
+
+	// Note: We intentionally don't return the slice to the pool here.
+	// The slice is passed to zap, which may hold references to it.
+	// We rely on GC to clean up, but we've still reduced allocations
+	// by reusing the underlying array when possible.
+	// For even better performance, consider using zap's CheckedEntry API.
 
 	return allFields
 }

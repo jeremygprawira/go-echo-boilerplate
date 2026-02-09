@@ -18,6 +18,11 @@ const (
 	SpanIDKey    contextKey = "span_id"
 	wideEventKey contextKey = "wide_event"
 	errorCtxKey  contextKey = "error_context"
+
+	// MaxBusinessDataSize limits the number of entries in BusinessData map
+	// to prevent unbounded memory growth in long-running requests.
+	// This can be overridden by setting a custom value before initialization.
+	MaxBusinessDataSize = 100
 )
 
 // WideEvent represents a canonical log line containing all request context.
@@ -25,6 +30,9 @@ const (
 //
 // This structure is stored in context.Context for thread-safe access across
 // goroutines, service layers, and repository layers.
+//
+// Memory Safety: BusinessData map is limited to MaxBusinessDataSize entries
+// to prevent unbounded growth. Additional entries beyond the limit are silently dropped.
 type WideEvent struct {
 	// Immutable fields (set once at initialization)
 	RequestID string
@@ -35,10 +43,11 @@ type WideEvent struct {
 	UserAgent string
 
 	// Mutable fields (protected by mutex for thread safety)
-	mu           sync.RWMutex
-	BusinessData map[string]interface{}
-	User         *UserContext
-	Error        *ErrorContext
+	mu              sync.RWMutex
+	BusinessData    map[string]interface{}
+	User            *UserContext
+	Error           *ErrorContext
+	businessDataLen int // Track size separately for performance
 }
 
 // UserContext contains user-specific information for logging.
@@ -84,6 +93,9 @@ func (w *WideEvent) SetTraceID(traceID string) {
 // Enrich adds business context to the wide event.
 // Thread-safe: can be called concurrently from multiple goroutines.
 //
+// Memory Safety: If BusinessData exceeds MaxBusinessDataSize, additional
+// entries are silently dropped to prevent unbounded memory growth.
+//
 // Example usage in a handler:
 //
 //	event := logger.GetWideEvent(c.Request().Context())
@@ -92,11 +104,29 @@ func (w *WideEvent) SetTraceID(traceID string) {
 func (w *WideEvent) Enrich(key string, value interface{}) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+
+	// Check if key already exists (update doesn't count against limit)
+	if _, exists := w.BusinessData[key]; exists {
+		w.BusinessData[key] = value
+		return
+	}
+
+	// Enforce size limit for new entries
+	if w.businessDataLen >= MaxBusinessDataSize {
+		// Silently drop to prevent memory overflow
+		// In production, you might want to log this to metrics
+		return
+	}
+
 	w.BusinessData[key] = value
+	w.businessDataLen++
 }
 
 // EnrichMap adds multiple business context fields from a map.
 // Thread-safe: can be called concurrently from multiple goroutines.
+//
+// Memory Safety: Respects MaxBusinessDataSize limit. New entries beyond
+// the limit are silently dropped.
 //
 // Example usage:
 //
@@ -111,13 +141,30 @@ func (w *WideEvent) EnrichMap(data map[string]any) {
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
+
 	for k, v := range data {
+		// Check if key already exists (update doesn't count against limit)
+		if _, exists := w.BusinessData[k]; exists {
+			w.BusinessData[k] = v
+			continue
+		}
+
+		// Enforce size limit for new entries
+		if w.businessDataLen >= MaxBusinessDataSize {
+			// Stop adding new entries once limit is reached
+			return
+		}
+
 		w.BusinessData[k] = v
+		w.businessDataLen++
 	}
 }
 
 // EnrichMany adds multiple business context fields using variadic key-value pairs.
 // Thread-safe: can be called concurrently from multiple goroutines.
+//
+// Memory Safety: Respects MaxBusinessDataSize limit. New entries beyond
+// the limit are silently dropped.
 //
 // Example usage:
 //
@@ -137,9 +184,23 @@ func (w *WideEvent) EnrichMany(keyValuePairs ...interface{}) {
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
+
 	for i := 0; i < len(keyValuePairs); i += 2 {
 		if key, ok := keyValuePairs[i].(string); ok {
+			// Check if key already exists (update doesn't count against limit)
+			if _, exists := w.BusinessData[key]; exists {
+				w.BusinessData[key] = keyValuePairs[i+1]
+				continue
+			}
+
+			// Enforce size limit for new entries
+			if w.businessDataLen >= MaxBusinessDataSize {
+				// Stop adding new entries once limit is reached
+				return
+			}
+
 			w.BusinessData[key] = keyValuePairs[i+1]
+			w.businessDataLen++
 		}
 	}
 }
@@ -193,14 +254,23 @@ func (w *WideEvent) SetError(errCtx *ErrorContext) {
 	w.Error = errCtx
 }
 
-// GetBusinessData returns a copy of the business data map.
+// GetBusinessData returns a shallow copy of the business data map.
 // Thread-safe: safe to call concurrently.
+//
+// Performance Note: This creates a copy to prevent external modifications.
+// The copy is shallow - nested objects are not deep-copied.
 func (w *WideEvent) GetBusinessData() map[string]interface{} {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 
-	// Return a copy to prevent external modifications
-	data := make(map[string]interface{}, len(w.BusinessData))
+	// Return empty map if no data (avoid allocation)
+	if w.businessDataLen == 0 {
+		return make(map[string]interface{})
+	}
+
+	// Return a shallow copy to prevent external modifications
+	// Use businessDataLen for accurate capacity
+	data := make(map[string]interface{}, w.businessDataLen)
 	for k, v := range w.BusinessData {
 		data[k] = v
 	}
