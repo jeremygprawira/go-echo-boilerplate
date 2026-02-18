@@ -9,8 +9,8 @@ import (
 	"go.uber.org/zap"
 )
 
-// BenchmarkEnrichContext benchmarks the enrichment operations
-func BenchmarkEnrichContext(b *testing.B) {
+// BenchmarkAdd benchmarks the enrichment operations
+func BenchmarkAdd(b *testing.B) {
 	// Initialize logger
 	zapLog, _ := zap.NewProduction()
 	logger.Instance = logger.NewZapLogger(zapLog)
@@ -21,12 +21,12 @@ func BenchmarkEnrichContext(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		logger.EnrichContext(ctx, "test_field", "test_value")
+		logger.Add(ctx, "test_field", "test_value")
 	}
 }
 
-// BenchmarkEnrichContextMap benchmarks map-based enrichment
-func BenchmarkEnrichContextMap(b *testing.B) {
+// BenchmarkAddMap benchmarks map-based enrichment
+func BenchmarkAddMap(b *testing.B) {
 	zapLog, _ := zap.NewProduction()
 	logger.Instance = logger.NewZapLogger(zapLog)
 
@@ -43,7 +43,7 @@ func BenchmarkEnrichContextMap(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		logger.EnrichContextMap(ctx, data)
+		logger.AddMap(ctx, data)
 	}
 }
 
@@ -131,7 +131,7 @@ func BenchmarkBusinessDataSizeLimit(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		// Try to add more than MaxBusinessDataSize entries
 		for j := 0; j < 150; j++ {
-			logger.EnrichContext(ctx, string(rune(j)), "value")
+			logger.Add(ctx, string(rune(j)), "value")
 		}
 	}
 }
@@ -142,7 +142,7 @@ func BenchmarkGetBusinessData(b *testing.B) {
 
 	// Add some data
 	for i := 0; i < 50; i++ {
-		event.Enrich(string(rune(i)), "value")
+		event.Add(string(rune(i)), "value")
 	}
 
 	b.ResetTimer()

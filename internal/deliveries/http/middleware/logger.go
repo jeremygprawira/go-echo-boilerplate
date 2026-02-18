@@ -83,34 +83,34 @@ func (m *Middleware) LoggingMiddleware(log logger.Logger) echo.MiddlewareFunc {
 
 			// Capture request headers (masked)
 			reqHeaders := captureHeaders(c.Request().Header)
-			logger.EnrichContextSafe(ctx, "request_headers", reqHeaders)
+			logger.AddSafe(ctx, "request_headers", reqHeaders)
 
 			// Capture request body (masked)
 			reqBody := captureRequestBody(c)
 			if reqBody != nil {
-				logger.EnrichContextSafe(ctx, "request_body", reqBody)
+				logger.AddSafe(ctx, "request_body", reqBody)
 			}
 
 			// Capture path parameters (masked)
 			pathParams := capturePathParams(c)
 			if len(pathParams) > 0 {
-				logger.EnrichContextSafe(ctx, "request_params", pathParams)
+				logger.AddSafe(ctx, "request_params", pathParams)
 			}
 
 			// Capture query parameters (masked)
 			queryParams := captureQueryParams(c)
 			if len(queryParams) > 0 {
-				logger.EnrichContextSafe(ctx, "request_query", queryParams)
+				logger.AddSafe(ctx, "request_query", queryParams)
 			}
 
 			// Capture cookies (masked)
 			cookies := captureCookies(c)
 			if len(cookies) > 0 {
-				logger.EnrichContextSafe(ctx, "request_cookies", cookies)
+				logger.AddSafe(ctx, "request_cookies", cookies)
 			}
 
 			// Capture system metadata
-			logger.EnrichContextMap(ctx, map[string]any{
+			logger.AddMap(ctx, map[string]any{
 				"host":       c.Request().Host,
 				"ip":         c.RealIP(),
 				"pid":        os.Getpid(),
@@ -119,17 +119,17 @@ func (m *Middleware) LoggingMiddleware(log logger.Logger) echo.MiddlewareFunc {
 
 			// Capture traceparent if available (W3C Trace Context)
 			if traceparent := c.Request().Header.Get("traceparent"); traceparent != "" {
-				logger.EnrichContext(ctx, "traceparent", traceparent)
+				logger.Add(ctx, "traceparent", traceparent)
 			}
 
 			// Capture trace ID (X-Trace-ID or traceparent)
 			if traceID := c.Request().Header.Get("X-Trace-ID"); traceID != "" {
 				wideEvent.SetTraceID(traceID)
-				logger.EnrichContext(ctx, "trace_id", traceID)
+				logger.Add(ctx, "trace_id", traceID)
 			}
 
 			// Set infrastructure metadata
-			logger.EnrichContextMap(ctx, map[string]any{
+			logger.AddMap(ctx, map[string]any{
 				"service":     m.config.Application.Name,
 				"version":     m.config.Application.Version,
 				"environment": m.config.Application.Environment,
@@ -146,7 +146,7 @@ func (m *Middleware) LoggingMiddleware(log logger.Logger) echo.MiddlewareFunc {
 				defer func() {
 					if r := recover(); r != nil {
 						// Capture panic details
-						logger.SetErrorContext(ctx, &logger.ErrorContext{
+						logger.AddError(ctx, &logger.ErrorContext{
 							Type:      "PanicError",
 							Message:   "Request handler panicked",
 							Retriable: false,
@@ -157,7 +157,7 @@ func (m *Middleware) LoggingMiddleware(log logger.Logger) echo.MiddlewareFunc {
 
 				// Capture handler function name
 				handlerFunc = getFunctionName(next)
-				logger.EnrichContext(ctx, "function", handlerFunc)
+				logger.Add(ctx, "function", handlerFunc)
 
 				err = next(c)
 			}()
@@ -168,11 +168,11 @@ func (m *Middleware) LoggingMiddleware(log logger.Logger) echo.MiddlewareFunc {
 
 			// Capture response headers (masked)
 			respHeaders := captureHeaders(c.Response().Header())
-			logger.EnrichContextSafe(ctx, "response_headers", respHeaders)
+			logger.AddSafe(ctx, "response_headers", respHeaders)
 
 			// Note: Response body capture requires custom response writer
 			// For now, we capture status and size
-			logger.EnrichContextMap(ctx, map[string]any{
+			logger.AddMap(ctx, map[string]any{
 				"response_status": c.Response().Status,
 				"response_size":   c.Response().Size,
 			})
@@ -180,7 +180,7 @@ func (m *Middleware) LoggingMiddleware(log logger.Logger) echo.MiddlewareFunc {
 			// Calculate duration and severity
 			duration := time.Since(start)
 			severity := determineSeverity(c.Response().Status)
-			logger.EnrichContextMap(ctx, map[string]any{
+			logger.AddMap(ctx, map[string]any{
 				// "duration_ms": duration.Milliseconds(),
 				"severity": severity,
 			})
