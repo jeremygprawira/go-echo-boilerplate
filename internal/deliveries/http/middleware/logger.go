@@ -12,9 +12,11 @@ import (
 	"encoding/json"
 	"go-echo-boilerplate/internal/pkg/logger"
 	"io"
+	"net/http"
 	"os"
 	"reflect"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -41,6 +43,10 @@ func (m *Middleware) LoggingMiddleware(log logger.Logger) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			start := time.Now()
+
+			// Wrap the response writer to capture the response body
+			bcw := &bodyCapturingWriter{ResponseWriter: c.Response().Writer}
+			c.Response().Writer = bcw
 
 			// Generate or get request ID
 			requestID := c.Request().Header.Get("X-Request-ID")
@@ -170,8 +176,12 @@ func (m *Middleware) LoggingMiddleware(log logger.Logger) echo.MiddlewareFunc {
 			respHeaders := captureHeaders(c.Response().Header())
 			logger.AddSafe(ctx, "response_headers", respHeaders)
 
-			// Note: Response body capture requires custom response writer
-			// For now, we capture status and size
+			// Capture response body
+			respBody := captureResponseBody(bcw)
+			if respBody != nil {
+				logger.AddSafe(ctx, "response_body", respBody)
+			}
+
 			logger.AddMap(ctx, map[string]any{
 				"response_status": c.Response().Status,
 				"response_size":   c.Response().Size,
@@ -274,6 +284,77 @@ func captureCookies(c echo.Context) map[string]string {
 		result[cookie.Name] = cookie.Value
 	}
 	return result
+}
+
+// ============================================================================
+// Response Body Capture
+// ============================================================================
+
+// maxResponseCapture is the maximum number of response body bytes we buffer.
+// Writes beyond this limit are forwarded to the underlying writer but not
+// captured, keeping memory usage predictable regardless of response size.
+const maxResponseCapture = 10 * 1024 // 10 KB
+
+// bodyCapturingWriter is a thread-safe response writer that tees the first
+// maxResponseCapture bytes of every write into an internal buffer. It also
+// implements http.Flusher so that middleware like gzip/compress continues to
+// work correctly.
+type bodyCapturingWriter struct {
+	http.ResponseWriter
+	mu       sync.Mutex
+	buf      bytes.Buffer
+	captured int
+}
+
+// Write tees up to maxResponseCapture bytes into the internal buffer, then
+// forwards the full slice to the underlying ResponseWriter.
+func (w *bodyCapturingWriter) Write(b []byte) (int, error) {
+	w.mu.Lock()
+	remaining := maxResponseCapture - w.captured
+	if remaining > 0 {
+		if remaining > len(b) {
+			remaining = len(b)
+		}
+		w.buf.Write(b[:remaining])
+		w.captured += remaining
+	}
+	w.mu.Unlock()
+
+	return w.ResponseWriter.Write(b)
+}
+
+// Flush implements http.Flusher, forwarding the call when the underlying
+// writer supports it (e.g., gzip middleware, chunked streaming).
+func (w *bodyCapturingWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// bytes returns a safe copy of the captured buffer contents.
+func (w *bodyCapturingWriter) bytes() []byte {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.Bytes()
+}
+
+// captureResponseBody parses the buffered slice into a loggable value.
+// Returns nil when the slice is empty.
+func captureResponseBody(w *bodyCapturingWriter) map[string]any {
+	data := w.bytes()
+	if len(data) == 0 {
+		return nil
+	}
+
+	// Attempt JSON parse first
+	var bodyData map[string]any
+	if err := json.Unmarshal(data, &bodyData); err == nil {
+		return bodyData
+	}
+
+	// Fall back to raw string. The slice is already capped at maxResponseCapture
+	// bytes by Write(), so no second truncation is needed.
+	return map[string]any{"raw": string(data)}
 }
 
 // getFunctionName extracts function name using reflection
