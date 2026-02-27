@@ -41,39 +41,39 @@ import (
 // allowing handlers to safely enrich it from multiple goroutines.
 func (m *Middleware) LoggingMiddleware(log logger.Logger) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
+		return func(ectx echo.Context) error {
 			start := time.Now()
 
 			// Wrap the response writer to capture the response body
-			bcw := &bodyCapturingWriter{ResponseWriter: c.Response().Writer}
-			c.Response().Writer = bcw
+			bcw := &bodyCapturingWriter{ResponseWriter: ectx.Response().Writer}
+			ectx.Response().Writer = bcw
 
 			// Generate or get request ID
-			requestID := c.Request().Header.Get("X-Request-ID")
+			requestID := ectx.Request().Header.Get("X-Request-ID")
 			if requestID == "" {
 				requestID = uuid.New().String()
 			}
-			c.Response().Header().Set("X-Request-ID", requestID)
+			ectx.Response().Header().Set("X-Request-ID", requestID)
 
 			// Store in Echo context for response functions to access
-			c.Set("X-Request-ID", requestID)
+			ectx.Set("X-Request-ID", requestID)
 
 			// Initialize wide event with request metadata
 			wideEvent := logger.NewWideEvent(
 				requestID,
-				c.Request().Method,
-				c.Request().URL.Path,
-				c.RealIP(),
-				c.Request().UserAgent(),
+				ectx.Request().Method,
+				ectx.Request().URL.Path,
+				ectx.RealIP(),
+				ectx.Request().UserAgent(),
 			)
 
 			// Store wide event in context.Context (thread-safe!)
-			ctx := c.Request().Context()
+			ctx := ectx.Request().Context()
 			ctx = logger.WithWideEvent(ctx, wideEvent)
 			ctx = logger.WithRequestID(ctx, requestID)
 
 			// Extract and set user context if available
-			if userID := extractUserID(c); userID != "" {
+			if userID := extractUserID(ectx); userID != "" {
 				ctx = logger.WithUserID(ctx, userID)
 				logger.SetUserContext(ctx, &logger.UserContext{
 					ID: userID,
@@ -81,55 +81,55 @@ func (m *Middleware) LoggingMiddleware(log logger.Logger) echo.MiddlewareFunc {
 			}
 
 			// Update request with enriched context
-			c.SetRequest(c.Request().WithContext(ctx))
+			ectx.SetRequest(ectx.Request().WithContext(ctx))
 
 			// ================================================================
 			// Capture Request Data (with masking)
 			// ================================================================
 
 			// Capture request headers (masked)
-			reqHeaders := captureHeaders(c.Request().Header)
+			reqHeaders := captureHeaders(ectx.Request().Header)
 			logger.AddSafe(ctx, "request_headers", reqHeaders)
 
 			// Capture request body (masked)
-			reqBody := captureRequestBody(c)
+			reqBody := captureRequestBody(ectx)
 			if reqBody != nil {
 				logger.AddSafe(ctx, "request_body", reqBody)
 			}
 
 			// Capture path parameters (masked)
-			pathParams := capturePathParams(c)
+			pathParams := capturePathParams(ectx)
 			if len(pathParams) > 0 {
 				logger.AddSafe(ctx, "request_params", pathParams)
 			}
 
 			// Capture query parameters (masked)
-			queryParams := captureQueryParams(c)
+			queryParams := captureQueryParams(ectx)
 			if len(queryParams) > 0 {
 				logger.AddSafe(ctx, "request_query", queryParams)
 			}
 
 			// Capture cookies (masked)
-			cookies := captureCookies(c)
+			cookies := captureCookies(ectx)
 			if len(cookies) > 0 {
 				logger.AddSafe(ctx, "request_cookies", cookies)
 			}
 
 			// Capture system metadata
 			logger.AddMap(ctx, map[string]any{
-				"host":       c.Request().Host,
-				"ip":         c.RealIP(),
+				"host":       ectx.Request().Host,
+				"ip":         ectx.RealIP(),
 				"pid":        os.Getpid(),
-				"user_agent": c.Request().UserAgent(),
+				"user_agent": ectx.Request().UserAgent(),
 			})
 
 			// Capture traceparent if available (W3C Trace Context)
-			if traceparent := c.Request().Header.Get("traceparent"); traceparent != "" {
+			if traceparent := ectx.Request().Header.Get("traceparent"); traceparent != "" {
 				logger.Add(ctx, "traceparent", traceparent)
 			}
 
 			// Capture trace ID (X-Trace-ID or traceparent)
-			if traceID := c.Request().Header.Get("X-Trace-ID"); traceID != "" {
+			if traceID := ectx.Request().Header.Get("X-Trace-ID"); traceID != "" {
 				wideEvent.SetTraceID(traceID)
 				logger.Add(ctx, "trace_id", traceID)
 			}
@@ -165,7 +165,7 @@ func (m *Middleware) LoggingMiddleware(log logger.Logger) echo.MiddlewareFunc {
 				handlerFunc = getFunctionName(next)
 				logger.Add(ctx, "function", handlerFunc)
 
-				err = next(c)
+				err = next(ectx)
 			}()
 
 			// ================================================================
@@ -173,7 +173,7 @@ func (m *Middleware) LoggingMiddleware(log logger.Logger) echo.MiddlewareFunc {
 			// ================================================================
 
 			// Capture response headers (masked)
-			respHeaders := captureHeaders(c.Response().Header())
+			respHeaders := captureHeaders(ectx.Response().Header())
 			logger.AddSafe(ctx, "response_headers", respHeaders)
 
 			// Capture response body
@@ -183,13 +183,13 @@ func (m *Middleware) LoggingMiddleware(log logger.Logger) echo.MiddlewareFunc {
 			}
 
 			logger.AddMap(ctx, map[string]any{
-				"response_status": c.Response().Status,
-				"response_size":   c.Response().Size,
+				"response_status": ectx.Response().Status,
+				"response_size":   ectx.Response().Size,
 			})
 
 			// Calculate duration and severity
 			duration := time.Since(start)
-			severity := determineSeverity(c.Response().Status)
+			severity := determineSeverity(ectx.Response().Status)
 			logger.AddMap(ctx, map[string]any{
 				// "duration_ms": duration.Milliseconds(),
 				"severity": severity,
@@ -199,7 +199,7 @@ func (m *Middleware) LoggingMiddleware(log logger.Logger) echo.MiddlewareFunc {
 			// Emit Canonical Log Line
 			// ================================================================
 
-			emitWideEvent(log, ctx, wideEvent, c, duration, severity, err)
+			emitWideEvent(log, ctx, wideEvent, ectx, duration, severity, err)
 
 			return err
 		}
