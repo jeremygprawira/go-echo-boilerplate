@@ -12,9 +12,11 @@ import (
 	"encoding/json"
 	"go-echo-boilerplate/internal/pkg/logger"
 	"io"
+	"net/http"
 	"os"
 	"reflect"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -39,35 +41,39 @@ import (
 // allowing handlers to safely enrich it from multiple goroutines.
 func (m *Middleware) LoggingMiddleware(log logger.Logger) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
+		return func(ectx echo.Context) error {
 			start := time.Now()
 
+			// Wrap the response writer to capture the response body
+			bcw := &bodyCapturingWriter{ResponseWriter: ectx.Response().Writer}
+			ectx.Response().Writer = bcw
+
 			// Generate or get request ID
-			requestID := c.Request().Header.Get("X-Request-ID")
+			requestID := ectx.Request().Header.Get("X-Request-ID")
 			if requestID == "" {
 				requestID = uuid.New().String()
 			}
-			c.Response().Header().Set("X-Request-ID", requestID)
+			ectx.Response().Header().Set("X-Request-ID", requestID)
 
 			// Store in Echo context for response functions to access
-			c.Set("X-Request-ID", requestID)
+			ectx.Set("X-Request-ID", requestID)
 
 			// Initialize wide event with request metadata
 			wideEvent := logger.NewWideEvent(
 				requestID,
-				c.Request().Method,
-				c.Request().URL.Path,
-				c.RealIP(),
-				c.Request().UserAgent(),
+				ectx.Request().Method,
+				ectx.Request().URL.Path,
+				ectx.RealIP(),
+				ectx.Request().UserAgent(),
 			)
 
 			// Store wide event in context.Context (thread-safe!)
-			ctx := c.Request().Context()
+			ctx := ectx.Request().Context()
 			ctx = logger.WithWideEvent(ctx, wideEvent)
 			ctx = logger.WithRequestID(ctx, requestID)
 
 			// Extract and set user context if available
-			if userID := extractUserID(c); userID != "" {
+			if userID := extractUserID(ectx); userID != "" {
 				ctx = logger.WithUserID(ctx, userID)
 				logger.SetUserContext(ctx, &logger.UserContext{
 					ID: userID,
@@ -75,61 +81,61 @@ func (m *Middleware) LoggingMiddleware(log logger.Logger) echo.MiddlewareFunc {
 			}
 
 			// Update request with enriched context
-			c.SetRequest(c.Request().WithContext(ctx))
+			ectx.SetRequest(ectx.Request().WithContext(ctx))
 
 			// ================================================================
 			// Capture Request Data (with masking)
 			// ================================================================
 
 			// Capture request headers (masked)
-			reqHeaders := captureHeaders(c.Request().Header)
-			logger.EnrichContextSafe(ctx, "request_headers", reqHeaders)
+			reqHeaders := captureHeaders(ectx.Request().Header)
+			logger.AddSafe(ctx, "request_headers", reqHeaders)
 
 			// Capture request body (masked)
-			reqBody := captureRequestBody(c)
+			reqBody := captureRequestBody(ectx)
 			if reqBody != nil {
-				logger.EnrichContextSafe(ctx, "request_body", reqBody)
+				logger.AddSafe(ctx, "request_body", reqBody)
 			}
 
 			// Capture path parameters (masked)
-			pathParams := capturePathParams(c)
+			pathParams := capturePathParams(ectx)
 			if len(pathParams) > 0 {
-				logger.EnrichContextSafe(ctx, "request_params", pathParams)
+				logger.AddSafe(ctx, "request_params", pathParams)
 			}
 
 			// Capture query parameters (masked)
-			queryParams := captureQueryParams(c)
+			queryParams := captureQueryParams(ectx)
 			if len(queryParams) > 0 {
-				logger.EnrichContextSafe(ctx, "request_query", queryParams)
+				logger.AddSafe(ctx, "request_query", queryParams)
 			}
 
 			// Capture cookies (masked)
-			cookies := captureCookies(c)
+			cookies := captureCookies(ectx)
 			if len(cookies) > 0 {
-				logger.EnrichContextSafe(ctx, "request_cookies", cookies)
+				logger.AddSafe(ctx, "request_cookies", cookies)
 			}
 
 			// Capture system metadata
-			logger.EnrichContextMap(ctx, map[string]any{
-				"host":       c.Request().Host,
-				"ip":         c.RealIP(),
+			logger.AddMap(ctx, map[string]any{
+				"host":       ectx.Request().Host,
+				"ip":         ectx.RealIP(),
 				"pid":        os.Getpid(),
-				"user_agent": c.Request().UserAgent(),
+				"user_agent": ectx.Request().UserAgent(),
 			})
 
 			// Capture traceparent if available (W3C Trace Context)
-			if traceparent := c.Request().Header.Get("traceparent"); traceparent != "" {
-				logger.EnrichContext(ctx, "traceparent", traceparent)
+			if traceparent := ectx.Request().Header.Get("traceparent"); traceparent != "" {
+				logger.Add(ctx, "traceparent", traceparent)
 			}
 
 			// Capture trace ID (X-Trace-ID or traceparent)
-			if traceID := c.Request().Header.Get("X-Trace-ID"); traceID != "" {
+			if traceID := ectx.Request().Header.Get("X-Trace-ID"); traceID != "" {
 				wideEvent.SetTraceID(traceID)
-				logger.EnrichContext(ctx, "trace_id", traceID)
+				logger.Add(ctx, "trace_id", traceID)
 			}
 
 			// Set infrastructure metadata
-			logger.EnrichContextMap(ctx, map[string]any{
+			logger.AddMap(ctx, map[string]any{
 				"service":     m.config.Application.Name,
 				"version":     m.config.Application.Version,
 				"environment": m.config.Application.Environment,
@@ -146,7 +152,7 @@ func (m *Middleware) LoggingMiddleware(log logger.Logger) echo.MiddlewareFunc {
 				defer func() {
 					if r := recover(); r != nil {
 						// Capture panic details
-						logger.SetErrorContext(ctx, &logger.ErrorContext{
+						logger.AddError(ctx, &logger.ErrorContext{
 							Type:      "PanicError",
 							Message:   "Request handler panicked",
 							Retriable: false,
@@ -157,9 +163,9 @@ func (m *Middleware) LoggingMiddleware(log logger.Logger) echo.MiddlewareFunc {
 
 				// Capture handler function name
 				handlerFunc = getFunctionName(next)
-				logger.EnrichContext(ctx, "function", handlerFunc)
+				logger.Add(ctx, "function", handlerFunc)
 
-				err = next(c)
+				err = next(ectx)
 			}()
 
 			// ================================================================
@@ -167,20 +173,24 @@ func (m *Middleware) LoggingMiddleware(log logger.Logger) echo.MiddlewareFunc {
 			// ================================================================
 
 			// Capture response headers (masked)
-			respHeaders := captureHeaders(c.Response().Header())
-			logger.EnrichContextSafe(ctx, "response_headers", respHeaders)
+			respHeaders := captureHeaders(ectx.Response().Header())
+			logger.AddSafe(ctx, "response_headers", respHeaders)
 
-			// Note: Response body capture requires custom response writer
-			// For now, we capture status and size
-			logger.EnrichContextMap(ctx, map[string]any{
-				"response_status": c.Response().Status,
-				"response_size":   c.Response().Size,
+			// Capture response body
+			respBody := captureResponseBody(bcw)
+			if respBody != nil {
+				logger.AddSafe(ctx, "response_body", respBody)
+			}
+
+			logger.AddMap(ctx, map[string]any{
+				"response_status": ectx.Response().Status,
+				"response_size":   ectx.Response().Size,
 			})
 
 			// Calculate duration and severity
 			duration := time.Since(start)
-			severity := determineSeverity(c.Response().Status)
-			logger.EnrichContextMap(ctx, map[string]any{
+			severity := determineSeverity(ectx.Response().Status)
+			logger.AddMap(ctx, map[string]any{
 				// "duration_ms": duration.Milliseconds(),
 				"severity": severity,
 			})
@@ -189,7 +199,7 @@ func (m *Middleware) LoggingMiddleware(log logger.Logger) echo.MiddlewareFunc {
 			// Emit Canonical Log Line
 			// ================================================================
 
-			emitWideEvent(log, ctx, wideEvent, c, duration, severity, err)
+			emitWideEvent(log, ctx, wideEvent, ectx, duration, severity, err)
 
 			return err
 		}
@@ -274,6 +284,77 @@ func captureCookies(c echo.Context) map[string]string {
 		result[cookie.Name] = cookie.Value
 	}
 	return result
+}
+
+// ============================================================================
+// Response Body Capture
+// ============================================================================
+
+// maxResponseCapture is the maximum number of response body bytes we buffer.
+// Writes beyond this limit are forwarded to the underlying writer but not
+// captured, keeping memory usage predictable regardless of response size.
+const maxResponseCapture = 10 * 1024 // 10 KB
+
+// bodyCapturingWriter is a thread-safe response writer that tees the first
+// maxResponseCapture bytes of every write into an internal buffer. It also
+// implements http.Flusher so that middleware like gzip/compress continues to
+// work correctly.
+type bodyCapturingWriter struct {
+	http.ResponseWriter
+	mu       sync.Mutex
+	buf      bytes.Buffer
+	captured int
+}
+
+// Write tees up to maxResponseCapture bytes into the internal buffer, then
+// forwards the full slice to the underlying ResponseWriter.
+func (w *bodyCapturingWriter) Write(b []byte) (int, error) {
+	w.mu.Lock()
+	remaining := maxResponseCapture - w.captured
+	if remaining > 0 {
+		if remaining > len(b) {
+			remaining = len(b)
+		}
+		w.buf.Write(b[:remaining])
+		w.captured += remaining
+	}
+	w.mu.Unlock()
+
+	return w.ResponseWriter.Write(b)
+}
+
+// Flush implements http.Flusher, forwarding the call when the underlying
+// writer supports it (e.g., gzip middleware, chunked streaming).
+func (w *bodyCapturingWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// bytes returns a safe copy of the captured buffer contents.
+func (w *bodyCapturingWriter) bytes() []byte {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.Bytes()
+}
+
+// captureResponseBody parses the buffered slice into a loggable value.
+// Returns nil when the slice is empty.
+func captureResponseBody(w *bodyCapturingWriter) map[string]any {
+	data := w.bytes()
+	if len(data) == 0 {
+		return nil
+	}
+
+	// Attempt JSON parse first
+	var bodyData map[string]any
+	if err := json.Unmarshal(data, &bodyData); err == nil {
+		return bodyData
+	}
+
+	// Fall back to raw string. The slice is already capped at maxResponseCapture
+	// bytes by Write(), so no second truncation is needed.
+	return map[string]any{"raw": string(data)}
 }
 
 // getFunctionName extracts function name using reflection

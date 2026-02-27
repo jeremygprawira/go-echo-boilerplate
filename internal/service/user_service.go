@@ -26,7 +26,7 @@ func NewUserService(d *Dependencies) UserService {
 
 func (us *userService) Create(ctx context.Context, request *models.CreateUserRequest) (*models.User, error) {
 	// Enrich wide event with business context
-	logger.EnrichContext(ctx, "operation", "user_create")
+	logger.Add(ctx, "operation", "user_create")
 
 	// Process phone number formatting if provided
 	phoneNumber := request.PhoneNumber.Number
@@ -42,7 +42,7 @@ func (us *userService) Create(ctx context.Context, request *models.CreateUserReq
 			CountryCode: phoneCountryCode,
 		})
 		if err != nil {
-			logger.EnrichContext(ctx, "phone_format_error", err.Error())
+			logger.Add(ctx, "phone_format_error", err.Error())
 			return nil, errorc.Error(errorc.ErrorInvalidInput, "Invalid phone number format")
 		}
 		phoneNumber = *formattedPhoneNumber
@@ -51,7 +51,7 @@ func (us *userService) Create(ctx context.Context, request *models.CreateUserReq
 	// Check if user already exists
 	isUserExist, err := us.d.Repository.Postgre.User.CheckByEmailOrPhoneNumber(ctx, request.Email, phoneNumber)
 	if err != nil {
-		logger.SetErrorContext(ctx, &logger.ErrorContext{
+		logger.AddError(ctx, &logger.ErrorContext{
 			Type:      "DatabaseError",
 			Code:      "USER_CHECK_FAILED",
 			Message:   err.Error(),
@@ -61,7 +61,7 @@ func (us *userService) Create(ctx context.Context, request *models.CreateUserReq
 	}
 
 	if isUserExist {
-		logger.EnrichContextMap(ctx, map[string]any{
+		logger.AddMap(ctx, map[string]any{
 			"conflict_email": request.Email,
 			"conflict_phone": phoneNumber,
 		})
@@ -71,7 +71,7 @@ func (us *userService) Create(ctx context.Context, request *models.CreateUserReq
 	// Generate unique account number
 	accountNumber, err := generator.AccountNumber()
 	if err != nil {
-		logger.SetErrorContext(ctx, &logger.ErrorContext{
+		logger.AddError(ctx, &logger.ErrorContext{
 			Type:      "GenerationError",
 			Code:      "ACCOUNT_NUMBER_GENERATION_FAILED",
 			Message:   err.Error(),
@@ -83,7 +83,7 @@ func (us *userService) Create(ctx context.Context, request *models.CreateUserReq
 	// Hash password
 	hashedPassword, err := generator.Hash(request.Password)
 	if err != nil {
-		logger.SetErrorContext(ctx, &logger.ErrorContext{
+		logger.AddError(ctx, &logger.ErrorContext{
 			Type:      "HashError",
 			Code:      "PASSWORD_HASH_FAILED",
 			Message:   err.Error(),
@@ -116,7 +116,7 @@ func (us *userService) Create(ctx context.Context, request *models.CreateUserReq
 	// Persist user to database
 	err = us.d.Repository.Postgre.User.Create(ctx, user)
 	if err != nil {
-		logger.SetErrorContext(ctx, &logger.ErrorContext{
+		logger.AddError(ctx, &logger.ErrorContext{
 			Type:      "DatabaseError",
 			Code:      "USER_CREATE_FAILED",
 			Message:   err.Error(),
@@ -126,7 +126,7 @@ func (us *userService) Create(ctx context.Context, request *models.CreateUserReq
 	}
 
 	// Enrich wide event with success metrics
-	logger.EnrichContextMap(ctx, map[string]any{
+	logger.AddMap(ctx, map[string]any{
 		"user_account_number": accountNumber,
 		"user_has_email":      request.Email != "",
 		"user_has_phone":      phoneNumber != "",
@@ -142,7 +142,7 @@ func (us *userService) GetTokens(ctx context.Context, request *models.GetUserTok
 			CountryCode: request.PhoneNumber.CountryCode,
 		})
 		if err != nil {
-			logger.EnrichContext(ctx, "phone_format_error", err.Error())
+			logger.Add(ctx, "phone_format_error", err.Error())
 			return nil, errorc.Error(errorc.ErrorInvalidInput, "Invalid phone number format")
 		}
 		request.PhoneNumber.Number = *formattedPhoneNumber
@@ -150,7 +150,7 @@ func (us *userService) GetTokens(ctx context.Context, request *models.GetUserTok
 
 	user, err := us.d.Repository.Postgre.User.GetCredentialsByEmailOrPhoneNumber(ctx, request.Email, request.PhoneNumber.Number)
 	if err != nil {
-		logger.SetErrorContext(ctx, &logger.ErrorContext{
+		logger.AddError(ctx, &logger.ErrorContext{
 			Type:      "DatabaseError",
 			Code:      "USER_GET_CREDENTIALS_FAILED",
 			Message:   err.Error(),
@@ -160,7 +160,7 @@ func (us *userService) GetTokens(ctx context.Context, request *models.GetUserTok
 	}
 
 	if user == nil {
-		logger.EnrichContextMap(ctx, map[string]any{
+		logger.AddMap(ctx, map[string]any{
 			"email": request.Email,
 			"phone": request.PhoneNumber.Number,
 		})
@@ -170,7 +170,7 @@ func (us *userService) GetTokens(ctx context.Context, request *models.GetUserTok
 	// Verify password
 	match, err := validator.Hash(request.Password, user.Password)
 	if err != nil {
-		logger.SetErrorContext(ctx, &logger.ErrorContext{
+		logger.AddError(ctx, &logger.ErrorContext{
 			Type:      "VerificationError",
 			Code:      "PASSWORD_VERIFICATION_FAILED",
 			Message:   err.Error(),
@@ -180,7 +180,7 @@ func (us *userService) GetTokens(ctx context.Context, request *models.GetUserTok
 	}
 
 	if !match {
-		logger.EnrichContextMap(ctx, map[string]any{
+		logger.AddMap(ctx, map[string]any{
 			"email": request.Email,
 			"phone": request.PhoneNumber.Number,
 		})
@@ -192,7 +192,7 @@ func (us *userService) GetTokens(ctx context.Context, request *models.GetUserTok
 	// Generate tokens
 	accessToken, err := generator.AccessToken(user, us.d.JWTConfig)
 	if err != nil {
-		logger.SetErrorContext(ctx, &logger.ErrorContext{
+		logger.AddError(ctx, &logger.ErrorContext{
 			Type:      "TokenGenerationError",
 			Code:      "ACCESS_TOKEN_GENERATION_FAILED",
 			Message:   err.Error(),
@@ -209,7 +209,7 @@ func (us *userService) GetTokens(ctx context.Context, request *models.GetUserTok
 
 	refreshToken, err := generator.RefreshToken(user, us.d.JWTConfig)
 	if err != nil {
-		logger.SetErrorContext(ctx, &logger.ErrorContext{
+		logger.AddError(ctx, &logger.ErrorContext{
 			Type:      "TokenGenerationError",
 			Code:      "REFRESH_TOKEN_GENERATION_FAILED",
 			Message:   err.Error(),
@@ -247,7 +247,7 @@ func (us *userService) GetTokens(ctx context.Context, request *models.GetUserTok
 func (us *userService) GetByAccountNumber(ctx context.Context, accountNumber string) (*models.User, error) {
 	user, err := us.d.Repository.Postgre.User.GetOneByAccountNumber(ctx, accountNumber)
 	if err != nil {
-		logger.SetErrorContext(ctx, &logger.ErrorContext{
+		logger.AddError(ctx, &logger.ErrorContext{
 			Type:      "DatabaseError",
 			Code:      "USER_GET_FAILED",
 			Message:   err.Error(),
@@ -257,7 +257,7 @@ func (us *userService) GetByAccountNumber(ctx context.Context, accountNumber str
 	}
 
 	if user == nil {
-		logger.EnrichContextMap(ctx, map[string]any{
+		logger.AddMap(ctx, map[string]any{
 			"account_number": accountNumber,
 		})
 		return nil, errorc.Error(errorc.ErrorDataNotFound, "User not found")

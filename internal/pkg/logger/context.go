@@ -18,6 +18,11 @@ const (
 	SpanIDKey    contextKey = "span_id"
 	wideEventKey contextKey = "wide_event"
 	errorCtxKey  contextKey = "error_context"
+
+	// MaxBusinessDataSize limits the number of entries in BusinessData map
+	// to prevent unbounded memory growth in long-running requests.
+	// This can be overridden by setting a custom value before initialization.
+	MaxBusinessDataSize = 100
 )
 
 // WideEvent represents a canonical log line containing all request context.
@@ -25,6 +30,9 @@ const (
 //
 // This structure is stored in context.Context for thread-safe access across
 // goroutines, service layers, and repository layers.
+//
+// Memory Safety: BusinessData map is limited to MaxBusinessDataSize entries
+// to prevent unbounded growth. Additional entries beyond the limit are silently dropped.
 type WideEvent struct {
 	// Immutable fields (set once at initialization)
 	RequestID string
@@ -35,10 +43,11 @@ type WideEvent struct {
 	UserAgent string
 
 	// Mutable fields (protected by mutex for thread safety)
-	mu           sync.RWMutex
-	BusinessData map[string]interface{}
-	User         *UserContext
-	Error        *ErrorContext
+	mu              sync.RWMutex
+	BusinessData    map[string]interface{}
+	User            *UserContext
+	Error           *ErrorContext
+	businessDataLen int // Track size separately for performance
 }
 
 // UserContext contains user-specific information for logging.
@@ -81,52 +90,68 @@ func (w *WideEvent) SetTraceID(traceID string) {
 	w.TraceID = traceID
 }
 
-// Enrich adds business context to the wide event.
+// add adds business context to the wide event.
 // Thread-safe: can be called concurrently from multiple goroutines.
 //
-// Example usage in a handler:
-//
-//	event := logger.GetWideEvent(c.Request().Context())
-//	event.Enrich("order_id", orderID)
-//	event.Enrich("payment_method", "stripe")
-func (w *WideEvent) Enrich(key string, value interface{}) {
+// Memory Safety: If BusinessData exceeds MaxBusinessDataSize, additional
+// entries are silently dropped to prevent unbounded memory growth.
+func (w *WideEvent) add(key string, value interface{}) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+
+	// Check if key already exists (update doesn't count against limit)
+	if _, exists := w.BusinessData[key]; exists {
+		w.BusinessData[key] = value
+		return
+	}
+
+	// Enforce size limit for new entries
+	if w.businessDataLen >= MaxBusinessDataSize {
+		// Silently drop to prevent memory overflow
+		// In production, you might want to log this to metrics
+		return
+	}
+
 	w.BusinessData[key] = value
+	w.businessDataLen++
 }
 
-// EnrichMap adds multiple business context fields from a map.
+// addMap adds multiple business context fields from a map.
 // Thread-safe: can be called concurrently from multiple goroutines.
 //
-// Example usage:
-//
-//	event.EnrichMap(map[string]any{
-//	    "order_id": orderID,
-//	    "payment_method": "stripe",
-//	    "cart_total_cents": 15999,
-//	})
-func (w *WideEvent) EnrichMap(data map[string]any) {
+// Memory Safety: Respects MaxBusinessDataSize limit. New entries beyond
+// the limit are silently dropped.
+func (w *WideEvent) addMap(data map[string]any) {
 	if len(data) == 0 {
 		return
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
+
 	for k, v := range data {
+		// Check if key already exists (update doesn't count against limit)
+		if _, exists := w.BusinessData[k]; exists {
+			w.BusinessData[k] = v
+			continue
+		}
+
+		// Enforce size limit for new entries
+		if w.businessDataLen >= MaxBusinessDataSize {
+			// Stop adding new entries once limit is reached
+			return
+		}
+
 		w.BusinessData[k] = v
+		w.businessDataLen++
 	}
 }
 
-// EnrichMany adds multiple business context fields using variadic key-value pairs.
+// addMany adds multiple business context fields using variadic key-value pairs.
 // Thread-safe: can be called concurrently from multiple goroutines.
 //
-// Example usage:
-//
-//	event.EnrichMany(
-//	    "order_id", orderID,
-//	    "payment_method", "stripe",
-//	    "cart_total_cents", 15999,
-//	)
-func (w *WideEvent) EnrichMany(keyValuePairs ...interface{}) {
+// Memory Safety: Respects MaxBusinessDataSize limit. New entries beyond
+// the limit are silently dropped.
+func (w *WideEvent) addMany(keyValuePairs ...interface{}) {
 	if len(keyValuePairs)%2 != 0 {
 		// Odd number of arguments, ignore the last one
 		keyValuePairs = keyValuePairs[:len(keyValuePairs)-1]
@@ -137,26 +162,40 @@ func (w *WideEvent) EnrichMany(keyValuePairs ...interface{}) {
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
+
 	for i := 0; i < len(keyValuePairs); i += 2 {
 		if key, ok := keyValuePairs[i].(string); ok {
+			// Check if key already exists (update doesn't count against limit)
+			if _, exists := w.BusinessData[key]; exists {
+				w.BusinessData[key] = keyValuePairs[i+1]
+				continue
+			}
+
+			// Enforce size limit for new entries
+			if w.businessDataLen >= MaxBusinessDataSize {
+				// Stop adding new entries once limit is reached
+				return
+			}
+
 			w.BusinessData[key] = keyValuePairs[i+1]
+			w.businessDataLen++
 		}
 	}
 }
 
-// EnrichWith is a flexible enrichment method that accepts various input types:
-// - Single key-value pair: EnrichWith("key", value)
-// - Map: EnrichWith(map[string]any{...})
-// - Multiple pairs: EnrichWith("key1", val1, "key2", val2, ...)
+// Add is a flexible enrichment method that accepts various input types:
+// - Single key-value pair: Add("key", value)
+// - Map: Add(map[string]any{...})
+// - Multiple pairs: Add("key1", val1, "key2", val2, ...)
 //
 // Thread-safe: can be called concurrently from multiple goroutines.
 //
 // Example usage:
 //
-//	event.EnrichWith("order_id", orderID)
-//	event.EnrichWith(map[string]any{"order_id": orderID, "status": "pending"})
-//	event.EnrichWith("key1", val1, "key2", val2)
-func (w *WideEvent) EnrichWith(args ...interface{}) {
+//	event.Add("order_id", orderID)
+//	event.Add(map[string]any{"order_id": orderID, "status": "pending"})
+//	event.Add("key1", val1, "key2", val2)
+func (w *WideEvent) Add(args ...interface{}) {
 	if len(args) == 0 {
 		return
 	}
@@ -164,17 +203,17 @@ func (w *WideEvent) EnrichWith(args ...interface{}) {
 	// Check if first argument is a map
 	if len(args) == 1 {
 		if m, ok := args[0].(map[string]any); ok {
-			w.EnrichMap(m)
+			w.addMap(m)
 			return
 		}
 		if m, ok := args[0].(map[string]interface{}); ok {
-			w.EnrichMap(m)
+			w.addMap(m)
 			return
 		}
 	}
 
 	// Otherwise treat as key-value pairs
-	w.EnrichMany(args...)
+	w.addMany(args...)
 }
 
 // SetUser sets user context on the wide event.
@@ -193,14 +232,23 @@ func (w *WideEvent) SetError(errCtx *ErrorContext) {
 	w.Error = errCtx
 }
 
-// GetBusinessData returns a copy of the business data map.
+// GetBusinessData returns a shallow copy of the business data map.
 // Thread-safe: safe to call concurrently.
+//
+// Performance Note: This creates a copy to prevent external modifications.
+// The copy is shallow - nested objects are not deep-copied.
 func (w *WideEvent) GetBusinessData() map[string]interface{} {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 
-	// Return a copy to prevent external modifications
-	data := make(map[string]interface{}, len(w.BusinessData))
+	// Return empty map if no data (avoid allocation)
+	if w.businessDataLen == 0 {
+		return make(map[string]interface{})
+	}
+
+	// Return a shallow copy to prevent external modifications
+	// Use businessDataLen for accurate capacity
+	data := make(map[string]interface{}, w.businessDataLen)
 	for k, v := range w.BusinessData {
 		data[k] = v
 	}
@@ -237,7 +285,7 @@ func WithWideEvent(ctx context.Context, event *WideEvent) context.Context {
 // Returns nil if no wide event is found.
 //
 // Thread-safe: The returned WideEvent has internal mutex protection,
-// so it's safe to call Enrich/SetUser/SetError from multiple goroutines.
+// so it's safe to call Add/SetUser/SetError from multiple goroutines.
 func GetWideEvent(ctx context.Context) *WideEvent {
 	if ctx == nil {
 		return nil
@@ -248,77 +296,48 @@ func GetWideEvent(ctx context.Context) *WideEvent {
 	return nil
 }
 
-// EnrichContext is a convenience function to enrich the wide event from context.
-// This is the recommended way to add business data in service/repository layers.
-//
-// Example usage in a service:
-//
-//	logger.EnrichContext(ctx, "user_subscription", "premium")
-//	logger.EnrichContext(ctx, "cart_total_cents", 15999)
-func EnrichContext(ctx context.Context, key string, value interface{}) {
-	if event := GetWideEvent(ctx); event != nil {
-		event.Enrich(key, value)
-	}
-}
-
-// EnrichContextMap adds multiple fields to the wide event from a map.
-// Thread-safe: can be called from any layer, even concurrently.
-//
-// Example usage:
-//
-//	logger.EnrichContextMap(ctx, map[string]any{
-//	    "order_id": orderID,
-//	    "payment_method": "stripe",
-//	    "cart_total_cents": 15999,
-//	    "items_count": len(items),
-//	})
-func EnrichContextMap(ctx context.Context, data map[string]any) {
-	if event := GetWideEvent(ctx); event != nil {
-		event.EnrichMap(data)
-	}
-}
-
-// EnrichContextMany adds multiple fields using variadic key-value pairs.
-// Thread-safe: can be called from any layer, even concurrently.
-//
-// Example usage:
-//
-//	logger.EnrichContextMany(ctx,
-//	    "order_id", orderID,
-//	    "payment_method", "stripe",
-//	    "cart_total_cents", 15999,
-//	)
-func EnrichContextMany(ctx context.Context, keyValuePairs ...interface{}) {
-	if event := GetWideEvent(ctx); event != nil {
-		event.EnrichMany(keyValuePairs...)
-	}
-}
-
-// EnrichContextWith is the most flexible enrichment function.
+// Add is the unified function to add business data to the wide event.
 // Accepts various input types for maximum convenience:
-// - Single key-value: EnrichContextWith(ctx, "key", value)
-// - Map: EnrichContextWith(ctx, map[string]any{...})
-// - Multiple pairs: EnrichContextWith(ctx, "key1", val1, "key2", val2, ...)
+// - Single key-value: Add(ctx, "key", value)
+// - Map: Add(ctx, map[string]any{...})
+// - Multiple pairs: Add(ctx, "key1", val1, "key2", val2, ...)
 //
 // Thread-safe: can be called from any layer, even concurrently.
 //
 // Example usage:
 //
 //	// Single key-value
-//	logger.EnrichContextWith(ctx, "order_id", orderID)
+//	logger.Add(ctx, "order_id", orderID)
 //
 //	// Map (super convenient!)
-//	logger.EnrichContextWith(ctx, map[string]any{
+//	logger.Add(ctx, map[string]any{
 //	    "order_id": orderID,
 //	    "status": "pending",
 //	    "total": 15999,
 //	})
 //
 //	// Multiple pairs
-//	logger.EnrichContextWith(ctx, "key1", val1, "key2", val2)
-func EnrichContextWith(ctx context.Context, args ...interface{}) {
+//	logger.Add(ctx, "key1", val1, "key2", val2)
+func Add(ctx context.Context, args ...interface{}) {
 	if event := GetWideEvent(ctx); event != nil {
-		event.EnrichWith(args...)
+		event.Add(args...)
+	}
+}
+
+// AddMap adds multiple fields to the wide event from a map.
+// Thread-safe: can be called from any layer, even concurrently.
+//
+// Example usage:
+//
+//	logger.AddMap(ctx, map[string]any{
+//	    "order_id": orderID,
+//	    "payment_method": "stripe",
+//	    "cart_total_cents": 15999,
+//	    "items_count": len(items),
+//	})
+func AddMap(ctx context.Context, data map[string]any) {
+	if event := GetWideEvent(ctx); event != nil {
+		event.addMap(data)
 	}
 }
 
@@ -326,60 +345,23 @@ func EnrichContextWith(ctx context.Context, args ...interface{}) {
 // Safe Enrichment (Auto-Masking Sensitive Data)
 // ============================================================================
 
-// EnrichContextSafe enriches context with automatic masking of sensitive fields.
+// AddSafe enriches context with automatic masking of sensitive fields.
+// Accepts various input types just like Add.
 // Use this when logging data that might contain credentials, tokens, or passwords.
 //
 // Thread-safe: can be called from any layer, even concurrently.
 //
 // Example usage:
 //
-//	// Automatically masks password, api_key, etc.
-//	logger.EnrichContextSafe(ctx, "user_data", map[string]any{
-//	    "username": "john",
-//	    "password": "secret123",  // Will be masked
-//	    "email": "john@example.com",
-//	})
-func EnrichContextSafe(ctx context.Context, key string, value interface{}) {
-	masked := MaskSensitiveData(value)
-	EnrichContext(ctx, key, masked)
-}
-
-// EnrichContextMapSafe enriches context with a map, automatically masking sensitive fields.
-// This is the recommended way to log request/response data that might contain credentials.
-//
-// Thread-safe: can be called from any layer, even concurrently.
-//
-// Example usage:
-//
-//	logger.EnrichContextMapSafe(ctx, map[string]any{
-//	    "username": "john",
-//	    "password": "secret123",      // Will be masked
-//	    "api_key": "sk_live_123",     // Will be masked
-//	    "email": "john@example.com",  // Not masked
-//	})
-func EnrichContextMapSafe(ctx context.Context, data map[string]any) {
-	masked := MaskSensitiveData(data)
-	if maskedMap, ok := masked.(map[string]interface{}); ok {
-		EnrichContextMap(ctx, maskedMap)
-	}
-}
-
-// EnrichContextWithSafe is the flexible safe enrichment function.
-// Automatically masks sensitive fields before enriching.
-//
-// Thread-safe: can be called from any layer, even concurrently.
-//
-// Example usage:
-//
 //	// Map with auto-masking
-//	logger.EnrichContextWithSafe(ctx, map[string]any{
+//	logger.AddSafe(ctx, map[string]any{
 //	    "username": "john",
 //	    "password": "secret",  // Masked
 //	})
 //
 //	// Key-value with auto-masking
-//	logger.EnrichContextWithSafe(ctx, "credentials", credentialsObj)
-func EnrichContextWithSafe(ctx context.Context, args ...interface{}) {
+//	logger.AddSafe(ctx, "credentials", credentialsObj)
+func AddSafe(ctx context.Context, args ...interface{}) {
 	if len(args) == 0 {
 		return
 	}
@@ -387,11 +369,11 @@ func EnrichContextWithSafe(ctx context.Context, args ...interface{}) {
 	// Check if first argument is a map
 	if len(args) == 1 {
 		if m, ok := args[0].(map[string]any); ok {
-			EnrichContextMapSafe(ctx, m)
+			AddMapSafe(ctx, m)
 			return
 		}
 		if m, ok := args[0].(map[string]interface{}); ok {
-			EnrichContextMapSafe(ctx, m)
+			AddMapSafe(ctx, m)
 			return
 		}
 	}
@@ -400,23 +382,45 @@ func EnrichContextWithSafe(ctx context.Context, args ...interface{}) {
 	if len(args)%2 == 0 {
 		for i := 0; i < len(args); i += 2 {
 			if key, ok := args[i].(string); ok {
-				EnrichContextSafe(ctx, key, args[i+1])
+				// Mask the value and Add it (calling Add with k,v pair)
+				masked := MaskSensitiveData(args[i+1])
+				Add(ctx, key, masked)
 			}
 		}
 	}
 }
 
-// EnrichContextHeaders enriches context with HTTP headers, automatically masking sensitive ones.
+// AddMapSafe enriches context with a map, automatically masking sensitive fields.
+// This is the recommended way to log request/response data that might contain credentials.
+//
+// Thread-safe: can be called from any layer, even concurrently.
+//
+// Example usage:
+//
+//	logger.AddMapSafe(ctx, map[string]any{
+//	    "username": "john",
+//	    "password": "secret123",      // Will be masked
+//	    "api_key": "sk_live_123",     // Will be masked
+//	    "email": "john@example.com",  // Not masked
+//	})
+func AddMapSafe(ctx context.Context, data map[string]any) {
+	masked := MaskSensitiveData(data)
+	if maskedMap, ok := masked.(map[string]interface{}); ok {
+		AddMap(ctx, maskedMap)
+	}
+}
+
+// AddHeaders enriches context with HTTP headers, automatically masking sensitive ones.
 // Use this to log request/response headers safely.
 //
 // Thread-safe: can be called from any layer.
 //
 // Example usage:
 //
-//	logger.EnrichContextHeaders(ctx, "request_headers", c.Request().Header)
-func EnrichContextHeaders(ctx context.Context, key string, headers map[string]string) {
+//	logger.AddHeaders(ctx, "request_headers", c.Request().Header)
+func AddHeaders(ctx context.Context, key string, headers map[string]string) {
 	masked := MaskHeaders(headers)
-	EnrichContext(ctx, key, masked)
+	Add(ctx, key, masked)
 }
 
 // SetUserContext sets user information in the wide event from context.
@@ -427,27 +431,27 @@ func SetUserContext(ctx context.Context, user *UserContext) {
 	}
 }
 
-// SetErrorContext stores error context in the wide event.
+// AddError stores error context in the wide event.
 // This should be called from service/repository layers when errors occur.
 // The middleware will pick this up and include it in the canonical log line.
 //
 // Example usage:
 //
-//	logger.SetErrorContext(ctx, &logger.ErrorContext{
+//	logger.AddError(ctx, &logger.ErrorContext{
 //	    Type:      "DatabaseError",
 //	    Code:      "QUERY_FAILED",
 //	    Message:   err.Error(),
 //	    Retriable: true,
 //	})
-func SetErrorContext(ctx context.Context, errCtx *ErrorContext) {
+func AddError(ctx context.Context, errCtx *ErrorContext) {
 	if event := GetWideEvent(ctx); event != nil {
 		event.SetError(errCtx)
 	}
 }
 
-// GetErrorContext retrieves error context from the wide event.
+// GetError retrieves error context from the wide event.
 // Returns nil if no error context is set.
-func GetErrorContext(ctx context.Context) *ErrorContext {
+func GetError(ctx context.Context) *ErrorContext {
 	if event := GetWideEvent(ctx); event != nil {
 		return event.GetError()
 	}
