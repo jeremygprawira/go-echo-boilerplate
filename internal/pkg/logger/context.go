@@ -341,6 +341,89 @@ func AddMap(ctx context.Context, data map[string]any) {
 	}
 }
 
+// getOrCreateGroup returns the map[string]interface{} stored at groupKey,
+// creating it (and consuming one BusinessData slot) if it does not yet exist.
+// If a non-map value is already stored at groupKey it is replaced with a new map.
+//
+// MUST be called with w.mu held.
+// Returns nil if MaxBusinessDataSize has been reached and no slot is available.
+func (w *WideEvent) getOrCreateGroup(groupKey string) map[string]interface{} {
+	existing, exists := w.BusinessData[groupKey]
+	if !exists {
+		if w.businessDataLen >= MaxBusinessDataSize {
+			return nil
+		}
+		group := make(map[string]interface{})
+		w.BusinessData[groupKey] = group
+		w.businessDataLen++
+		return group
+	}
+
+	if group, ok := existing.(map[string]interface{}); ok {
+		return group
+	}
+
+	// Existing value is a scalar — replace it with a proper group.
+	// The slot was already counted, so businessDataLen stays the same.
+	group := make(map[string]interface{})
+	w.BusinessData[groupKey] = group
+	return group
+}
+
+// AddToKey merges one or more fields into a named group within BusinessData.
+//
+// The group is created lazily on the first call (consuming exactly one slot).
+// Every subsequent call to the same groupKey reuses that slot at zero cost.
+//
+// Accepts the same argument forms as Add:
+//   - Single k/v pair:   AddToKey("event", "code", eventCode)
+//   - Map:               AddToKey("event", map[string]any{"code": ..., "slug": ...})
+//   - Multiple k/v:      AddToKey("event", "code", eventCode, "slug", slug)
+//
+// The mutex is acquired exactly once per call regardless of how many fields
+// are written, making this more efficient than multiple individual Add calls.
+//
+// Thread-safe: can be called concurrently from multiple goroutines.
+func (w *WideEvent) AddToKey(groupKey string, args ...interface{}) {
+	if len(args) == 0 {
+		return
+	}
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	group := w.getOrCreateGroup(groupKey)
+	if group == nil {
+		return // MaxBusinessDataSize reached
+	}
+
+	// Single map argument — bulk-merge all fields.
+	if len(args) == 1 {
+		if m, ok := args[0].(map[string]any); ok {
+			for k, v := range m {
+				group[k] = v
+			}
+			return
+		}
+		if m, ok := args[0].(map[string]interface{}); ok {
+			for k, v := range m {
+				group[k] = v
+			}
+			return
+		}
+	}
+
+	// Variadic key-value pairs.
+	if len(args)%2 != 0 {
+		args = args[:len(args)-1] // drop trailing unpaired arg
+	}
+	for i := 0; i < len(args); i += 2 {
+		if fieldKey, ok := args[i].(string); ok {
+			group[fieldKey] = args[i+1]
+		}
+	}
+}
+
 // ============================================================================
 // Safe Enrichment (Auto-Masking Sensitive Data)
 // ============================================================================
