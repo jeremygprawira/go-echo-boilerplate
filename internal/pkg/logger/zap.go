@@ -82,9 +82,12 @@ func Initialize(configuration *config.Configuration) {
 	// Build logger with options
 	Log = zap.New(
 		core,
-		zap.AddCaller(),                       // Include caller information
-		zap.AddStacktrace(zapcore.ErrorLevel), // Stack traces for errors and above
-		zap.AddCallerSkip(0),                  // No skip for accurate caller info
+		zap.AddCaller(),      // Include caller information
+		zap.AddCallerSkip(1), // Skip ZapLogger wrapper → points to true call site
+		// zap.AddStacktrace is intentionally disabled: it captures the stack at
+		// log-emit time (inside emitWideEvent), not at the error/panic origin.
+		// The real panic stack is captured in ErrorContext.Stack via debug.Stack()
+		// inside the recover() block and emitted in the wide event under error.stack.
 	)
 
 	// Replace global zap logger (for libraries using zap.L())

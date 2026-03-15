@@ -4,6 +4,9 @@ package logger
 
 import (
 	"context"
+	"fmt"
+	"runtime"
+	"strings"
 	"sync"
 )
 
@@ -424,6 +427,73 @@ func (w *WideEvent) AddToKey(groupKey string, args ...interface{}) {
 	}
 }
 
+// AddProcess appends a process step to a named array within the wide event.
+// This is useful for tracking a sequence of operations sequentially.
+//
+// Thread-safe: can be called from any layer, even concurrently.
+//
+// IMPORTANT:
+// You cannot use AddProcess() and Add() in the same key.
+// Example:
+//
+//	logger.AddProcess(ctx, "db_operation", "event.update_partial")
+//	logger.Add(ctx, "db_operation", "event.get_by_code")
+//
+// This will result in:
+//
+//	"db_operation": "event.get_by_code"
+//
+// Instead of:
+//
+//	"db_operation": ["event.update_partial", "event.get_by_code"]
+//
+// Example usage:
+//
+//	logger.AddProcess(ctx, "db_operation", "event.update_partial")
+//	logger.AddProcess(ctx, "db_operation", "event.get_by_code")
+//
+// This results in:
+//
+//	"db_operation": ["event.update_partial", "event.get_by_code"]
+func AddProcess(ctx context.Context, processName string, step string) {
+	if event := GetWideEvent(ctx); event != nil {
+		event.appendToArray(processName, step)
+	}
+}
+
+// appendToArray appends a string value to a string slice stored at the given key.
+// If the key does not exist, it creates a new slice and consumes a BusinessData slot.
+// If the key exists but is not a string slice, it replaces it.
+//
+// Thread-safe: can be called concurrently from multiple goroutines.
+func (w *WideEvent) appendToArray(key string, value string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	existing, exists := w.BusinessData[key]
+	if !exists {
+		if w.businessDataLen >= MaxBusinessDataSize {
+			return
+		}
+		w.BusinessData[key] = []string{value}
+		w.businessDataLen++
+		return
+	}
+
+	if arr, ok := existing.([]string); ok {
+		// Cap the array growth to prevent unbounded memory usage
+		if len(arr) >= MaxBusinessDataSize*10 {
+			return // Ignore further appends to prevent memory leak
+		}
+		w.BusinessData[key] = append(arr, value)
+		return
+	}
+
+	// Existing value is not a string slice — replace it.
+	// The slot was already counted, so businessDataLen stays the same.
+	w.BusinessData[key] = []string{value}
+}
+
 // ============================================================================
 // Safe Enrichment (Auto-Masking Sensitive Data)
 // ============================================================================
@@ -514,9 +584,39 @@ func SetUserContext(ctx context.Context, user *UserContext) {
 	}
 }
 
+// captureStack returns a condensed, human-readable call stack string.
+// It skips internal logger frames so the first line shown is the actual
+// caller of AddError (e.g. your usecase or repository).
+// depth controls how many frames to capture (excluding logger internals).
+func captureStack(skip, depth int) string {
+	pcs := make([]uintptr, depth)
+	// skip: runtime.Callers itself + captureStack + AddError + SetError
+	n := runtime.Callers(skip, pcs)
+	if n == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	frames := runtime.CallersFrames(pcs[:n])
+	for {
+		f, more := frames.Next()
+		// Skip runtime internals and logger package itself
+		if !strings.Contains(f.Function, "runtime.") &&
+			!strings.Contains(f.Function, "go-community/internal/pkg/logger") {
+			fmt.Fprintf(&sb, "%s\n\t%s:%d\n", f.Function, f.File, f.Line)
+		}
+		if !more {
+			break
+		}
+	}
+	return sb.String()
+}
+
 // AddError stores error context in the wide event.
 // This should be called from service/repository layers when errors occur.
 // The middleware will pick this up and include it in the canonical log line.
+// If ErrorContext.Stack is empty, a call stack is automatically captured at
+// this call site — pointing back to your usecase or repository.
 //
 // Example usage:
 //
@@ -527,6 +627,12 @@ func SetUserContext(ctx context.Context, user *UserContext) {
 //	    Retriable: true,
 //	})
 func AddError(ctx context.Context, errCtx *ErrorContext) {
+	if errCtx != nil && errCtx.Stack == "" {
+		// Frame chain: runtime.Callers(1) → captureStack(2) → AddError(3) → caller(4+).
+		// skip=4 lands us at the usecase/repository that called AddError.
+		// Capture up to 20 frames so we see the full usecase → handler chain.
+		errCtx.Stack = captureStack(4, 20)
+	}
 	if event := GetWideEvent(ctx); event != nil {
 		event.SetError(errCtx)
 	}
