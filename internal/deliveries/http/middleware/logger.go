@@ -10,12 +10,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"go-echo-boilerplate/internal/pkg/logger"
 	"io"
 	"net/http"
 	"os"
 	"reflect"
 	"runtime"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -151,13 +153,21 @@ func (m *Middleware) LoggingMiddleware(log logger.Logger) echo.MiddlewareFunc {
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						// Capture panic details
+						// Capture the real panic stack HERE — this is the only
+						// moment where the original goroutine frames are still alive.
+						// Do NOT re-panic: re-panicking unwinds past emitWideEvent,
+						// so the canonical log line would never be emitted.
+						panicStack := string(debug.Stack())
 						logger.AddError(ctx, &logger.ErrorContext{
 							Type:      "PanicError",
-							Message:   "Request handler panicked",
+							Message:   fmt.Sprintf("panic: %v", r),
 							Retriable: false,
+							Stack:     panicStack,
 						})
-						panic(r) // Re-panic to let recovery middleware handle it
+						// Convert panic to a 500 error so the normal post-handler
+						// path (emitWideEvent) runs and emits the wide event.
+						err = echo.ErrInternalServerError
+						ectx.Error(err)
 					}
 				}()
 
