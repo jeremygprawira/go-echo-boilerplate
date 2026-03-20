@@ -327,6 +327,57 @@ func Add(ctx context.Context, args ...interface{}) {
 	}
 }
 
+// AddToKey merges one or more fields into a named group within the wide event.
+//
+// The group is created automatically on the first call (consuming 1 slot).
+// Every subsequent call to the same groupKey merges into the existing group
+// at zero additional slot cost, regardless of how many fields are written.
+//
+// Accepts the same argument forms as Add, but scoped to a named group:
+//   - Single k/v:   AddToKey(ctx, "event", "code", eventCode)
+//   - Multiple k/v: AddToKey(ctx, "event", "code", eventCode, "slug", slug)
+//   - Map:          AddToKey(ctx, "form", map[string]any{"code": ..., "count": 3})
+//
+// The mutex is acquired exactly once per call regardless of how many fields
+// are written — more efficient than multiple individual Add calls.
+//
+// Thread-safe: can be called from any layer, even concurrently.
+//
+// Example usage:
+//
+//	// Seed the group the moment the values are known
+//	logger.AddToKey(ctx, "event", "code", eventCode)
+//	logger.AddToKey(ctx, "event", "slug", slug)
+//
+//	// Enrich later from inside a transaction closure
+//	logger.AddToKey(ctx, "event", "id", event.ID)
+//
+//	// Bulk-merge a form group in one call
+//	logger.AddToKey(ctx, "form", map[string]any{
+//	    "code":             formResp.Code,
+//	    "questions_created": len(formResp.Questions),
+//	})
+func AddToKey(ctx context.Context, groupKey string, args ...interface{}) {
+	if event := GetWideEvent(ctx); event != nil {
+		event.addToKey(groupKey, args...)
+	}
+}
+
+// AddTo adds a single field to a named group within the wide event.
+//
+// Deprecated: Use AddToKey which accepts the same variadic args as Add
+// and handles both single fields and maps uniformly.
+func AddTo(ctx context.Context, groupKey, fieldKey string, value interface{}) {
+	AddToKey(ctx, groupKey, fieldKey, value)
+}
+
+// MergeTo bulk-merges multiple fields into a named group within the wide event.
+//
+// Deprecated: Use AddToKey(ctx, groupKey, map[string]any{...}) instead.
+func MergeTo(ctx context.Context, groupKey string, fields map[string]any) {
+	AddToKey(ctx, groupKey, fields)
+}
+
 // AddMap adds multiple fields to the wide event from a map.
 // Thread-safe: can be called from any layer, even concurrently.
 //
@@ -373,21 +424,21 @@ func (w *WideEvent) getOrCreateGroup(groupKey string) map[string]interface{} {
 	return group
 }
 
-// AddToKey merges one or more fields into a named group within BusinessData.
+// addToKey merges one or more fields into a named group within BusinessData.
 //
 // The group is created lazily on the first call (consuming exactly one slot).
 // Every subsequent call to the same groupKey reuses that slot at zero cost.
 //
 // Accepts the same argument forms as Add:
-//   - Single k/v pair:   AddToKey("event", "code", eventCode)
-//   - Map:               AddToKey("event", map[string]any{"code": ..., "slug": ...})
-//   - Multiple k/v:      AddToKey("event", "code", eventCode, "slug", slug)
+//   - Single k/v pair:   addToKey("event", "code", eventCode)
+//   - Map:               addToKey("event", map[string]any{"code": ..., "slug": ...})
+//   - Multiple k/v:      addToKey("event", "code", eventCode, "slug", slug)
 //
 // The mutex is acquired exactly once per call regardless of how many fields
 // are written, making this more efficient than multiple individual Add calls.
 //
 // Thread-safe: can be called concurrently from multiple goroutines.
-func (w *WideEvent) AddToKey(groupKey string, args ...interface{}) {
+func (w *WideEvent) addToKey(groupKey string, args ...interface{}) {
 	if len(args) == 0 {
 		return
 	}

@@ -57,3 +57,7 @@ security-report.json
 tmp/
 build-errors.log
 server.log
+
+# MCP
+.serena/cache/
+.serena/*.local.yml

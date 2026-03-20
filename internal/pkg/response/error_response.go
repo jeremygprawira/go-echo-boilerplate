@@ -1,10 +1,13 @@
 package response
 
 import (
+	"errors"
 	"fmt"
 	"go-echo-boilerplate/internal/models"
 	"go-echo-boilerplate/internal/pkg/errorc"
+	"go-echo-boilerplate/internal/pkg/logger"
 	"go-echo-boilerplate/internal/pkg/stringc"
+	"net/http"
 	"time"
 
 	"github.com/google/uuid"
@@ -39,6 +42,48 @@ func Error(ctx echo.Context, err error, message ...string) error {
 			Code:    errorcResponse.Code,
 			Status:  errorcResponse.Status,
 			Message: finalMessage,
+		}
+
+		// Log the error securely
+		var httpErr *errorc.HTTPError
+		var echoErr *echo.HTTPError
+
+		if errors.As(err, &httpErr) {
+			// It's a structured error
+			errType := "AppError"
+			var errDetails any
+
+			if httpErr.Internal() != nil {
+				errDetails = httpErr.Internal().Error()
+			}
+
+			if errorcResponse.Code == http.StatusInternalServerError {
+				errType = "InternalError"
+			}
+
+			logger.AddError(ctx.Request().Context(), &logger.ErrorContext{
+				Type:    errType,
+				Message: httpErr.Error(), // Always log the public/predefined message
+				Details: errDetails,      // Log the actual internal error here if it exists
+			})
+		} else if errors.As(err, &echoErr) {
+			// Echo framework error (e.g., binding failure)
+			var errDetails any
+			if echoErr.Internal != nil {
+				errDetails = echoErr.Internal.Error()
+			}
+
+			logger.AddError(ctx.Request().Context(), &logger.ErrorContext{
+				Type:    "FrameworkError",
+				Message: fmt.Sprintf("%v", echoErr.Message),
+				Details: errDetails,
+			})
+		} else {
+			// It's a raw, unknown error
+			logger.AddError(ctx.Request().Context(), &logger.ErrorContext{
+				Type:    "RawError",
+				Message: err.Error(),
+			})
 		}
 	}
 

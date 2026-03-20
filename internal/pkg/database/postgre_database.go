@@ -7,21 +7,32 @@ import (
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 func ConnectToPostgreSQL(config *config.Configuration) (*gorm.DB, error) {
-	connection := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d sslmode=%s timezone=Asia/Jakarta",
+	connection := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d sslmode=%s timezone=%s",
 		config.PostgreSQL.Host,
 		config.PostgreSQL.User,
 		config.PostgreSQL.Password,
 		config.PostgreSQL.Name,
 		config.PostgreSQL.Port,
-		config.PostgreSQL.SSLMode)
+		config.PostgreSQL.SSLMode,
+		config.Application.Timezone)
+
+	// Silence GORM's built-in logger in production to avoid raw SQL leaking into
+	// logs. In any other environment (local, staging) use Info level so developers
+	// retain full query visibility.
+	gormLogLevel := logger.Info
+	if config.Application.Environment == "production" {
+		gormLogLevel = logger.Silent
+	}
 
 	db, err := gorm.Open(postgres.New(postgres.Config{
 		DSN:                  connection,
 		PreferSimpleProtocol: true, // disables implicit prepared statement usage
 	}), &gorm.Config{
+		Logger: logger.Default.LogMode(gormLogLevel),
 		NowFunc: func() time.Time {
 			loc, err := time.LoadLocation(config.Application.Timezone)
 			if err != nil {
