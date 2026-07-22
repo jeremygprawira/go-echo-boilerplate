@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func strPtr(s string) *string {
@@ -87,4 +88,42 @@ func TestJWTClaims(t *testing.T) {
 		assert.NotNil(t, claims.IssuedAt)
 		assert.NotNil(t, claims.NotBefore)
 	})
+}
+
+func TestAccessToken_DistinctSecrets(t *testing.T) {
+	config := &jwtc.Configuration{
+		AccessTokenSecret:    "access-secret-aaaaaaaaaaaaaaaaaaaa",
+		RefreshTokenSecret:   "refresh-secret-bbbbbbbbbbbbbbbbbbbb",
+		AccessTokenDuration:  15 * time.Minute,
+		RefreshTokenDuration: 7 * 24 * time.Hour,
+		Issuer:               "test-issuer",
+	}
+	user := &models.User{ID: 1, AccountNumber: "1234567890"}
+
+	token, err := generator.AccessToken(user, config)
+	require.NoError(t, err)
+
+	claims, err := validator.AccessToken(token.Token, config)
+	require.NoError(t, err)
+	require.Equal(t, 1, claims.UserID)
+	require.Equal(t, "access", claims.TokenType)
+}
+
+func TestRefreshToken_DistinctSecrets(t *testing.T) {
+	config := &jwtc.Configuration{
+		AccessTokenSecret:    "access-secret-aaaaaaaaaaaaaaaaaaaa",
+		RefreshTokenSecret:   "refresh-secret-bbbbbbbbbbbbbbbbbbbb",
+		AccessTokenDuration:  15 * time.Minute,
+		RefreshTokenDuration: 7 * 24 * time.Hour,
+		Issuer:               "test-issuer",
+	}
+	user := &models.User{ID: 2, AccountNumber: "0987654321"}
+
+	token, err := generator.RefreshToken(user, config)
+	require.NoError(t, err)
+
+	claims, err := validator.RefreshToken(token.Token, config)
+	require.NoError(t, err)
+	require.Equal(t, 2, claims.UserID)
+	require.Equal(t, "refresh", claims.TokenType)
 }

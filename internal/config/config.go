@@ -27,5 +27,9 @@ func Initialize(ctx context.Context) (*Configuration, error) {
 		return nil, err
 	}
 
+	if err := configuration.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %w", err)
+	}
+
 	return &configuration, nil
 }

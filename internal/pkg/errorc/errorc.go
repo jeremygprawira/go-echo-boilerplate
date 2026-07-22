@@ -5,60 +5,98 @@ import (
 	"errors"
 	"fmt"
 	"go-echo-boilerplate/internal/models"
+	"go-echo-boilerplate/internal/pkg/stringc"
 	"net/http"
+
+	"github.com/labstack/echo/v4"
 )
+
+// httpStatusToCode converts an HTTP status code into a normalized status string.
+// e.g. 404 → "NOT_FOUND", 500 → "INTERNAL_SERVER_ERROR".
+// This is the single source of truth for status formatting used across the package.
+func httpStatusToCode(code int) string {
+	return stringc.TrimAndUpperCase(stringc.SnakeCase(http.StatusText(code)))
+}
 
 // ==== HTTPError Wrapper ====
 type HTTPError struct {
 	Response models.ErrorResponse
-	Err      error
+	Err      error // The raw, unsafe internal error
 }
 
+// Error strictly returns the SAFE public message. It acts as the firewall.
 func (e *HTTPError) Error() string {
-	if e.Err != nil {
-		return e.Err.Error()
-	}
 	return e.Response.Message
+}
+
+// Internal returns the raw, unsafe internal error for logging purposes.
+func (e *HTTPError) Internal() error {
+	return e.Err
 }
 
 // ==== Main Constructor ====
 
 // Error wraps an error into an HTTPError.
-//   - If `err` is a predefined models.ErrorResponse, it uses its values.
-//   - If `err` is a regular error, it creates a default 500 Internal Server Error response.
-//   - `message` is optional; if provided, it overrides the default response message.
-//     You can pass a string or a formatted string with args (like fmt.Sprintf).
-func Error(err error, message ...any) *HTTPError {
+// It accepts options to customize the behavior.
+//
+// Examples:
+//  1. errorc.Error(errorc.ErrorDatabase, err) // Wrap an unsafe error with a safe public error
+//  2. errorc.Error(errorc.ErrorDatabase, "Custom message") // Override public message
+//  3. errorc.Error(errorc.ErrorDatabase, err, "Custom message %s", id) // Wrap unsafe AND override message
+func Error(err error, args ...any) *HTTPError {
 	var resp models.ErrorResponse
 	var internalErr = err
 
 	// Case 1: predefined models.ErrorResponse
+	// models.ErrorResponse does not implement the error interface, so we must box
+	// through any to perform the type assertion from the error parameter.
 	if predefined, ok := any(err).(models.ErrorResponse); ok {
 		resp = predefined
-	} else if httpErr, ok := err.(*HTTPError); ok {
-		// Case 1.5: already an HTTPError, use its response
-		resp = httpErr.Response
-		internalErr = httpErr.Err
+		internalErr = nil // Will be overridden if an error is also passed in args
+	} else if predefinedPtr, ok := any(err).(*HTTPError); ok {
+		// Case 1.5: already an HTTPError
+		resp = predefinedPtr.Response
+		internalErr = predefinedPtr.Err
+	} else if echoErr, ok := err.(*echo.HTTPError); ok {
+		// Case 2: echo.HTTPError
+		resp = models.ErrorResponse{
+			Code:    echoErr.Code,
+			Status:  httpStatusToCode(echoErr.Code),
+			Message: fmt.Sprintf("%v", echoErr.Message),
+		}
+		if echoErr.Internal != nil {
+			internalErr = echoErr.Internal
+		}
 	} else {
-		// Case 2: standard error
+		// Case 3: standard error (unsafe fallback)
 		resp = models.ErrorResponse{
 			Code:    http.StatusInternalServerError,
 			Status:  "INTERNAL_SERVER_ERROR",
-			Message: err.Error(),
+			Message: "Unknown server error occurred.",
 		}
 	}
 
-	// Case 3: custom override or format
-	if len(message) > 0 {
-		switch msg := message[0].(type) {
+	// Process variadic args
+	var messageArgs []any
+	for _, arg := range args {
+		if e, ok := arg.(error); ok {
+			internalErr = e // Found an unsafe internal error to attach
+		} else {
+			messageArgs = append(messageArgs, arg) // Found string/formatting args
+		}
+	}
+
+	// Override message if formatting args were provided
+	if len(messageArgs) > 0 {
+		switch msg := messageArgs[0].(type) {
 		case string:
-			if len(message) == 1 {
+			if len(messageArgs) == 1 {
 				resp.Message = msg
 			} else {
-				resp.Message = fmt.Sprintf(msg, message[1:]...)
+				resp.Message = fmt.Sprintf(msg, messageArgs[1:]...)
 			}
 		default:
-			resp.Message = fmt.Sprint(message...)
+			resp.Message = fmt.Sprint(messageArgs...)
 		}
 	}
 
@@ -78,9 +116,18 @@ func GetResponse(err error) models.ErrorResponse {
 		return httpErr.Response
 	}
 
+	var echoErr *echo.HTTPError
+	if errors.As(err, &echoErr) {
+		return models.ErrorResponse{
+			Code:    echoErr.Code,
+			Status:  httpStatusToCode(echoErr.Code),
+			Message: fmt.Sprintf("%v", echoErr.Message),
+		}
+	}
+
 	return models.ErrorResponse{
 		Code:    http.StatusInternalServerError,
 		Status:  "INTERNAL_SERVER_ERROR",
-		Message: err.Error(),
+		Message: "Unknown server error occurred.",
 	}
 }

@@ -108,9 +108,11 @@ graph LR
     This installs `air`, `golangci-lint`, `swag`, `goose`, and `gosec`.
 
 3.  **Setup Configuration:**
-    Ensure you have the necessary config files in `config/`:
-    - `config.local.yaml` (for local runs)
-    - `config.dev.yaml` (for Docker/dev runs)
+    `config/config.dev.yaml`, `config.uat.yaml`, and `config.prod.yaml` are gitignored and not shipped in the repo — copy `config/config.local.example.yaml` to the file matching your target environment and fill in real values:
+
+    ```bash
+    cp config/config.local.example.yaml config/config.dev.yaml
+    ```
 
 4.  **Start Infrastructure:**
 

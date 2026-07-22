@@ -6,14 +6,28 @@ import (
 	"go-echo-boilerplate/internal/models"
 	"go-echo-boilerplate/internal/pkg/errorc"
 	"go-echo-boilerplate/internal/pkg/generator"
+	"go-echo-boilerplate/internal/pkg/jwtc"
 	"go-echo-boilerplate/internal/repository"
 	"go-echo-boilerplate/internal/repository/pgsql"
 	"go-echo-boilerplate/internal/service"
+	"net/http"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
+
+func testJWTConfig() *jwtc.Configuration {
+	return &jwtc.Configuration{
+		AccessTokenSecret:    "access-secret-aaaaaaaaaaaaaaaaaaaa",
+		RefreshTokenSecret:   "refresh-secret-bbbbbbbbbbbbbbbbbbbb",
+		AccessTokenDuration:  15 * time.Minute,
+		RefreshTokenDuration: 7 * 24 * time.Hour,
+		Issuer:               "test-issuer",
+	}
+}
 
 func strPtr(s string) *string {
 	return &s
@@ -230,7 +244,7 @@ func TestUserService_GetTokens(t *testing.T) {
 					User: mockRepo,
 				},
 			},
-			// JWTConfig is nil, rely on generator defaults
+			JWTConfig: testJWTConfig(),
 		}
 
 		svc := service.NewUserService(&deps)
@@ -251,6 +265,10 @@ func TestUserService_GetTokens(t *testing.T) {
 
 		mockRepo.AssertExpectations(t)
 	})
+
+	// User-not-found and wrong-password now return the SAME generic 401 error
+	// (see Task 6: remove login user-enumeration signal) so an attacker cannot
+	// distinguish "no such account" from "wrong password" by message or timing.
 
 	t.Run("User Not Found", func(t *testing.T) {
 		mockRepo := new(MockUserRepository)
@@ -276,7 +294,9 @@ func TestUserService_GetTokens(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Nil(t, resp)
-		assert.Equal(t, errorc.ErrorDataNotFound.Response.Code, errorc.GetResponse(err).Code)
+		respErr := errorc.GetResponse(err)
+		assert.Equal(t, http.StatusUnauthorized, respErr.Code)
+		assert.Equal(t, "invalid credentials", respErr.Message)
 
 		mockRepo.AssertExpectations(t)
 	})
@@ -312,8 +332,67 @@ func TestUserService_GetTokens(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Nil(t, resp)
-		assert.Equal(t, errorc.ErrorInvalidInput.Response.Code, errorc.GetResponse(err).Code)
+		respErr := errorc.GetResponse(err)
+		assert.Equal(t, http.StatusUnauthorized, respErr.Code)
+		assert.Equal(t, "invalid credentials", respErr.Message)
 
 		mockRepo.AssertExpectations(t)
 	})
+}
+
+func TestGetTokens_UserNotFound_GenericError(t *testing.T) {
+	mockRepo := new(MockUserRepository)
+	mockRepo.
+		On("GetCredentialsByEmailOrPhoneNumber", mock.Anything, "nobody@example.com", "").
+		Return((*models.User)(nil), nil)
+
+	deps := service.Dependencies{
+		Repository: repository.Repository{
+			Postgre: &pgsql.PostgreRepository{
+				User: mockRepo,
+			},
+		},
+	}
+	svc := service.NewUserService(&deps)
+
+	_, err := svc.GetTokens(context.Background(), &models.GetUserTokenRequest{
+		Email:    "nobody@example.com",
+		Password: "whatever",
+	})
+
+	require.Error(t, err)
+	resp := errorc.GetResponse(err)
+	require.Equal(t, http.StatusUnauthorized, resp.Code)
+	require.Equal(t, "invalid credentials", resp.Message)
+
+	mockRepo.AssertExpectations(t)
+}
+
+func TestGetTokens_WrongPassword_SameGenericError(t *testing.T) {
+	hashed, _ := generator.Hash("correct-password")
+	mockRepo := new(MockUserRepository)
+	mockRepo.
+		On("GetCredentialsByEmailOrPhoneNumber", mock.Anything, "user@example.com", "").
+		Return(&models.User{ID: 1, AccountNumber: "1", Password: hashed}, nil)
+
+	deps := service.Dependencies{
+		Repository: repository.Repository{
+			Postgre: &pgsql.PostgreRepository{
+				User: mockRepo,
+			},
+		},
+	}
+	svc := service.NewUserService(&deps)
+
+	_, err := svc.GetTokens(context.Background(), &models.GetUserTokenRequest{
+		Email:    "user@example.com",
+		Password: "wrong-password",
+	})
+
+	require.Error(t, err)
+	resp := errorc.GetResponse(err)
+	require.Equal(t, http.StatusUnauthorized, resp.Code)
+	require.Equal(t, "invalid credentials", resp.Message)
+
+	mockRepo.AssertExpectations(t)
 }

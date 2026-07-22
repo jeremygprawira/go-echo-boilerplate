@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"crypto/subtle"
+
 	"go-echo-boilerplate/internal/config"
 	"go-echo-boilerplate/internal/pkg/errorc"
 	"go-echo-boilerplate/internal/pkg/response"
@@ -16,7 +18,11 @@ func (m *Middleware) ApiKeyMiddleware(config *config.Configuration) echo.Middlew
 				return response.Error(ctx, errorc.ErrorUnauthorized)
 			}
 
-			if apiKey != config.Authorization.APIKey {
+			// ConstantTimeCompare avoids leaking the API key one byte at a time via a
+			// timing side-channel: a plain != check returns as soon as it finds a
+			// mismatched byte, letting an attacker infer the key length and contents
+			// from response latency across many requests.
+			if subtle.ConstantTimeCompare([]byte(apiKey), []byte(config.Authorization.APIKey)) != 1 {
 				return response.Error(ctx, errorc.ErrorUnauthorized)
 			}
 
