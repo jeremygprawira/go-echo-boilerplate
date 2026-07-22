@@ -22,7 +22,7 @@ func (hs *healthService) Check(ctx context.Context) (*models.HealthResponse, err
 	var healthDetail []models.HealthDetailResponse
 
 	var postgreHealth models.HealthDetailResponse
-	postgreErr := hs.d.Repository.Postgre.Health.Check(ctx)
+	postgreErr := hs.d.Repository.Health.Check(ctx)
 	if postgreErr != nil {
 		postgreHealth = models.HealthDetailResponse{
 			Type:        models.TYPE_HEALTH,

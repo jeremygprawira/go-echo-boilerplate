@@ -104,7 +104,7 @@ func (us *userService) Create(ctx context.Context, request *models.CreateUserReq
 	})
 
 	// Persist user to database
-	err = us.d.Repository.Postgre.User.Create(ctx, user)
+	err = us.d.Repository.User.Create(ctx, user)
 	if err != nil {
 		logger.AddToKey(ctx, "user", "is_inserted_to_db", false)
 		var pgErr *pgconn.PgError
@@ -136,7 +136,7 @@ func (us *userService) GetTokens(ctx context.Context, request *models.GetUserTok
 		logger.AddToKey(ctx, "user", "formatted_phone", request.PhoneNumber.Number)
 	}
 
-	user, err := us.d.Repository.Postgre.User.GetCredentialsByEmailOrPhoneNumber(ctx, request.Email, request.PhoneNumber.Number)
+	user, err := us.d.Repository.User.GetCredentialsByEmailOrPhoneNumber(ctx, request.Email, request.PhoneNumber.Number)
 	if err != nil {
 		return nil, errorc.Error(errorc.ErrorDatabase, err, "Failed to get user credentials")
 	}
@@ -209,7 +209,7 @@ func (us *userService) GetByAccountNumber(ctx context.Context, accountNumber str
 		"account_number": accountNumber,
 	})
 
-	user, err := us.d.Repository.Postgre.User.GetOneByAccountNumber(ctx, accountNumber)
+	user, err := us.d.Repository.User.GetOneByAccountNumber(ctx, accountNumber)
 	if err != nil {
 		return nil, errorc.Error(errorc.ErrorDatabase, err, "Failed to get user")
 	}
