@@ -18,14 +18,14 @@ postgresql:
   max_open_conns: 100
   conn_max_lifetime: "1h"
 authorization:
-  issuer:
-  bearer:
-    secret:
-    duration:
+  issuer: go-echo-boilerplate
+  access:
+    secret: replace-with-a-strong-access-secret
+    duration: 15m
   refresh:
-    secret:
-    duration:
-  api_key:
+    secret: replace-with-a-different-strong-refresh-secret
+    duration: 168h
+  api_key: replace-with-an-api-key
 hash:
   salt:
 cors:
