@@ -11,6 +11,9 @@ func TestIsProduction(t *testing.T) {
 	c.Application.Environment = "production"
 	require.True(t, c.IsProduction())
 
+	c.Application.Environment = "prod"
+	require.True(t, c.IsProduction())
+
 	c.Application.Environment = "local"
 	require.False(t, c.IsProduction())
 }

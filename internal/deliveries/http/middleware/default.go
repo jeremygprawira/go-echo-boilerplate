@@ -11,16 +11,17 @@ import (
 
 func (m *Middleware) Default(config *config.Configuration) {
 	m.e.Use(echomw.RequestID())
-	m.e.Use(m.RecoverMiddleware(logger.Instance))
-	m.e.Use(m.LoggingMiddleware(logger.Instance))
-	m.e.Use(m.corsMiddleware(config))
-	m.e.Use(echomw.Secure())
 
 	bodyLimit := config.Application.MaxBodySize
 	if bodyLimit == "" {
 		bodyLimit = "1M"
 	}
 	m.e.Use(echomw.BodyLimit(bodyLimit))
+
+	m.e.Use(m.RecoverMiddleware(logger.Instance))
+	m.e.Use(m.LoggingMiddleware(logger.Instance))
+	m.e.Use(m.corsMiddleware(config))
+	m.e.Use(echomw.Secure())
 
 	timeout := time.Duration(config.Application.Timeout) * time.Second
 	if timeout > 0 {

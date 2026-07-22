@@ -4,5 +4,5 @@ package config
 // environment. It is the single source of truth for prod-only behavior such as
 // disabling Swagger and silencing verbose logs.
 func (c *Configuration) IsProduction() bool {
-	return c.Application.Environment == "production"
+	return c.Application.Environment == "prod" || c.Application.Environment == "production"
 }
