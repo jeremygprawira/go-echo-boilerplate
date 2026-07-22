@@ -50,14 +50,21 @@ func (m *Middleware) LoggingMiddleware(log logger.Logger) echo.MiddlewareFunc {
 			bcw := &bodyCapturingWriter{ResponseWriter: ectx.Response().Writer}
 			ectx.Response().Writer = bcw
 
-			// Generate or get request ID
-			requestID := ectx.Request().Header.Get("X-Request-ID")
+			// Reuse the request ID set by echomw.RequestID() (runs before this
+			// middleware) so the wide-event log correlates with the response
+			// header the client sees, instead of minting a second, divergent ID.
+			requestID := ectx.Response().Header().Get(echo.HeaderXRequestID)
+			if requestID == "" {
+				requestID = ectx.Request().Header.Get(echo.HeaderXRequestID)
+			}
 			if requestID == "" {
 				requestID = uuid.New().String()
 			}
-			ectx.Response().Header().Set("X-Request-ID", requestID)
+			ectx.Response().Header().Set(echo.HeaderXRequestID, requestID)
 
-			// Store in Echo context for response functions to access
+			// Store in Echo context for response functions to access. Uses the
+			// literal key expected by internal/pkg/response (a context map key,
+			// not an HTTP header, so it is not interchangeable with echo.HeaderXRequestID).
 			ectx.Set("X-Request-ID", requestID)
 
 			// Initialize wide event with request metadata

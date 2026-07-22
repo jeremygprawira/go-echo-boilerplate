@@ -40,11 +40,7 @@ func New(eco *echo.Echo, service *service.Service, config *config.Configuration,
 		return ctx.String(http.StatusOK, message)
 	})
 
-	eco.GET("/docs", func(ectx echo.Context) error {
-		return ectx.File("api-docs.html")
-	})
-
-	eco.GET("/swagger/*", echoSwagger.WrapHandler)
+	registerDocsRoutes(eco, config)
 
 	// Health Grouping
 	health := eco.Group("/health")
@@ -56,4 +52,14 @@ func New(eco *echo.Echo, service *service.Service, config *config.Configuration,
 
 	// Initialize V1 Handlers
 	v1.New(api, service, config, jwtConfig)
+}
+
+func registerDocsRoutes(eco *echo.Echo, config *config.Configuration) {
+	if config.IsProduction() {
+		return
+	}
+	eco.GET("/docs", func(ectx echo.Context) error {
+		return ectx.File("api-docs.html")
+	})
+	eco.GET("/swagger/*", echoSwagger.WrapHandler)
 }

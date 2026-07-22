@@ -12,6 +12,7 @@ func Initialize(ctx context.Context) (*Configuration, error) {
 	var configuration Configuration
 
 	viper.AutomaticEnv()
+	bindEnvOverrides()
 	environment := strings.ToLower(viper.GetString("env"))
 	configName := fmt.Sprintf("config.%s", environment)
 
@@ -32,4 +33,12 @@ func Initialize(ctx context.Context) (*Configuration, error) {
 	}
 
 	return &configuration, nil
+}
+
+// bindEnvOverrides makes nested config keys overridable by environment variables,
+// mapping dotted keys onto underscore-delimited env names
+// (e.g. postgresql.password -> POSTGRESQL_PASSWORD). Env values take precedence
+// over YAML so deployments can inject secrets without writing files.
+func bindEnvOverrides() {
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 }
