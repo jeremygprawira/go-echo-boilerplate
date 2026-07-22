@@ -13,12 +13,20 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-func Setup(configuration *config.Configuration) (*echo.Echo, error) {
-	logger.Initialize(configuration)
+// Dependencies is the fully-wired application core, independent of any delivery
+// mechanism. Both the HTTP server and future workers (e.g. a Kafka consumer)
+// build from the same Dependencies.
+type Dependencies struct {
+	DB        *database.Database
+	Service   *service.Service
+	Config    *config.Configuration
+	JWTConfig *jwtc.Configuration
+}
 
-	e := echo.New()
-	e.HideBanner = true
-	e.HidePort = true
+// BuildDependencies initializes the logger, connects the database, and wires
+// repositories and services. It performs no HTTP setup.
+func BuildDependencies(configuration *config.Configuration) (*Dependencies, error) {
+	logger.Initialize(configuration)
 
 	db, err := database.Connect(configuration)
 	if err != nil {
@@ -34,15 +42,45 @@ func Setup(configuration *config.Configuration) (*echo.Echo, error) {
 
 	jwtConfig := jwtc.DefaultConfig(configuration)
 
-	repository := repository.New(db)
-	service := service.New(service.Dependencies{
-		Repository: *repository,
+	repo := repository.New(db)
+	svc := service.New(service.Dependencies{
+		Repository: *repo,
 		// OAuth:      *oa,
 		Config:    configuration,
 		JWTConfig: jwtConfig,
 	})
 
-	handler.New(e, service, configuration, jwtConfig)
+	return &Dependencies{
+		DB:        db,
+		Service:   svc,
+		Config:    configuration,
+		JWTConfig: jwtConfig,
+	}, nil
+}
 
-	return e, nil
+// BuildHTTPServer wires the Echo server from already-built dependencies.
+func BuildHTTPServer(deps *Dependencies) *echo.Echo {
+	e := echo.New()
+	e.HideBanner = true
+	e.HidePort = true
+
+	handler.New(e, deps.Service, deps.Config, deps.JWTConfig)
+	return e
+}
+
+// Setup builds dependencies then the HTTP server, and registers the DB pool so
+// Teardown can close it on shutdown.
+func Setup(configuration *config.Configuration) (*echo.Echo, error) {
+	deps, err := BuildDependencies(configuration)
+	if err != nil {
+		return nil, err
+	}
+
+	sqlDB, err := deps.DB.PostgreDatabase.DB()
+	if err != nil {
+		return nil, err
+	}
+	setDB(sqlDB)
+
+	return BuildHTTPServer(deps), nil
 }
