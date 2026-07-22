@@ -28,8 +28,8 @@ func NewUserV1(v1 *echo.Group, service *service.Service, config *config.Configur
 	}
 
 	noBearerRoute := v1.Group("/users")
-	noBearerRoute.POST("", h.Create)
-	noBearerRoute.POST("/tokens", h.GetTokens)
+	noBearerRoute.POST("", h.Create, middleware.AuthRateLimiter())
+	noBearerRoute.POST("/tokens", h.GetTokens, middleware.AuthRateLimiter())
 
 	bearerRoute := v1.Group("/users")
 	bearerRoute.Use(middleware.BearerAuthMiddleware(h.jwtConfig))
