@@ -6,11 +6,16 @@ import (
 )
 
 type Repository struct {
-	Postgre *pgsql.PostgreRepository
+	User       UserRepository
+	Health     HealthRepository
+	UnitOfWork UnitOfWork
 }
 
 func New(database *database.Database) *Repository {
+	postgre := pgsql.New(database.PostgreDatabase)
 	return &Repository{
-		Postgre: pgsql.New(database.PostgreDatabase),
+		User:       postgre.User,
+		Health:     postgre.Health,
+		UnitOfWork: pgsql.NewUnitOfWork(database.PostgreDatabase),
 	}
 }
