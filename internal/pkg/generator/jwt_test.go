@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func strPtr(s string) *string {
@@ -44,12 +45,6 @@ func TestGenerateAccessToken(t *testing.T) {
 		assert.Equal(t, user.AccountNumber, claims.AccountNumber)
 		assert.Equal(t, "access", claims.TokenType)
 		assert.Equal(t, config.Issuer, claims.Issuer)
-	})
-
-	t.Run("Generate With Default Config", func(t *testing.T) {
-		token, err := AccessToken(user, nil)
-		assert.NoError(t, err)
-		assert.NotEmpty(t, token)
 	})
 
 	t.Run("Token Expiration", func(t *testing.T) {
@@ -104,12 +99,6 @@ func TestGenerateRefreshToken(t *testing.T) {
 		assert.Empty(t, claims.Email, "Email should not be in refresh token")
 		assert.Empty(t, claims.PhoneNumber, "Phone number should not be in refresh token")
 		assert.Empty(t, claims.AccountNumber, "Account number should not be in refresh token")
-	})
-
-	t.Run("Generate With Default Config", func(t *testing.T) {
-		token, err := RefreshToken(user, nil)
-		assert.NoError(t, err)
-		assert.NotEmpty(t, token)
 	})
 }
 
@@ -199,4 +188,14 @@ func TestValidateAccessToken(t *testing.T) {
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid token type")
 	})
+}
+
+func TestAccessToken_NilConfigErrors(t *testing.T) {
+	_, err := AccessToken(&models.User{ID: 1}, nil)
+	require.Error(t, err)
+}
+
+func TestRefreshToken_NilConfigErrors(t *testing.T) {
+	_, err := RefreshToken(&models.User{ID: 1}, nil)
+	require.Error(t, err)
 }

@@ -11,15 +11,8 @@ import (
 
 // GenerateAccessToken generates a JWT access token for the given user
 func AccessToken(user *models.User, config *jwtc.Configuration) (*models.Token, error) {
-	// Use default config if none provided
 	if config == nil {
-		config = &jwtc.Configuration{
-			AccessTokenSecret:    "default-secret-key-change-in-production",
-			AccessTokenDuration:  15 * time.Minute,
-			RefreshTokenSecret:   "default-secret-key-change-in-production",
-			RefreshTokenDuration: 7 * 24 * time.Hour,
-			Issuer:               "default-issuer",
-		}
+		return nil, fmt.Errorf("jwt configuration is required")
 	}
 
 	now := time.Now()
@@ -63,15 +56,8 @@ func AccessToken(user *models.User, config *jwtc.Configuration) (*models.Token, 
 // GenerateRefreshToken generates a JWT refresh token for the given user
 // Refresh tokens are long-lived (default: 7 days) and used to obtain new access tokens
 func RefreshToken(user *models.User, config *jwtc.Configuration) (*models.Token, error) {
-	// Use default config if none provided
 	if config == nil {
-		config = &jwtc.Configuration{
-			AccessTokenSecret:    "default-secret-key-change-in-production",
-			AccessTokenDuration:  15 * time.Minute,
-			RefreshTokenSecret:   "default-secret-key-change-in-production",
-			RefreshTokenDuration: 7 * 24 * time.Hour,
-			Issuer:               "default-issuer",
-		}
+		return nil, fmt.Errorf("jwt configuration is required")
 	}
 
 	now := time.Now()
