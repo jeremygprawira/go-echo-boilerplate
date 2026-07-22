@@ -18,6 +18,7 @@ type (
 		Host        string `mapstructure:"host"`
 		Timeout     int    `mapstructure:"timeout"`
 		Timezone    string `mapstructure:"timezone"`
+		MaxBodySize string `mapstructure:"max_body_size"`
 	}
 
 	CORS struct {
