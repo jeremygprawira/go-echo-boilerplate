@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"time"
+
 	"go-echo-boilerplate/internal/config"
 	"go-echo-boilerplate/internal/pkg/logger"
 
@@ -19,4 +21,11 @@ func (m *Middleware) Default(config *config.Configuration) {
 		bodyLimit = "1M"
 	}
 	m.e.Use(echomw.BodyLimit(bodyLimit))
+
+	timeout := time.Duration(config.Application.Timeout) * time.Second
+	if timeout > 0 {
+		m.e.Use(echomw.ContextTimeoutWithConfig(echomw.ContextTimeoutConfig{
+			Timeout: timeout,
+		}))
+	}
 }
