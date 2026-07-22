@@ -18,3 +18,10 @@ type UserRepository interface {
 type HealthRepository interface {
 	Check(ctx context.Context) error
 }
+
+// UnitOfWork runs a function inside a single storage transaction. The transaction
+// handle is propagated via ctx so repositories enrolled in it commit or roll back
+// together, without services depending on the storage driver.
+type UnitOfWork interface {
+	WithinTransaction(ctx context.Context, fn func(ctx context.Context) error) error
+}
