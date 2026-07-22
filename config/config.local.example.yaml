@@ -29,7 +29,8 @@ authorization:
 hash:
   salt:
 cors:
-  headers_allowed: ["X-API-Key, X-Api-Key, x-api-key"]
+  allowed_origins: ["http://localhost:3000"]
+  headers_allowed: ["X-API-Key"]
 
 # Third Party
 google:

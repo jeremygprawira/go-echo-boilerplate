@@ -21,6 +21,7 @@ type (
 	}
 
 	CORS struct {
+		AllowedOrigins []string `mapstructure:"allowed_origins"`
 		HeadersAllowed []string `mapstructure:"headers_allowed"`
 	}
 
