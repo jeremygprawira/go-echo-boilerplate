@@ -17,6 +17,11 @@ import (
 // See: https://www.postgresql.org/docs/current/errcodes-appendix.html
 const pgUniqueViolation = "23505"
 
+// dummyPasswordHash is a valid bcrypt hash compared against on the
+// user-not-found path so login timing does not reveal whether an account
+// exists. It corresponds to no real password.
+const dummyPasswordHash = "$2a$12$BOZVmY4H76pfJnkVfAJEk.m5t0QcXHgphRl4wrKGSl8F7A5PnQRC2"
+
 type UserService interface {
 	Create(ctx context.Context, request *models.CreateUserRequest) (*models.User, error)
 	GetTokens(ctx context.Context, request *models.GetUserTokenRequest) (*models.GetUserTokenResponse, error)
@@ -136,18 +141,21 @@ func (us *userService) GetTokens(ctx context.Context, request *models.GetUserTok
 		return nil, errorc.Error(errorc.ErrorDatabase, err, "Failed to get user credentials")
 	}
 
-	if user == nil {
-		return nil, errorc.Error(errorc.ErrorDataNotFound, "User not found")
+	// Always run a bcrypt comparison — even when the user does not exist — so an
+	// attacker cannot distinguish "no such account" from "wrong password" by
+	// response message or timing. Both paths return one generic error.
+	storedHash := dummyPasswordHash
+	if user != nil {
+		storedHash = user.Password
 	}
 
-	// Verify password
-	match, err := validator.Hash(request.Password, user.Password)
+	match, err := validator.Hash(request.Password, storedHash)
 	if err != nil {
-		return nil, errorc.Error(errorc.ErrorInvalidInput, err, "Invalid password")
+		return nil, errorc.Error(errorc.ErrorInternalServer, err, "Failed to verify credentials")
 	}
 
-	if !match {
-		return nil, errorc.Error(errorc.ErrorInvalidInput, "Invalid password")
+	if user == nil || !match {
+		return nil, errorc.Error(errorc.ErrorUnauthorized, "invalid credentials")
 	}
 
 	var tokens []models.Token
