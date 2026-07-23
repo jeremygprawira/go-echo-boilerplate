@@ -56,7 +56,7 @@ func BuildDependencies(configuration *config.Configuration) (*Dependencies, erro
 		store = tokenstore.NewRedisStore(infra.Redis)
 	}
 
-	repo := repository.New(db)
+	repo := repository.New(db, configuration, infra.Firebase)
 	svc := service.New(service.Dependencies{
 		Repository: *repo,
 		// OAuth:      *oa,

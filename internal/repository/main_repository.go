@@ -3,7 +3,10 @@ package repository
 import (
 	"context"
 
+	"go-echo-boilerplate/internal/clients/firebaseclient"
+	"go-echo-boilerplate/internal/config"
 	"go-echo-boilerplate/internal/pkg/database"
+	"go-echo-boilerplate/internal/repository/firestore"
 	"go-echo-boilerplate/internal/repository/pgsql"
 )
 
@@ -14,13 +17,22 @@ type Repository struct {
 	transaction pgsql.TransactionRepository
 }
 
-func New(database *database.Database) *Repository {
+// New wires the storage-neutral Repository. The User adapter is Postgres by
+// default; when cfg.Firebase.Enabled and fb is non-nil, Firestore is used
+// instead so a deployment can run on Firestore rather than Postgres.
+func New(database *database.Database, cfg *config.Configuration, fb *firebaseclient.Client) *Repository {
 	postgre := pgsql.New(database.PostgreDatabase)
-	return &Repository{
+	repo := &Repository{
 		User:        postgre.User,
 		Health:      postgre.Health,
 		transaction: pgsql.NewTransactionRepository(database.PostgreDatabase),
 	}
+
+	if cfg.Firebase.Enabled && fb != nil {
+		repo.User = firestore.NewUserRepository(fb.Firestore())
+	}
+
+	return repo
 }
 
 // WithinTransaction runs fn atomically using pgsql's existing Atomic transaction

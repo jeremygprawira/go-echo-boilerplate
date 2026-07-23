@@ -1,6 +1,7 @@
 package clients
 
 import (
+	"go-echo-boilerplate/internal/clients/firebaseclient"
 	"go-echo-boilerplate/internal/clients/kafkaclient"
 	"go-echo-boilerplate/internal/clients/redisclient"
 	"go-echo-boilerplate/internal/config"
@@ -11,7 +12,7 @@ import (
 type Clients struct {
 	Redis    *redisclient.Client
 	Kafka    *kafkaclient.Publisher
-	Firebase *FirebaseClient
+	Firebase *firebaseclient.Client
 }
 
 // New constructs only the backends whose config sections are enabled.
@@ -30,6 +31,14 @@ func New(cfg *config.Configuration) (*Clients, error) {
 		c.Kafka = kafkaclient.NewPublisher(cfg.Kafka)
 	}
 
+	if cfg.Firebase.Enabled {
+		fbc, err := firebaseclient.New(cfg.Firebase)
+		if err != nil {
+			return nil, err
+		}
+		c.Firebase = fbc
+	}
+
 	return c, nil
 }
 
@@ -45,7 +54,10 @@ func (c *Clients) Close() error {
 			return err
 		}
 	}
+	if c.Firebase != nil {
+		if err := c.Firebase.Close(); err != nil {
+			return err
+		}
+	}
 	return nil
 }
-
-type FirebaseClient struct{}
