@@ -32,6 +32,8 @@ hash:
 cors:
   allowed_origins: ["http://localhost:3000"]
   headers_allowed: ["X-API-Key"]
+rate_limit:
+  enabled: true
 
 # Third Party
 google:

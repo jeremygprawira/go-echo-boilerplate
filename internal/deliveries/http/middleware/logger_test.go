@@ -9,7 +9,7 @@ import (
 	"go-echo-boilerplate/internal/pkg/logger"
 
 	"github.com/labstack/echo/v4"
-	echomw "github.com/labstack/echo/v4/middleware"
+	echoMiddleware "github.com/labstack/echo/v4/middleware"
 	"github.com/stretchr/testify/require"
 )
 
@@ -17,7 +17,7 @@ import (
 // writes, so that correlation works end to end.
 func TestRequestIDAvailableToLogger(t *testing.T) {
 	e := echo.New()
-	e.Use(echomw.RequestID())
+	e.Use(echoMiddleware.RequestID())
 
 	var seen string
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -36,12 +36,12 @@ func TestRequestIDAvailableToLogger(t *testing.T) {
 	require.NotEmpty(t, seen)
 }
 
-// The wide-event log line's request ID must match the one echomw.RequestID()
+// The wide-event log line's request ID must match the one echoMiddleware.RequestID()
 // set on the response, not a separately generated one.
 func TestLoggingMiddleware_UsesRequestIDFromEchoMiddleware(t *testing.T) {
 	e := echo.New()
 	m := New(e, &config.Configuration{})
-	e.Use(echomw.RequestID())
+	e.Use(echoMiddleware.RequestID())
 
 	var idAfterRequestIDMiddleware string
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {

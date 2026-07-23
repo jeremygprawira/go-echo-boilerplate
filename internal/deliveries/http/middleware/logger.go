@@ -50,7 +50,7 @@ func (m *Middleware) LoggingMiddleware(log logger.Logger) echo.MiddlewareFunc {
 			bcw := &bodyCapturingWriter{ResponseWriter: ectx.Response().Writer}
 			ectx.Response().Writer = bcw
 
-			// Reuse the request ID set by echomw.RequestID() (runs before this
+			// Reuse the request ID set by echoMiddleware.RequestID() (runs before this
 			// middleware) so the wide-event log correlates with the response
 			// header the client sees, instead of minting a second, divergent ID.
 			requestID := ectx.Response().Header().Get(echo.HeaderXRequestID)

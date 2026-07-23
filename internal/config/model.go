@@ -6,6 +6,7 @@ type (
 		PostgreSQL    PostgreSQL    `mapstructure:"postgresql"`
 		Authorization Authorization `mapstructure:"authorization"`
 		CORS          CORS          `mapstructure:"cors"`
+		RateLimit     RateLimit     `mapstructure:"rate_limit"`
 
 		Google Google `mapstructure:"google"`
 	}
@@ -24,6 +25,10 @@ type (
 	CORS struct {
 		AllowedOrigins []string `mapstructure:"allowed_origins"`
 		HeadersAllowed []string `mapstructure:"headers_allowed"`
+	}
+
+	RateLimit struct {
+		Enabled bool `mapstructure:"enabled"`
 	}
 
 	PostgreSQL struct {

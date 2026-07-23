@@ -3,15 +3,18 @@ package middleware
 import (
 	"time"
 
+	appconfig "go-echo-boilerplate/internal/config"
+
 	"github.com/labstack/echo/v4"
-	echomw "github.com/labstack/echo/v4/middleware"
+	echoMiddleware "github.com/labstack/echo/v4/middleware"
 	"golang.org/x/time/rate"
 )
 
-// AuthRateLimiter returns a per-client-IP rate limiter sized for authentication
+// RateLimiter returns a per-client-IP rate limiter sized for authentication
 // endpoints (registration, login) to blunt credential brute-forcing. It uses an
 // in-memory store; swap the store for a distributed one when running multiple
-// instances.
+// instances. When cfg.RateLimit.Enabled is false, it returns a no-op middleware
+// so the limiter can be switched off without a code change.
 //
 // Security assumption: this relies on Echo's default identifier extractor,
 // which keys off c.RealIP() and, absent a configured echo.IPExtractor, trusts
@@ -24,15 +27,21 @@ import (
 // defeating this protection. If that's the deployment topology, configure a
 // trusted-proxy echo.IPExtractor (e.g. echo.ExtractIPFromXFFHeader with an
 // explicit trusted CIDR list) before relying on this limiter.
-func AuthRateLimiter() echo.MiddlewareFunc {
-	config := echomw.RateLimiterConfig{
-		Store: echomw.NewRateLimiterMemoryStoreWithConfig(
-			echomw.RateLimiterMemoryStoreConfig{
+func RateLimiter(cfg *appconfig.Configuration) echo.MiddlewareFunc {
+	if cfg == nil || !cfg.RateLimit.Enabled {
+		return func(next echo.HandlerFunc) echo.HandlerFunc {
+			return next
+		}
+	}
+
+	config := echoMiddleware.RateLimiterConfig{
+		Store: echoMiddleware.NewRateLimiterMemoryStoreWithConfig(
+			echoMiddleware.RateLimiterMemoryStoreConfig{
 				Rate:      rate.Limit(5),
 				Burst:     10,
 				ExpiresIn: 3 * time.Minute,
 			},
 		),
 	}
-	return echomw.RateLimiterWithConfig(config)
+	return echoMiddleware.RateLimiterWithConfig(config)
 }
