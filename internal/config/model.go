@@ -27,6 +27,10 @@ type (
 		HeadersAllowed []string `mapstructure:"headers_allowed"`
 	}
 
+	// RateLimit toggles the auth-endpoint rate limiter (see middleware.RateLimiter).
+	// Zero value would be false, but config.Initialize sets a viper default of
+	// true for rate_limit.enabled so an omitted key stays fail-safe (protection
+	// on); only an explicit `rate_limit.enabled: false` in YAML turns it off.
 	RateLimit struct {
 		Enabled bool `mapstructure:"enabled"`
 	}

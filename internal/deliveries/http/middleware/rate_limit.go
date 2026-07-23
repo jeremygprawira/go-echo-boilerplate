@@ -14,7 +14,10 @@ import (
 // endpoints (registration, login) to blunt credential brute-forcing. It uses an
 // in-memory store; swap the store for a distributed one when running multiple
 // instances. When cfg.RateLimit.Enabled is false, it returns a no-op middleware
-// so the limiter can be switched off without a code change.
+// so the limiter can be switched off without a code change. This is a
+// deliberate override, not the fail-safe path: config.Initialize defaults
+// rate_limit.enabled to true via viper.SetDefault, so an omitted config key
+// keeps protection on; only an explicit `enabled: false` in YAML disables it.
 //
 // Security assumption: this relies on Echo's default identifier extractor,
 // which keys off c.RealIP() and, absent a configured echo.IPExtractor, trusts
