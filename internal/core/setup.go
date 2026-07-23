@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"go-echo-boilerplate/internal/clients"
 	"go-echo-boilerplate/internal/config"
 	handler "go-echo-boilerplate/internal/deliveries/http"
 	"go-echo-boilerplate/internal/pkg/database"
@@ -21,6 +22,7 @@ type Dependencies struct {
 	Service   *service.Service
 	Config    *config.Configuration
 	JWTConfig *jwtc.Configuration
+	Clients   *clients.Clients
 }
 
 // BuildDependencies initializes the logger, connects the database, and wires
@@ -42,6 +44,11 @@ func BuildDependencies(configuration *config.Configuration) (*Dependencies, erro
 
 	jwtConfig := jwtc.DefaultConfig(configuration)
 
+	infra, err := clients.New(configuration)
+	if err != nil {
+		return nil, err
+	}
+
 	repo := repository.New(db)
 	svc := service.New(service.Dependencies{
 		Repository: *repo,
@@ -55,6 +62,7 @@ func BuildDependencies(configuration *config.Configuration) (*Dependencies, erro
 		Service:   svc,
 		Config:    configuration,
 		JWTConfig: jwtConfig,
+		Clients:   infra,
 	}, nil
 }
 
@@ -81,6 +89,7 @@ func Setup(configuration *config.Configuration) (*echo.Echo, error) {
 		return nil, err
 	}
 	setDB(sqlDB)
+	setClients(deps.Clients)
 
 	return BuildHTTPServer(deps), nil
 }

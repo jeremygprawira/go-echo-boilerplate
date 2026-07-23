@@ -8,7 +8,10 @@ type (
 		CORS          CORS          `mapstructure:"cors"`
 		RateLimit     RateLimit     `mapstructure:"rate_limit"`
 
-		Google Google `mapstructure:"google"`
+		Google   Google   `mapstructure:"google"`
+		Redis    Redis    `mapstructure:"redis"`
+		Kafka    Kafka    `mapstructure:"kafka"`
+		Firebase Firebase `mapstructure:"firebase"`
 	}
 
 	Application struct {
@@ -75,5 +78,27 @@ type (
 		RedirectURI  string `mapstructure:"redirect_uri"`
 		State        string `mapstructure:"state"`
 		UserInfoURL  string `mapstructure:"user_info_url"`
+	}
+
+	// Redis configures the optional Redis-backed cache/token-revocation client.
+	Redis struct {
+		Enabled  bool   `mapstructure:"enabled"`
+		Addr     string `mapstructure:"addr"`
+		Password string `mapstructure:"password"`
+		DB       int    `mapstructure:"db"`
+	}
+
+	// Kafka configures the optional Kafka publisher/consumer clients.
+	Kafka struct {
+		Enabled bool     `mapstructure:"enabled"`
+		Brokers []string `mapstructure:"brokers"`
+		GroupID string   `mapstructure:"group_id"`
+	}
+
+	// Firebase configures the optional Firebase/Firestore client.
+	Firebase struct {
+		Enabled         bool   `mapstructure:"enabled"`
+		ProjectID       string `mapstructure:"project_id"`
+		CredentialsFile string `mapstructure:"credentials_file"`
 	}
 )
