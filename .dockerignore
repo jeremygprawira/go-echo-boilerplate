@@ -1,0 +1,8 @@
+bin/
+tmp/
+coverage/
+*.log
+.env
+.git
+.serena
+docs/superpowers
