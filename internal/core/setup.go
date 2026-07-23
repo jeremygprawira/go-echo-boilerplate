@@ -8,6 +8,7 @@ import (
 	"go-echo-boilerplate/internal/pkg/database"
 	"go-echo-boilerplate/internal/pkg/jwtc"
 	"go-echo-boilerplate/internal/pkg/logger"
+	"go-echo-boilerplate/internal/pkg/tokenstore"
 	"go-echo-boilerplate/internal/repository"
 	"go-echo-boilerplate/internal/service"
 
@@ -18,11 +19,12 @@ import (
 // mechanism. Both the HTTP server and future workers (e.g. a Kafka consumer)
 // build from the same Dependencies.
 type Dependencies struct {
-	DB        *database.Database
-	Service   *service.Service
-	Config    *config.Configuration
-	JWTConfig *jwtc.Configuration
-	Clients   *clients.Clients
+	DB         *database.Database
+	Service    *service.Service
+	Config     *config.Configuration
+	JWTConfig  *jwtc.Configuration
+	Clients    *clients.Clients
+	TokenStore tokenstore.TokenStore
 }
 
 // BuildDependencies initializes the logger, connects the database, and wires
@@ -49,20 +51,27 @@ func BuildDependencies(configuration *config.Configuration) (*Dependencies, erro
 		return nil, err
 	}
 
+	var store tokenstore.TokenStore = tokenstore.NewNoopStore()
+	if infra.Redis != nil {
+		store = tokenstore.NewRedisStore(infra.Redis)
+	}
+
 	repo := repository.New(db)
 	svc := service.New(service.Dependencies{
 		Repository: *repo,
 		// OAuth:      *oa,
-		Config:    configuration,
-		JWTConfig: jwtConfig,
+		Config:     configuration,
+		JWTConfig:  jwtConfig,
+		TokenStore: store,
 	})
 
 	return &Dependencies{
-		DB:        db,
-		Service:   svc,
-		Config:    configuration,
-		JWTConfig: jwtConfig,
-		Clients:   infra,
+		DB:         db,
+		Service:    svc,
+		Config:     configuration,
+		JWTConfig:  jwtConfig,
+		Clients:    infra,
+		TokenStore: store,
 	}, nil
 }
 
@@ -72,7 +81,7 @@ func BuildHTTPServer(deps *Dependencies) *echo.Echo {
 	e.HideBanner = true
 	e.HidePort = true
 
-	handler.New(e, deps.Service, deps.Config, deps.JWTConfig)
+	handler.New(e, deps.Service, deps.Config, deps.JWTConfig, deps.TokenStore)
 	return e
 }
 

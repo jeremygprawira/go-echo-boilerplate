@@ -12,6 +12,7 @@ type UserRepository interface {
 	CheckByEmailOrPhoneNumber(ctx context.Context, email string, phoneNumber string) (bool, error)
 	GetCredentialsByEmailOrPhoneNumber(ctx context.Context, email string, phoneNumber string) (*models.User, error)
 	GetOneByAccountNumber(ctx context.Context, accountNumber string) (*models.User, error)
+	GetOneByID(ctx context.Context, id int) (*models.User, error)
 }
 
 type userRepository struct {
@@ -50,6 +51,16 @@ func (ur *userRepository) GetOneByAccountNumber(ctx context.Context, accountNumb
 	var user models.User
 
 	if err := ur.db.WithContext(ctx).Raw(QueryGetByAccountNumber, accountNumber).Scan(&user).Error; err != nil {
+		return nil, err
+	}
+
+	return &user, nil
+}
+
+func (ur *userRepository) GetOneByID(ctx context.Context, id int) (*models.User, error) {
+	var user models.User
+
+	if err := ur.db.WithContext(ctx).Raw(QueryGetByID, id).Scan(&user).Error; err != nil {
 		return nil, err
 	}
 

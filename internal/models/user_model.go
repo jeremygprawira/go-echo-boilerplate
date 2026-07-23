@@ -76,6 +76,10 @@ type (
 		PhoneNumber   PhoneNumber `json:"phoneNumber"`
 		Tokens        []Token     `json:"tokens"`
 	}
+
+	RefreshTokenRequest struct {
+		RefreshToken string `json:"refreshToken" validate:"required"`
+	}
 )
 
 type (

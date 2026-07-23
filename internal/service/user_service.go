@@ -9,6 +9,7 @@ import (
 	"go-echo-boilerplate/internal/pkg/generator"
 	"go-echo-boilerplate/internal/pkg/logger"
 	"go-echo-boilerplate/internal/pkg/validator"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -26,6 +27,8 @@ type UserService interface {
 	Create(ctx context.Context, request *models.CreateUserRequest) (*models.User, error)
 	GetTokens(ctx context.Context, request *models.GetUserTokenRequest) (*models.GetUserTokenResponse, error)
 	GetByAccountNumber(ctx context.Context, accountNumber string) (*models.User, error)
+	RefreshTokens(ctx context.Context, refreshToken string) (*models.GetUserTokenResponse, error)
+	Logout(ctx context.Context, jti string, ttl time.Duration) error
 }
 
 type userService struct {
@@ -158,9 +161,14 @@ func (us *userService) GetTokens(ctx context.Context, request *models.GetUserTok
 		return nil, errorc.Error(errorc.ErrorUnauthorized, "invalid credentials")
 	}
 
+	return us.issueTokens(user)
+}
+
+// issueTokens generates a fresh access+refresh pair for user and shapes the
+// GetUserTokenResponse. Shared by GetTokens (login) and RefreshTokens.
+func (us *userService) issueTokens(user *models.User) (*models.GetUserTokenResponse, error) {
 	var tokens []models.Token
 
-	// Generate tokens
 	accessToken, err := generator.AccessToken(user, us.d.JWTConfig)
 	if err != nil {
 		return nil, errorc.Error(errorc.ErrorInternalServer, err, "Failed to generate access token")
@@ -201,6 +209,41 @@ func (us *userService) GetTokens(ctx context.Context, request *models.GetUserTok
 		PhoneNumber:   models.PhoneNumber{Number: userPhoneNumber, CountryCode: user.PhoneCountryCode},
 		Tokens:        tokens,
 	}, nil
+}
+
+// RefreshTokens validates a refresh token, rejects it if already revoked,
+// rotates it (revoking the presented JTI), and issues a fresh access+refresh pair.
+func (us *userService) RefreshTokens(ctx context.Context, refreshToken string) (*models.GetUserTokenResponse, error) {
+	claims, err := validator.RefreshToken(refreshToken, us.d.JWTConfig)
+	if err != nil {
+		return nil, errorc.Error(errorc.ErrorUnauthorized, "invalid refresh token")
+	}
+
+	revoked, err := us.d.TokenStore.IsRevoked(ctx, claims.ID)
+	if err != nil {
+		return nil, errorc.Error(errorc.ErrorInternalServer, err)
+	}
+	if revoked {
+		return nil, errorc.Error(errorc.ErrorUnauthorized, "refresh token revoked")
+	}
+
+	user, err := us.d.Repository.User.GetOneByID(ctx, claims.UserID)
+	if err != nil || user == nil {
+		return nil, errorc.Error(errorc.ErrorUnauthorized, "invalid refresh token")
+	}
+
+	// Rotate: revoke the presented refresh token so it cannot be replayed.
+	if err := us.d.TokenStore.Revoke(ctx, claims.ID, us.d.JWTConfig.RefreshTokenDuration); err != nil {
+		return nil, errorc.Error(errorc.ErrorInternalServer, err)
+	}
+
+	return us.issueTokens(user)
+}
+
+// Logout revokes the given JTI so the access token it was issued for stops
+// being accepted before its natural expiry.
+func (us *userService) Logout(ctx context.Context, jti string, ttl time.Duration) error {
+	return us.d.TokenStore.Revoke(ctx, jti, ttl)
 }
 
 func (us *userService) GetByAccountNumber(ctx context.Context, accountNumber string) (*models.User, error) {

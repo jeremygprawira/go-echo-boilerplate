@@ -6,6 +6,7 @@ import (
 	"go-echo-boilerplate/internal/models"
 	"go-echo-boilerplate/internal/pkg/jwtc"
 	"go-echo-boilerplate/internal/pkg/response"
+	"go-echo-boilerplate/internal/pkg/tokenstore"
 	"go-echo-boilerplate/internal/pkg/validator"
 	"go-echo-boilerplate/internal/service"
 	"net/http"
@@ -15,25 +16,33 @@ import (
 )
 
 type userV1Handler struct {
-	service   *service.Service
-	config    *config.Configuration
-	jwtConfig *jwtc.Configuration
+	service    *service.Service
+	config     *config.Configuration
+	jwtConfig  *jwtc.Configuration
+	tokenStore tokenstore.TokenStore
 }
 
-func NewUserV1(v1 *echo.Group, service *service.Service, config *config.Configuration, jwtConfig *jwtc.Configuration) {
+func NewUserV1(v1 *echo.Group, service *service.Service, config *config.Configuration, jwtConfig *jwtc.Configuration, tokenStore tokenstore.TokenStore) {
+	if tokenStore == nil {
+		tokenStore = tokenstore.NewNoopStore()
+	}
+
 	h := &userV1Handler{
-		service:   service,
-		config:    config,
-		jwtConfig: jwtConfig,
+		service:    service,
+		config:     config,
+		jwtConfig:  jwtConfig,
+		tokenStore: tokenStore,
 	}
 
 	noBearerRoute := v1.Group("/users")
 	noBearerRoute.POST("", h.Create, middleware.RateLimiter(config))
 	noBearerRoute.POST("/tokens", h.GetTokens, middleware.RateLimiter(config))
+	noBearerRoute.POST("/tokens/refresh", h.RefreshTokens, middleware.RateLimiter(config))
 
 	bearerRoute := v1.Group("/users")
-	bearerRoute.Use(middleware.BearerAuthMiddleware(h.jwtConfig))
+	bearerRoute.Use(middleware.BearerAuthMiddleware(h.jwtConfig, h.tokenStore))
 	bearerRoute.GET("/me", h.GetUserByAccessToken)
+	bearerRoute.POST("/logout", h.Logout)
 }
 
 // Create registers a new user
@@ -106,6 +115,54 @@ func (h *userV1Handler) GetTokens(ctx echo.Context) error {
 	})
 
 	return response.Success(ctx, http.StatusOK, user)
+}
+
+// RefreshTokens rotates a refresh token for a fresh access+refresh pair
+// @Summary Refresh Tokens
+// @Description Exchange a valid, non-revoked refresh token for a new access+refresh pair
+// @Tags Users
+// @Accept json
+// @Produce json
+// @Param request body models.RefreshTokenRequest true "Refresh Token"
+// @Success 200 {object} models.Response{data=models.GetUserTokenResponse} "Tokens Refreshed Successfully"
+// @Failure 400 {object} models.Response "Invalid Input / Validation Error"
+// @Failure 401 {object} models.Response "Invalid or Revoked Refresh Token"
+// @Router /api/v1/users/tokens/refresh [post]
+func (h *userV1Handler) RefreshTokens(ctx echo.Context) error {
+	var request models.RefreshTokenRequest
+	if err := ctx.Bind(&request); err != nil {
+		return response.Error(ctx, err)
+	}
+
+	if err := validator.Input(request); err != nil {
+		return response.ErrorValidation(ctx, err)
+	}
+
+	tokens, err := h.service.User.RefreshTokens(ctx.Request().Context(), request.RefreshToken)
+	if err != nil {
+		return response.Error(ctx, err)
+	}
+
+	return response.Success(ctx, http.StatusOK, tokens)
+}
+
+// Logout revokes the caller's access token so it stops being accepted before expiry
+// @Summary Logout
+// @Description Revoke the current access token
+// @Tags Users
+// @Produce json
+// @Success 200 {object} models.Response "Logged Out Successfully"
+// @Failure 401 {object} models.Response "Unauthorized"
+// @Router /api/v1/users/logout [post]
+// @Security BearerAuth
+func (h *userV1Handler) Logout(ctx echo.Context) error {
+	jti, _ := ctx.Get("jti").(string)
+
+	if err := h.service.User.Logout(ctx.Request().Context(), jti, h.jwtConfig.AccessTokenDuration); err != nil {
+		return response.Error(ctx, err)
+	}
+
+	return response.Success(ctx, http.StatusOK, nil)
 }
 
 // GetUserByAccessToken retrieves user information by access token
