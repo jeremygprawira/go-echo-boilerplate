@@ -8,7 +8,6 @@ import (
 	"go-echo-boilerplate/internal/pkg/generator"
 	"go-echo-boilerplate/internal/pkg/jwtc"
 	"go-echo-boilerplate/internal/repository"
-	"go-echo-boilerplate/internal/repository/pgsql"
 	"go-echo-boilerplate/internal/service"
 	"net/http"
 	"testing"
@@ -77,9 +76,7 @@ func TestUserService_Create(t *testing.T) {
 
 		deps := service.Dependencies{
 			Repository: repository.Repository{
-				Postgre: &pgsql.PostgreRepository{
-					User: mockRepo,
-				},
+				User: mockRepo,
 			},
 		}
 
@@ -113,9 +110,7 @@ func TestUserService_Create(t *testing.T) {
 
 		deps := service.Dependencies{
 			Repository: repository.Repository{
-				Postgre: &pgsql.PostgreRepository{
-					User: mockRepo,
-				},
+				User: mockRepo,
 			},
 		}
 
@@ -142,9 +137,7 @@ func TestUserService_Create(t *testing.T) {
 
 		deps := service.Dependencies{
 			Repository: repository.Repository{
-				Postgre: &pgsql.PostgreRepository{
-					User: mockRepo,
-				},
+				User: mockRepo,
 			},
 		}
 
@@ -171,9 +164,7 @@ func TestUserService_Create(t *testing.T) {
 
 		deps := service.Dependencies{
 			Repository: repository.Repository{
-				Postgre: &pgsql.PostgreRepository{
-					User: mockRepo,
-				},
+				User: mockRepo,
 			},
 		}
 
@@ -200,9 +191,7 @@ func TestUserService_Create(t *testing.T) {
 
 		deps := service.Dependencies{
 			Repository: repository.Repository{
-				Postgre: &pgsql.PostgreRepository{
-					User: mockRepo,
-				},
+				User: mockRepo,
 			},
 		}
 
@@ -240,9 +229,7 @@ func TestUserService_GetTokens(t *testing.T) {
 
 		deps := service.Dependencies{
 			Repository: repository.Repository{
-				Postgre: &pgsql.PostgreRepository{
-					User: mockRepo,
-				},
+				User: mockRepo,
 			},
 			JWTConfig: testJWTConfig(),
 		}
@@ -277,9 +264,7 @@ func TestUserService_GetTokens(t *testing.T) {
 
 		deps := service.Dependencies{
 			Repository: repository.Repository{
-				Postgre: &pgsql.PostgreRepository{
-					User: mockRepo,
-				},
+				User: mockRepo,
 			},
 		}
 
@@ -315,9 +300,7 @@ func TestUserService_GetTokens(t *testing.T) {
 
 		deps := service.Dependencies{
 			Repository: repository.Repository{
-				Postgre: &pgsql.PostgreRepository{
-					User: mockRepo,
-				},
+				User: mockRepo,
 			},
 		}
 
@@ -348,9 +331,7 @@ func TestGetTokens_UserNotFound_GenericError(t *testing.T) {
 
 	deps := service.Dependencies{
 		Repository: repository.Repository{
-			Postgre: &pgsql.PostgreRepository{
-				User: mockRepo,
-			},
+			User: mockRepo,
 		},
 	}
 	svc := service.NewUserService(&deps)
@@ -377,9 +358,7 @@ func TestGetTokens_WrongPassword_SameGenericError(t *testing.T) {
 
 	deps := service.Dependencies{
 		Repository: repository.Repository{
-			Postgre: &pgsql.PostgreRepository{
-				User: mockRepo,
-			},
+			User: mockRepo,
 		},
 	}
 	svc := service.NewUserService(&deps)

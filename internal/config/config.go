@@ -15,6 +15,16 @@ func Initialize(ctx context.Context) (*Configuration, error) {
 	environment := strings.ToLower(viper.GetString("env"))
 	configName := fmt.Sprintf("config.%s", environment)
 
+	// Rate limiting on auth endpoints is a security control: default it to
+	// enabled so a config file that omits rate_limit entirely doesn't
+	// silently disable brute-force protection. Rate/Burst/ExpiresIn get
+	// sane non-zero defaults too, so a partially-specified rate_limit block
+	// (e.g. only "enabled: true") doesn't zero out the limiter.
+	viper.SetDefault("rate_limit.enabled", true)
+	viper.SetDefault("rate_limit.rate", 5)
+	viper.SetDefault("rate_limit.burst", 10)
+	viper.SetDefault("rate_limit.expires_in", "3m")
+
 	viper.AddConfigPath("./config")
 	viper.SetConfigName(configName)
 	viper.SetConfigType("yaml")

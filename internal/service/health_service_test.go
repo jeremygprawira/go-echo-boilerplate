@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"go-echo-boilerplate/internal/repository"
-	"go-echo-boilerplate/internal/repository/pgsql"
 	"go-echo-boilerplate/internal/service"
 	"testing"
 
@@ -30,9 +29,7 @@ func TestHealthService_Check(t *testing.T) {
 		// Construct Dependencies
 		deps := service.Dependencies{
 			Repository: repository.Repository{
-				Postgre: &pgsql.PostgreRepository{
-					Health: mockRepo,
-				},
+				Health: mockRepo,
 			},
 		}
 
@@ -53,9 +50,7 @@ func TestHealthService_Check(t *testing.T) {
 
 		deps := service.Dependencies{
 			Repository: repository.Repository{
-				Postgre: &pgsql.PostgreRepository{
-					Health: mockRepo,
-				},
+				Health: mockRepo,
 			},
 		}
 
