@@ -2,8 +2,11 @@ package validator
 
 import "fmt"
 
-// bcryptMaxBytes is bcrypt's hard input limit; bytes beyond it are silently
-// truncated, so two different long passwords could hash identically.
+// bcryptMaxBytes is bcrypt's hard input limit. golang.org/x/crypto v0.46.0+
+// already rejects passwords over this length with ErrPasswordTooLong rather
+// than truncating; this guard exists to give the client a clean, early 400
+// instead of an opaque 500 from the hashing layer, and to protect against a
+// future downgrade of the dependency reintroducing truncation behavior.
 const bcryptMaxBytes = 72
 
 // PasswordWithinBcryptLimit rejects passwords longer than bcrypt can safely hash.
