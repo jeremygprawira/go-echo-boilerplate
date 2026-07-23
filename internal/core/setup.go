@@ -51,7 +51,7 @@ func BuildDependencies(configuration *config.Configuration) (*Dependencies, erro
 		return nil, err
 	}
 
-	var store tokenstore.TokenStore = tokenstore.NewNoopStore()
+	store := tokenstore.NewNoopStore()
 	if infra.Redis != nil {
 		store = tokenstore.NewRedisStore(infra.Redis)
 	}

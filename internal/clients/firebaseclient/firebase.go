@@ -20,7 +20,7 @@ func New(cfg config.Firebase) (*Client, error) {
 	ctx := context.Background()
 	opts := []option.ClientOption{}
 	if cfg.CredentialsFile != "" {
-		opts = append(opts, option.WithCredentialsFile(cfg.CredentialsFile))
+		opts = append(opts, option.WithAuthCredentialsFile(option.ServiceAccount, cfg.CredentialsFile))
 	}
 	app, err := firebase.NewApp(ctx, &firebase.Config{ProjectID: cfg.ProjectID}, opts...)
 	if err != nil {

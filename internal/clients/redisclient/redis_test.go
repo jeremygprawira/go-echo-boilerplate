@@ -19,7 +19,7 @@ func TestRedis_SetGetDel(t *testing.T) {
 
 	client, err := redisclient.New(config.Redis{Enabled: true, Addr: mr.Addr()})
 	require.NoError(t, err)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 	require.NoError(t, client.Set(ctx, "k", "v", time.Minute))
