@@ -31,6 +31,15 @@ func (c *Configuration) Validate() error {
 	if _, err := time.ParseDuration(c.Authorization.Refresh.Duration); err != nil {
 		errs = append(errs, fmt.Errorf("authorization.refresh.duration is invalid: %w", err))
 	}
+	if _, err := time.ParseDuration(c.RateLimit.ExpiresIn); err != nil {
+		errs = append(errs, fmt.Errorf("rate_limit.expires_in is invalid: %w", err))
+	}
+	if c.RateLimit.Rate <= 0 {
+		errs = append(errs, errors.New("rate_limit.rate must be greater than 0"))
+	}
+	if c.RateLimit.Burst <= 0 {
+		errs = append(errs, errors.New("rate_limit.burst must be greater than 0"))
+	}
 
 	return errors.Join(errs...)
 }

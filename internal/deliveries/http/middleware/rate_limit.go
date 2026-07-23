@@ -37,12 +37,17 @@ func RateLimiter(cfg *appconfig.Configuration) echo.MiddlewareFunc {
 		}
 	}
 
+	expiresIn, err := time.ParseDuration(cfg.RateLimit.ExpiresIn)
+	if err != nil {
+		expiresIn = 3 * time.Minute
+	}
+
 	config := echoMiddleware.RateLimiterConfig{
 		Store: echoMiddleware.NewRateLimiterMemoryStoreWithConfig(
 			echoMiddleware.RateLimiterMemoryStoreConfig{
-				Rate:      rate.Limit(5),
-				Burst:     10,
-				ExpiresIn: 3 * time.Minute,
+				Rate:      rate.Limit(cfg.RateLimit.Rate),
+				Burst:     cfg.RateLimit.Burst,
+				ExpiresIn: expiresIn,
 			},
 		),
 	}

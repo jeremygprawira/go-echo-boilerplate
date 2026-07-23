@@ -34,6 +34,9 @@ cors:
   headers_allowed: ["X-API-Key"]
 rate_limit:
   enabled: true
+  rate: 5
+  burst: 10
+  expires_in: 3m
 
 # Third Party
 google:

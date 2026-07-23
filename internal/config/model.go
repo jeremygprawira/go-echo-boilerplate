@@ -27,12 +27,22 @@ type (
 		HeadersAllowed []string `mapstructure:"headers_allowed"`
 	}
 
-	// RateLimit toggles the auth-endpoint rate limiter (see middleware.RateLimiter).
-	// Zero value would be false, but config.Initialize sets a viper default of
-	// true for rate_limit.enabled so an omitted key stays fail-safe (protection
-	// on); only an explicit `rate_limit.enabled: false` in YAML turns it off.
+	// RateLimit configures the auth-endpoint rate limiter (see middleware.RateLimiter).
+	// Zero value Enabled would be false, but config.Initialize sets a viper
+	// default of true for rate_limit.enabled so an omitted key stays fail-safe
+	// (protection on); only an explicit `rate_limit.enabled: false` in YAML
+	// turns it off. Rate/Burst/ExpiresIn also get viper defaults (5 req/s,
+	// burst 10, 3m) so omitting them keeps sane, non-zero limiter behavior.
 	RateLimit struct {
 		Enabled bool `mapstructure:"enabled"`
+		// Rate is the sustained requests-per-second allowed per client identity.
+		Rate float64 `mapstructure:"rate"`
+		// Burst is the maximum requests a client can make in a single burst
+		// before the sustained Rate applies.
+		Burst int `mapstructure:"burst"`
+		// ExpiresIn is how long an idle client's bucket is retained before
+		// being evicted from the in-memory store (Go duration string, e.g. "3m").
+		ExpiresIn string `mapstructure:"expires_in"`
 	}
 
 	PostgreSQL struct {
