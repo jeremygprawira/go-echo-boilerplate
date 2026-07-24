@@ -21,7 +21,8 @@ const pgUniqueViolation = "23505"
 // dummyPasswordHash is a valid bcrypt hash compared against on the
 // user-not-found path so login timing does not reveal whether an account
 // exists. It corresponds to no real password.
-const dummyPasswordHash = "$2a$12$BOZVmY4H76pfJnkVfAJEk.m5t0QcXHgphRl4wrKGSl8F7A5PnQRC2"
+//nolint:gosec // G101: not a credential — a fixed decoy hash for constant-time comparison, not a secret.
+const dummyPasswordHash = "$2a$12$BOZVmY4H76pfJnkVfAJEk.m5t0QcXHgphRl4wrKGSl8F7A5PnQRC2" //#nosec G101 -- decoy bcrypt hash for timing-safe login, not a real credential
 
 type UserService interface {
 	Create(ctx context.Context, request *models.CreateUserRequest) (*models.User, error)
