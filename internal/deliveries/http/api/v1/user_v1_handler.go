@@ -4,6 +4,7 @@ import (
 	"go-echo-boilerplate/internal/config"
 	"go-echo-boilerplate/internal/deliveries/http/middleware"
 	"go-echo-boilerplate/internal/models"
+	"go-echo-boilerplate/internal/pkg/apperr"
 	"go-echo-boilerplate/internal/pkg/jwtc"
 	"go-echo-boilerplate/internal/pkg/response"
 	"go-echo-boilerplate/internal/pkg/tokenstore"
@@ -60,16 +61,16 @@ func NewUserV1(v1 *echo.Group, service *service.Service, config *config.Configur
 func (h *userV1Handler) Create(ctx echo.Context) error {
 	var request models.CreateUserRequest
 	if err := ctx.Bind(&request); err != nil {
-		return response.Error(ctx, err)
+		return err
 	}
 
 	if err := validator.Input(request); err != nil {
-		return response.ErrorValidation(ctx, err)
+		return apperr.FromValidation(err)
 	}
 
 	user, err := h.service.User.Create(ctx.Request().Context(), &request)
 	if err != nil {
-		return response.Error(ctx, err)
+		return err
 	}
 
 	return response.Success(ctx, http.StatusCreated, user.CreateUserResponse())
@@ -90,16 +91,16 @@ func (h *userV1Handler) Create(ctx echo.Context) error {
 func (h *userV1Handler) GetTokens(ctx echo.Context) error {
 	var request models.GetUserTokenRequest
 	if err := ctx.Bind(&request); err != nil {
-		return response.Error(ctx, err)
+		return err
 	}
 
 	if err := validator.Input(request); err != nil {
-		return response.ErrorValidation(ctx, err)
+		return apperr.FromValidation(err)
 	}
 
 	user, err := h.service.User.GetTokens(ctx.Request().Context(), &request)
 	if err != nil {
-		return response.Error(ctx, err)
+		return err
 	}
 
 	ExpiresAt := time.Now().Add(time.Second * time.Duration(user.Tokens[1].ExpiredIn))
@@ -131,16 +132,16 @@ func (h *userV1Handler) GetTokens(ctx echo.Context) error {
 func (h *userV1Handler) RefreshTokens(ctx echo.Context) error {
 	var request models.RefreshTokenRequest
 	if err := ctx.Bind(&request); err != nil {
-		return response.Error(ctx, err)
+		return err
 	}
 
 	if err := validator.Input(request); err != nil {
-		return response.ErrorValidation(ctx, err)
+		return apperr.FromValidation(err)
 	}
 
 	tokens, err := h.service.User.RefreshTokens(ctx.Request().Context(), request.RefreshToken)
 	if err != nil {
-		return response.Error(ctx, err)
+		return err
 	}
 
 	return response.Success(ctx, http.StatusOK, tokens)
@@ -166,7 +167,7 @@ func (h *userV1Handler) Logout(ctx echo.Context) error {
 	}
 
 	if err := h.service.User.Logout(ctx.Request().Context(), jti, refreshToken); err != nil {
-		return response.Error(ctx, err)
+		return err
 	}
 
 	ctx.SetCookie(&http.Cookie{
@@ -199,7 +200,7 @@ func (h *userV1Handler) GetUserByAccessToken(ctx echo.Context) error {
 
 	user, err := h.service.User.GetByAccountNumber(ctx.Request().Context(), accountNumber)
 	if err != nil {
-		return response.Error(ctx, err)
+		return err
 	}
 
 	return response.Success(ctx, http.StatusOK, user.GetUserByAccountNumberResponse())

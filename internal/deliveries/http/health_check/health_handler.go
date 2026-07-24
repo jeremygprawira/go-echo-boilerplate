@@ -33,7 +33,7 @@ func New(api *echo.Group, service *service.Service) {
 func (h *healthHandler) Check(ctx echo.Context) error {
 	health, err := h.service.Health.Check(ctx.Request().Context())
 	if err != nil {
-		return response.Error(ctx, err)
+		return err
 	}
 
 	return response.SuccessList(ctx, http.StatusOK, health.Description, health.Dependencies)
