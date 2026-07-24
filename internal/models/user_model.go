@@ -7,17 +7,20 @@ import (
 
 var TYPE_USER = "user"
 
+// The firestore tags are required: the Firestore Go client maps struct fields
+// verbatim by Go field name unless told otherwise, but the firestore adapter
+// queries snake_case field paths (e.g. "email", "phone_number", "id").
 type User struct {
-	ID               int          `json:"id"`
-	AccountNumber    string       `json:"account_number"`
-	Name             string       `json:"name"`
-	Email            *string      `json:"email"`
-	PhoneNumber      *string      `json:"phone_number"`
-	PhoneCountryCode string       `json:"phone_country_code"`
-	Password         string       `json:"password"`
-	CreatedAt        time.Time    `json:"created_at"`
-	UpdatedAt        time.Time    `json:"updated_at"`
-	DeletedAt        sql.NullTime `json:"deleted_at"`
+	ID               int          `json:"id" firestore:"id"`
+	AccountNumber    string       `json:"account_number" firestore:"account_number"`
+	Name             string       `json:"name" firestore:"name"`
+	Email            *string      `json:"email" firestore:"email"`
+	PhoneNumber      *string      `json:"phone_number" firestore:"phone_number"`
+	PhoneCountryCode string       `json:"phone_country_code" firestore:"phone_country_code"`
+	Password         string       `json:"password" firestore:"password"`
+	CreatedAt        time.Time    `json:"created_at" firestore:"created_at"`
+	UpdatedAt        time.Time    `json:"updated_at" firestore:"updated_at"`
+	DeletedAt        sql.NullTime `json:"deleted_at" firestore:"deleted_at"`
 }
 
 type (
@@ -75,6 +78,10 @@ type (
 		Email         string      `json:"email" example:"john.doe@example.com"`
 		PhoneNumber   PhoneNumber `json:"phoneNumber"`
 		Tokens        []Token     `json:"tokens"`
+	}
+
+	RefreshTokenRequest struct {
+		RefreshToken string `json:"refreshToken" validate:"required"`
 	}
 )
 

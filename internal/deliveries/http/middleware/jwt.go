@@ -4,6 +4,7 @@ import (
 	"go-echo-boilerplate/internal/pkg/errorc"
 	"go-echo-boilerplate/internal/pkg/jwtc"
 	"go-echo-boilerplate/internal/pkg/response"
+	"go-echo-boilerplate/internal/pkg/tokenstore"
 	"go-echo-boilerplate/internal/pkg/validator"
 	"strings"
 
@@ -23,7 +24,7 @@ import (
 //   - "account_number": string - The user's account number
 //   - "email": string - The user's email address
 //   - "phone_number": string - The user's phone number
-func BearerAuthMiddleware(config *jwtc.Configuration) echo.MiddlewareFunc {
+func BearerAuthMiddleware(config *jwtc.Configuration, store tokenstore.TokenStore) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(ctx echo.Context) error {
 			// Extract Authorization header
@@ -46,11 +47,20 @@ func BearerAuthMiddleware(config *jwtc.Configuration) echo.MiddlewareFunc {
 				return response.Error(ctx, errorc.Error(errorc.ErrorUnauthorized, err.Error()))
 			}
 
+			revoked, rerr := store.IsRevoked(ctx.Request().Context(), claims.ID)
+			if rerr != nil {
+				return response.Error(ctx, errorc.Error(errorc.ErrorInternalServer, rerr))
+			}
+			if revoked {
+				return response.Error(ctx, errorc.Error(errorc.ErrorUnauthorized, "token revoked"))
+			}
+
 			// Inject claims into context for downstream handlers
 			ctx.Set("userID", claims.UserID)
 			ctx.Set("accountNumber", claims.AccountNumber)
 			ctx.Set("email", claims.Email)
 			ctx.Set("phoneNumber", claims.PhoneNumber)
+			ctx.Set("jti", claims.ID)
 
 			return next(ctx)
 		}

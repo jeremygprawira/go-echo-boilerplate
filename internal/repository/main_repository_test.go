@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"go-echo-boilerplate/internal/config"
 	"go-echo-boilerplate/internal/pkg/database"
 	"go-echo-boilerplate/internal/repository"
 
@@ -27,7 +28,7 @@ func newMockRepository(t *testing.T) (*repository.Repository, sqlmock.Sqlmock) {
 	require.NoError(t, err)
 	gdb, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{})
 	require.NoError(t, err)
-	return repository.New(&database.Database{PostgreDatabase: gdb}), mock
+	return repository.New(&database.Database{PostgreDatabase: gdb}, &config.Configuration{}, nil), mock
 }
 
 func TestWithinTransaction_CommitOnSuccess(t *testing.T) {

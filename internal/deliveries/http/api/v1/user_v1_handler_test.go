@@ -7,6 +7,7 @@ import (
 	v1 "go-echo-boilerplate/internal/deliveries/http/api/v1"
 	"go-echo-boilerplate/internal/models"
 	"go-echo-boilerplate/internal/pkg/errorc"
+	"go-echo-boilerplate/internal/pkg/tokenstore"
 	"go-echo-boilerplate/internal/service"
 	"net/http"
 	"net/http/httptest"
@@ -47,6 +48,19 @@ func (m *MockUserService) GetByAccountNumber(ctx context.Context, accountNumber 
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*models.User), args.Error(1)
+}
+
+func (m *MockUserService) RefreshTokens(ctx context.Context, refreshToken string) (*models.GetUserTokenResponse, error) {
+	args := m.Called(ctx, refreshToken)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.GetUserTokenResponse), args.Error(1)
+}
+
+func (m *MockUserService) Logout(ctx context.Context, accessJTI string, refreshToken string) error {
+	args := m.Called(ctx, accessJTI, refreshToken)
+	return args.Error(0)
 }
 
 func TestUserV1Handler_Create(t *testing.T) {
@@ -90,7 +104,7 @@ func TestUserV1Handler_Create(t *testing.T) {
 
 		// Setup Group
 		g := e.Group("/v1")
-		v1.NewUserV1(g, svc, nil, nil)
+		v1.NewUserV1(g, svc, nil, nil, tokenstore.NewNoopStore())
 
 		// ServeRequest
 		e.ServeHTTP(rec, req)
@@ -114,7 +128,7 @@ func TestUserV1Handler_Create(t *testing.T) {
 		// Setup Service
 		svc := &service.Service{User: new(MockUserService)}
 		g := e.Group("/v1")
-		v1.NewUserV1(g, svc, nil, nil)
+		v1.NewUserV1(g, svc, nil, nil, tokenstore.NewNoopStore())
 
 		e.ServeHTTP(rec, req)
 
@@ -139,7 +153,7 @@ func TestUserV1Handler_Create(t *testing.T) {
 
 		svc := &service.Service{User: mockSvc}
 		g := e.Group("/v1")
-		v1.NewUserV1(g, svc, nil, nil)
+		v1.NewUserV1(g, svc, nil, nil, tokenstore.NewNoopStore())
 
 		e.ServeHTTP(rec, req)
 
@@ -172,7 +186,7 @@ func TestUserV1Handler_GetTokens(t *testing.T) {
 
 		svc := &service.Service{User: mockSvc}
 		g := e.Group("/v1")
-		v1.NewUserV1(g, svc, nil, nil)
+		v1.NewUserV1(g, svc, nil, nil, tokenstore.NewNoopStore())
 
 		e.ServeHTTP(rec, req)
 
@@ -194,7 +208,7 @@ func TestUserV1Handler_GetTokens(t *testing.T) {
 		mockSvc := new(MockUserService)
 		svc := &service.Service{User: mockSvc}
 		g := e.Group("/v1")
-		v1.NewUserV1(g, svc, nil, nil)
+		v1.NewUserV1(g, svc, nil, nil, tokenstore.NewNoopStore())
 
 		e.ServeHTTP(rec, req)
 
@@ -218,7 +232,7 @@ func TestUserV1Handler_GetTokens(t *testing.T) {
 
 		svc := &service.Service{User: mockSvc}
 		g := e.Group("/v1")
-		v1.NewUserV1(g, svc, nil, nil)
+		v1.NewUserV1(g, svc, nil, nil, tokenstore.NewNoopStore())
 
 		e.ServeHTTP(rec, req)
 

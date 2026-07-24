@@ -12,6 +12,7 @@ type UserRepository interface {
 	CheckByEmailOrPhoneNumber(ctx context.Context, email string, phoneNumber string) (bool, error)
 	GetCredentialsByEmailOrPhoneNumber(ctx context.Context, email string, phoneNumber string) (*models.User, error)
 	GetOneByAccountNumber(ctx context.Context, accountNumber string) (*models.User, error)
+	GetOneByID(ctx context.Context, id int) (*models.User, error)
 }
 
 // HealthRepository is the storage-neutral port for backend health checks.
