@@ -72,6 +72,10 @@ func (us *userService) Create(ctx context.Context, request *models.CreateUserReq
 		return nil, errorc.Error(errorc.ErrorInternalServer, err, "Failed to generate account number")
 	}
 
+	if err := validator.PasswordWithinBcryptLimit(request.Password); err != nil {
+		return nil, errorc.Error(errorc.ErrorInvalidInput, err, "Password too long")
+	}
+
 	// Hash password
 	hashedPassword, err := generator.Hash(request.Password)
 	if err != nil {
