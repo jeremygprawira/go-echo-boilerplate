@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
@@ -59,8 +58,8 @@ func (m *MockUserService) RefreshTokens(ctx context.Context, refreshToken string
 	return args.Get(0).(*models.GetUserTokenResponse), args.Error(1)
 }
 
-func (m *MockUserService) Logout(ctx context.Context, jti string, ttl time.Duration) error {
-	args := m.Called(ctx, jti, ttl)
+func (m *MockUserService) Logout(ctx context.Context, accessJTI string, refreshToken string) error {
+	args := m.Called(ctx, accessJTI, refreshToken)
 	return args.Error(0)
 }
 

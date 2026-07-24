@@ -65,6 +65,16 @@ func BuildDependencies(configuration *config.Configuration) (*Dependencies, erro
 		TokenStore: store,
 	})
 
+	// Register the DB pool and infra clients for Teardown regardless of which
+	// binary calls BuildDependencies (HTTP server via Setup, or cmd/consumer),
+	// so both close their connections on graceful shutdown.
+	sqlDB, err := db.PostgreDatabase.DB()
+	if err != nil {
+		return nil, err
+	}
+	setDB(sqlDB)
+	setClients(infra)
+
 	return &Dependencies{
 		DB:         db,
 		Service:    svc,
@@ -85,20 +95,13 @@ func BuildHTTPServer(deps *Dependencies) *echo.Echo {
 	return e
 }
 
-// Setup builds dependencies then the HTTP server, and registers the DB pool so
-// Teardown can close it on shutdown.
+// Setup builds dependencies then the HTTP server. Teardown registration
+// happens inside BuildDependencies so it covers every caller, not just this one.
 func Setup(configuration *config.Configuration) (*echo.Echo, error) {
 	deps, err := BuildDependencies(configuration)
 	if err != nil {
 		return nil, err
 	}
-
-	sqlDB, err := deps.DB.PostgreDatabase.DB()
-	if err != nil {
-		return nil, err
-	}
-	setDB(sqlDB)
-	setClients(deps.Clients)
 
 	return BuildHTTPServer(deps), nil
 }

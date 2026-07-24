@@ -103,23 +103,103 @@ func TestUserService_RefreshTokens(t *testing.T) {
 		assert.Nil(t, resp)
 		assert.Equal(t, 401, errorc.GetResponse(err).Code)
 	})
+
+	t.Run("Deleted user is rejected, not issued fresh tokens", func(t *testing.T) {
+		mockRepo := new(MockUserRepository)
+		user := &models.User{ID: 1, AccountNumber: "123456"}
+
+		refreshToken, err := generator.RefreshToken(user, testJWTConfig())
+		require.NoError(t, err)
+
+		// GetOneByID returning (nil, nil) is how the repository reports "no such
+		// user" (see pgsql.userRepository.GetOneByID) — RefreshTokens must treat
+		// that as unauthorized rather than proceeding with a nil/zero-value user.
+		mockRepo.On("GetOneByID", mock.Anything, 1).Return(nil, nil)
+
+		deps := service.Dependencies{
+			Repository: repository.Repository{User: mockRepo},
+			JWTConfig:  testJWTConfig(),
+			TokenStore: tokenstore.NewNoopStore(),
+		}
+
+		svc := service.NewUserService(&deps)
+
+		resp, err := svc.RefreshTokens(context.Background(), refreshToken.Token)
+
+		assert.Error(t, err)
+		assert.Nil(t, resp)
+		assert.Equal(t, 401, errorc.GetResponse(err).Code)
+
+		mockRepo.AssertExpectations(t)
+	})
 }
 
 func TestUserService_Logout(t *testing.T) {
-	mockRepo := new(MockUserRepository)
-	store := tokenstore.NewRedisStore(fakeCacheForService(t))
+	t.Run("Revokes the access JTI", func(t *testing.T) {
+		mockRepo := new(MockUserRepository)
+		store := tokenstore.NewRedisStore(fakeCacheForService(t))
 
-	deps := service.Dependencies{
-		Repository: repository.Repository{User: mockRepo},
-		JWTConfig:  testJWTConfig(),
-		TokenStore: store,
-	}
+		deps := service.Dependencies{
+			Repository: repository.Repository{User: mockRepo},
+			JWTConfig:  testJWTConfig(),
+			TokenStore: store,
+		}
 
-	svc := service.NewUserService(&deps)
+		svc := service.NewUserService(&deps)
 
-	require.NoError(t, svc.Logout(context.Background(), "some-jti", testJWTConfig().AccessTokenDuration))
+		require.NoError(t, svc.Logout(context.Background(), "some-jti", ""))
 
-	revoked, err := store.IsRevoked(context.Background(), "some-jti")
-	require.NoError(t, err)
-	assert.True(t, revoked)
+		revoked, err := store.IsRevoked(context.Background(), "some-jti")
+		require.NoError(t, err)
+		assert.True(t, revoked)
+	})
+
+	t.Run("Also revokes the presented refresh token's JTI", func(t *testing.T) {
+		mockRepo := new(MockUserRepository)
+		store := tokenstore.NewRedisStore(fakeCacheForService(t))
+		user := &models.User{ID: 1, AccountNumber: "123456"}
+
+		refreshToken, err := generator.RefreshToken(user, testJWTConfig())
+		require.NoError(t, err)
+
+		claims, err := validator.RefreshToken(refreshToken.Token, testJWTConfig())
+		require.NoError(t, err)
+
+		deps := service.Dependencies{
+			Repository: repository.Repository{User: mockRepo},
+			JWTConfig:  testJWTConfig(),
+			TokenStore: store,
+		}
+
+		svc := service.NewUserService(&deps)
+
+		require.NoError(t, svc.Logout(context.Background(), "some-jti", refreshToken.Token))
+
+		accessRevoked, err := store.IsRevoked(context.Background(), "some-jti")
+		require.NoError(t, err)
+		assert.True(t, accessRevoked)
+
+		refreshRevoked, err := store.IsRevoked(context.Background(), claims.ID)
+		require.NoError(t, err)
+		assert.True(t, refreshRevoked)
+	})
+
+	t.Run("An unparseable refresh token does not fail logout", func(t *testing.T) {
+		mockRepo := new(MockUserRepository)
+		store := tokenstore.NewRedisStore(fakeCacheForService(t))
+
+		deps := service.Dependencies{
+			Repository: repository.Repository{User: mockRepo},
+			JWTConfig:  testJWTConfig(),
+			TokenStore: store,
+		}
+
+		svc := service.NewUserService(&deps)
+
+		require.NoError(t, svc.Logout(context.Background(), "some-jti", "not-a-real-token"))
+
+		revoked, err := store.IsRevoked(context.Background(), "some-jti")
+		require.NoError(t, err)
+		assert.True(t, revoked)
+	})
 }

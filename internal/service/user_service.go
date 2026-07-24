@@ -9,7 +9,6 @@ import (
 	"go-echo-boilerplate/internal/pkg/generator"
 	"go-echo-boilerplate/internal/pkg/logger"
 	"go-echo-boilerplate/internal/pkg/validator"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -28,7 +27,7 @@ type UserService interface {
 	GetTokens(ctx context.Context, request *models.GetUserTokenRequest) (*models.GetUserTokenResponse, error)
 	GetByAccountNumber(ctx context.Context, accountNumber string) (*models.User, error)
 	RefreshTokens(ctx context.Context, refreshToken string) (*models.GetUserTokenResponse, error)
-	Logout(ctx context.Context, jti string, ttl time.Duration) error
+	Logout(ctx context.Context, accessJTI string, refreshToken string) error
 }
 
 type userService struct {
@@ -240,10 +239,27 @@ func (us *userService) RefreshTokens(ctx context.Context, refreshToken string) (
 	return us.issueTokens(user)
 }
 
-// Logout revokes the given JTI so the access token it was issued for stops
-// being accepted before its natural expiry.
-func (us *userService) Logout(ctx context.Context, jti string, ttl time.Duration) error {
-	return us.d.TokenStore.Revoke(ctx, jti, ttl)
+// Logout ends the caller's session: it revokes the access-token JTI so the
+// access token stops being accepted before its natural expiry, and — when a
+// refresh token is presented — revokes the refresh token's JTI too so it can
+// no longer mint new access tokens. An unparseable/expired refresh token is
+// ignored: it cannot be used anyway, and logout must stay idempotent.
+func (us *userService) Logout(ctx context.Context, accessJTI string, refreshToken string) error {
+	if accessJTI != "" {
+		if err := us.d.TokenStore.Revoke(ctx, accessJTI, us.d.JWTConfig.AccessTokenDuration); err != nil {
+			return errorc.Error(errorc.ErrorInternalServer, err)
+		}
+	}
+
+	if refreshToken != "" {
+		if claims, err := validator.RefreshToken(refreshToken, us.d.JWTConfig); err == nil {
+			if err := us.d.TokenStore.Revoke(ctx, claims.ID, us.d.JWTConfig.RefreshTokenDuration); err != nil {
+				return errorc.Error(errorc.ErrorInternalServer, err)
+			}
+		}
+	}
+
+	return nil
 }
 
 func (us *userService) GetByAccountNumber(ctx context.Context, accountNumber string) (*models.User, error) {

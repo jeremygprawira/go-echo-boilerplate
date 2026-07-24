@@ -146,9 +146,11 @@ func (h *userV1Handler) RefreshTokens(ctx echo.Context) error {
 	return response.Success(ctx, http.StatusOK, tokens)
 }
 
-// Logout revokes the caller's access token so it stops being accepted before expiry
+// Logout revokes the caller's access token, and the refresh token carried in
+// the refresh_token cookie if present, so neither is accepted again before
+// their natural expiry.
 // @Summary Logout
-// @Description Revoke the current access token
+// @Description Revoke the current access token and refresh token
 // @Tags Users
 // @Produce json
 // @Success 200 {object} models.Response "Logged Out Successfully"
@@ -158,9 +160,24 @@ func (h *userV1Handler) RefreshTokens(ctx echo.Context) error {
 func (h *userV1Handler) Logout(ctx echo.Context) error {
 	jti, _ := ctx.Get("jti").(string)
 
-	if err := h.service.User.Logout(ctx.Request().Context(), jti, h.jwtConfig.AccessTokenDuration); err != nil {
+	var refreshToken string
+	if cookie, err := ctx.Cookie("refresh_token"); err == nil {
+		refreshToken = cookie.Value
+	}
+
+	if err := h.service.User.Logout(ctx.Request().Context(), jti, refreshToken); err != nil {
 		return response.Error(ctx, err)
 	}
+
+	ctx.SetCookie(&http.Cookie{
+		Name:     "refresh_token",
+		Value:    "",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+		Path:     "/",
+	})
 
 	return response.Success(ctx, http.StatusOK, nil)
 }

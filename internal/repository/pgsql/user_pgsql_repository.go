@@ -60,8 +60,16 @@ func (ur *userRepository) GetOneByAccountNumber(ctx context.Context, accountNumb
 func (ur *userRepository) GetOneByID(ctx context.Context, id int) (*models.User, error) {
 	var user models.User
 
-	if err := ur.db.WithContext(ctx).Raw(QueryGetByID, id).Scan(&user).Error; err != nil {
-		return nil, err
+	result := ur.db.WithContext(ctx).Raw(QueryGetByID, id).Scan(&user)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	// GORM's Scan on a Raw query does not return ErrRecordNotFound; a
+	// non-matching id leaves user as its zero value with RowsAffected == 0.
+	// Callers (e.g. RefreshTokens) rely on a nil return to treat this as
+	// "user not found" rather than proceeding with a zero-value user.
+	if result.RowsAffected == 0 {
+		return nil, nil
 	}
 
 	return &user, nil
