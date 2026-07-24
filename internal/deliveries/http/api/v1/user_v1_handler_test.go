@@ -268,7 +268,7 @@ func TestUserV1Handler_GetTokens(t *testing.T) {
 		rec := httptest.NewRecorder()
 
 		mockSvc := new(MockUserService)
-		mockSvc.On("GetTokens", mock.Anything, mock.Anything).Return(nil, apperr.InvalidInput.New().Public(herr.Msg("Invalid password")))
+		mockSvc.On("GetTokens", mock.Anything, mock.Anything).Return(nil, apperr.Unauthorized.New().Public(herr.Msg("invalid credentials")))
 
 		svc := &service.Service{User: mockSvc}
 		g := e.Group("/v1")
@@ -276,8 +276,11 @@ func TestUserV1Handler_GetTokens(t *testing.T) {
 
 		e.ServeHTTP(rec, req)
 
-		assert.Equal(t, http.StatusBadRequest, rec.Code)
-		assert.Contains(t, rec.Body.String(), `"code":"INVALID_INPUT"`)
-		assert.Contains(t, rec.Body.String(), "Invalid password")
+		// GetTokens returns Unauthorized/401 for both "no such user" and "wrong
+		// password" (login-enumeration hardening); this test only verifies the
+		// handler passes the service's error through unchanged.
+		assert.Equal(t, http.StatusUnauthorized, rec.Code)
+		assert.Contains(t, rec.Body.String(), `"code":"UNAUTHORIZED"`)
+		assert.Contains(t, rec.Body.String(), "invalid credentials")
 	})
 }

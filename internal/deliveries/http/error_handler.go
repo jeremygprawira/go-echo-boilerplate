@@ -27,7 +27,7 @@ func ErrorHandler(err error, ctx echo.Context) {
 	if requestID == "" {
 		requestID = uuid.New().String()
 	}
-	herrErr = herrErr.WithPublic("request_id", requestID)
+	herrErr = herrErr.WithPublic("requestId", requestID)
 
 	record := herr.LogRecord(herrErr)
 	errType := "AppError"

@@ -41,7 +41,7 @@ func TestErrorHandler_HerrPassThrough(t *testing.T) {
 	assert.Equal(t, "data not found", body["message"])
 	metadata, ok := body["metadata"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, "req-123", metadata["request_id"])
+	assert.Equal(t, "req-123", metadata["requestId"])
 }
 
 func TestErrorHandler_EchoHTTPErrorMapped(t *testing.T) {
@@ -104,5 +104,5 @@ func TestErrorHandler_GeneratesRequestIDWhenMissing(t *testing.T) {
 
 	metadata, ok := decode(t, rec)["metadata"].(map[string]any)
 	require.True(t, ok)
-	assert.NotEmpty(t, metadata["request_id"])
+	assert.NotEmpty(t, metadata["requestId"])
 }
