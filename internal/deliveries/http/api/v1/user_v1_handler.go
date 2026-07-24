@@ -4,6 +4,7 @@ import (
 	"go-echo-boilerplate/internal/config"
 	"go-echo-boilerplate/internal/deliveries/http/middleware"
 	"go-echo-boilerplate/internal/models"
+	"go-echo-boilerplate/internal/pkg/apperr"
 	"go-echo-boilerplate/internal/pkg/jwtc"
 	"go-echo-boilerplate/internal/pkg/response"
 	"go-echo-boilerplate/internal/pkg/tokenstore"
@@ -53,23 +54,24 @@ func NewUserV1(v1 *echo.Group, service *service.Service, config *config.Configur
 // @Produce json
 // @Param request body models.CreateUserRequest true "User Registration Details"
 // @Success 201 {object} models.Response{data=models.CreateUserResponse} "User Created Successfully"
-// @Failure 400 {object} models.Response "Invalid Input / Validation Error"
-// @Failure 409 {object} models.Response "User Already Exists (Email or Phone)"
-// @Failure 500 {object} models.Response "Internal Server Error"
+// @Failure 400 {object} models.ErrorWireResponse "Invalid Input"
+// @Failure 422 {object} models.ErrorWireResponse "Validation Failed"
+// @Failure 409 {object} models.ErrorWireResponse "User Already Exists (Email or Phone)"
+// @Failure 500 {object} models.ErrorWireResponse "Internal Server Error"
 // @Router /api/v1/users [post]
 func (h *userV1Handler) Create(ctx echo.Context) error {
 	var request models.CreateUserRequest
 	if err := ctx.Bind(&request); err != nil {
-		return response.Error(ctx, err)
+		return err
 	}
 
 	if err := validator.Input(request); err != nil {
-		return response.ErrorValidation(ctx, err)
+		return apperr.FromValidation(err)
 	}
 
 	user, err := h.service.User.Create(ctx.Request().Context(), &request)
 	if err != nil {
-		return response.Error(ctx, err)
+		return err
 	}
 
 	return response.Success(ctx, http.StatusCreated, user.CreateUserResponse())
@@ -83,23 +85,24 @@ func (h *userV1Handler) Create(ctx echo.Context) error {
 // @Produce json
 // @Param request body models.GetUserTokenRequest true "User Token Request"
 // @Success 200 {object} models.Response{data=models.GetUserTokenResponse} "User Tokens Retrieved Successfully"
-// @Failure 400 {object} models.Response "Invalid Input / Validation Error"
-// @Failure 404 {object} models.Response "User Not Found"
-// @Failure 500 {object} models.Response "Internal Server Error"
+// @Failure 400 {object} models.ErrorWireResponse "Invalid Input"
+// @Failure 422 {object} models.ErrorWireResponse "Validation Failed"
+// @Failure 404 {object} models.ErrorWireResponse "User Not Found"
+// @Failure 500 {object} models.ErrorWireResponse "Internal Server Error"
 // @Router /api/v1/users/tokens [post]
 func (h *userV1Handler) GetTokens(ctx echo.Context) error {
 	var request models.GetUserTokenRequest
 	if err := ctx.Bind(&request); err != nil {
-		return response.Error(ctx, err)
+		return err
 	}
 
 	if err := validator.Input(request); err != nil {
-		return response.ErrorValidation(ctx, err)
+		return apperr.FromValidation(err)
 	}
 
 	user, err := h.service.User.GetTokens(ctx.Request().Context(), &request)
 	if err != nil {
-		return response.Error(ctx, err)
+		return err
 	}
 
 	ExpiresAt := time.Now().Add(time.Second * time.Duration(user.Tokens[1].ExpiredIn))
@@ -125,22 +128,23 @@ func (h *userV1Handler) GetTokens(ctx echo.Context) error {
 // @Produce json
 // @Param request body models.RefreshTokenRequest true "Refresh Token"
 // @Success 200 {object} models.Response{data=models.GetUserTokenResponse} "Tokens Refreshed Successfully"
-// @Failure 400 {object} models.Response "Invalid Input / Validation Error"
-// @Failure 401 {object} models.Response "Invalid or Revoked Refresh Token"
+// @Failure 400 {object} models.ErrorWireResponse "Invalid Input"
+// @Failure 422 {object} models.ErrorWireResponse "Validation Failed"
+// @Failure 401 {object} models.ErrorWireResponse "Invalid or Revoked Refresh Token"
 // @Router /api/v1/users/tokens/refresh [post]
 func (h *userV1Handler) RefreshTokens(ctx echo.Context) error {
 	var request models.RefreshTokenRequest
 	if err := ctx.Bind(&request); err != nil {
-		return response.Error(ctx, err)
+		return err
 	}
 
 	if err := validator.Input(request); err != nil {
-		return response.ErrorValidation(ctx, err)
+		return apperr.FromValidation(err)
 	}
 
 	tokens, err := h.service.User.RefreshTokens(ctx.Request().Context(), request.RefreshToken)
 	if err != nil {
-		return response.Error(ctx, err)
+		return err
 	}
 
 	return response.Success(ctx, http.StatusOK, tokens)
@@ -154,7 +158,7 @@ func (h *userV1Handler) RefreshTokens(ctx echo.Context) error {
 // @Tags Users
 // @Produce json
 // @Success 200 {object} models.Response "Logged Out Successfully"
-// @Failure 401 {object} models.Response "Unauthorized"
+// @Failure 401 {object} models.ErrorWireResponse "Unauthorized"
 // @Router /api/v1/users/logout [post]
 // @Security BearerAuth
 func (h *userV1Handler) Logout(ctx echo.Context) error {
@@ -166,7 +170,7 @@ func (h *userV1Handler) Logout(ctx echo.Context) error {
 	}
 
 	if err := h.service.User.Logout(ctx.Request().Context(), jti, refreshToken); err != nil {
-		return response.Error(ctx, err)
+		return err
 	}
 
 	ctx.SetCookie(&http.Cookie{
@@ -189,9 +193,9 @@ func (h *userV1Handler) Logout(ctx echo.Context) error {
 // @Accept json
 // @Produce json
 // @Success 200 {object} models.Response{data=models.GetUserByAccountNumberResponse} "User Information Retrieved Successfully"
-// @Failure 400 {object} models.Response "Invalid Input / Validation Error"
-// @Failure 404 {object} models.Response "User Not Found"
-// @Failure 500 {object} models.Response "Internal Server Error"
+// @Failure 401 {object} models.ErrorWireResponse "Unauthorized"
+// @Failure 404 {object} models.ErrorWireResponse "User Not Found"
+// @Failure 500 {object} models.ErrorWireResponse "Internal Server Error"
 // @Router /api/v1/users/me [get]
 // @Security BearerAuth
 func (h *userV1Handler) GetUserByAccessToken(ctx echo.Context) error {
@@ -199,7 +203,7 @@ func (h *userV1Handler) GetUserByAccessToken(ctx echo.Context) error {
 
 	user, err := h.service.User.GetByAccountNumber(ctx.Request().Context(), accountNumber)
 	if err != nil {
-		return response.Error(ctx, err)
+		return err
 	}
 
 	return response.Success(ctx, http.StatusOK, user.GetUserByAccountNumberResponse())

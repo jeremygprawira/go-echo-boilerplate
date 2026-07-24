@@ -1,49 +1,63 @@
-package middleware
+package middleware_test
 
 import (
+	"go-echo-boilerplate/internal/config"
+	httpdelivery "go-echo-boilerplate/internal/deliveries/http"
+	"go-echo-boilerplate/internal/deliveries/http/middleware"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"go-echo-boilerplate/internal/config"
-
 	"github.com/labstack/echo/v4"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/assert"
 )
 
-func newAPIKeyMiddleware(t *testing.T, key string) echo.MiddlewareFunc {
+func setupAPIKeyServer(t *testing.T) *echo.Echo {
 	t.Helper()
-	cfg := &config.Configuration{}
-	cfg.Authorization.APIKey = key
-	m := New(echo.New(), cfg)
-	return m.ApiKeyMiddleware(cfg)
-}
-
-func invokeAPIKey(t *testing.T, mw echo.MiddlewareFunc, presented string) int {
-	t.Helper()
-	e := echo.New()
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	if presented != "" {
-		req.Header.Set("X-API-Key", presented)
+	cfg := &config.Configuration{
+		Authorization: config.Authorization{APIKey: "secret-key"},
 	}
-	rec := httptest.NewRecorder()
-	ctx := e.NewContext(req, rec)
-	handler := mw(func(c echo.Context) error { return c.NoContent(http.StatusOK) })
-	_ = handler(ctx)
-	return rec.Code
+
+	e := echo.New()
+	e.HTTPErrorHandler = httpdelivery.ErrorHandler
+	m := middleware.New(e, cfg)
+	g := e.Group("/api", m.ApiKeyMiddleware(cfg))
+	g.GET("/ping", func(c echo.Context) error {
+		return c.String(http.StatusOK, "pong")
+	})
+	return e
 }
 
-func TestApiKey_Valid(t *testing.T) {
-	mw := newAPIKeyMiddleware(t, "correct-key")
-	require.Equal(t, http.StatusOK, invokeAPIKey(t, mw, "correct-key"))
-}
+func TestApiKeyMiddleware(t *testing.T) {
+	t.Run("missing key returns herr 401 body", func(t *testing.T) {
+		e := setupAPIKeyServer(t)
+		req := httptest.NewRequest(http.MethodGet, "/api/ping", nil)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
 
-func TestApiKey_Invalid(t *testing.T) {
-	mw := newAPIKeyMiddleware(t, "correct-key")
-	require.Equal(t, http.StatusUnauthorized, invokeAPIKey(t, mw, "wrong-key"))
-}
+		assert.Equal(t, http.StatusUnauthorized, rec.Code)
+		assert.Contains(t, rec.Body.String(), `"code":"UNAUTHORIZED"`)
+		assert.NotContains(t, rec.Body.String(), "X-API-Key") // internal detail stays internal
+	})
 
-func TestApiKey_Missing(t *testing.T) {
-	mw := newAPIKeyMiddleware(t, "correct-key")
-	require.Equal(t, http.StatusUnauthorized, invokeAPIKey(t, mw, ""))
+	t.Run("wrong key returns 401", func(t *testing.T) {
+		e := setupAPIKeyServer(t)
+		req := httptest.NewRequest(http.MethodGet, "/api/ping", nil)
+		req.Header.Set("X-API-Key", "wrong")
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	})
+
+	t.Run("correct key passes through", func(t *testing.T) {
+		e := setupAPIKeyServer(t)
+		req := httptest.NewRequest(http.MethodGet, "/api/ping", nil)
+		req.Header.Set("X-API-Key", "secret-key")
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusOK, rec.Code)
+		assert.Equal(t, "pong", rec.Body.String())
+	})
 }

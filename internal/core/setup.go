@@ -90,6 +90,7 @@ func BuildHTTPServer(deps *Dependencies) *echo.Echo {
 	e := echo.New()
 	e.HideBanner = true
 	e.HidePort = true
+	e.HTTPErrorHandler = handler.ErrorHandler
 
 	handler.New(e, deps.Service, deps.Config, deps.JWTConfig, deps.TokenStore)
 	return e

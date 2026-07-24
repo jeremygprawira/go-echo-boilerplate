@@ -7,7 +7,7 @@ import (
 	"go-echo-boilerplate/internal/clients/redisclient"
 	"go-echo-boilerplate/internal/config"
 	"go-echo-boilerplate/internal/models"
-	"go-echo-boilerplate/internal/pkg/errorc"
+	"go-echo-boilerplate/internal/pkg/apperr"
 	"go-echo-boilerplate/internal/pkg/generator"
 	"go-echo-boilerplate/internal/pkg/tokenstore"
 	"go-echo-boilerplate/internal/pkg/validator"
@@ -83,7 +83,7 @@ func TestUserService_RefreshTokens(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Nil(t, resp)
-		assert.Equal(t, 401, errorc.GetResponse(err).Code)
+		assert.True(t, apperr.Unauthorized.Is(err))
 	})
 
 	t.Run("Invalid refresh token is rejected", func(t *testing.T) {
@@ -101,7 +101,7 @@ func TestUserService_RefreshTokens(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Nil(t, resp)
-		assert.Equal(t, 401, errorc.GetResponse(err).Code)
+		assert.True(t, apperr.Unauthorized.Is(err))
 	})
 
 	t.Run("Deleted user is rejected, not issued fresh tokens", func(t *testing.T) {
@@ -128,7 +128,7 @@ func TestUserService_RefreshTokens(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Nil(t, resp)
-		assert.Equal(t, 401, errorc.GetResponse(err).Code)
+		assert.True(t, apperr.Unauthorized.Is(err))
 
 		mockRepo.AssertExpectations(t)
 	})

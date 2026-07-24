@@ -4,15 +4,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	httpdelivery "go-echo-boilerplate/internal/deliveries/http"
 	v1 "go-echo-boilerplate/internal/deliveries/http/api/v1"
 	"go-echo-boilerplate/internal/models"
-	"go-echo-boilerplate/internal/pkg/errorc"
+	"go-echo-boilerplate/internal/pkg/apperr"
 	"go-echo-boilerplate/internal/pkg/tokenstore"
 	"go-echo-boilerplate/internal/service"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/jeremygprawira/herr"
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -20,6 +23,12 @@ import (
 
 func strPtr(s string) *string {
 	return &s
+}
+
+func newEcho() *echo.Echo {
+	e := echo.New()
+	e.HTTPErrorHandler = httpdelivery.ErrorHandler
+	return e
 }
 
 type MockUserService struct {
@@ -65,7 +74,7 @@ func (m *MockUserService) Logout(ctx context.Context, accessJTI string, refreshT
 
 func TestUserV1Handler_Create(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
-		e := echo.New()
+		e := newEcho()
 		reqBody := models.CreateUserRequest{
 			Name:     "Test User",
 			Email:    "test@example.com",
@@ -116,7 +125,7 @@ func TestUserV1Handler_Create(t *testing.T) {
 	})
 
 	t.Run("Validation Error", func(t *testing.T) {
-		e := echo.New()
+		e := newEcho()
 		reqBody := models.CreateUserRequest{
 			// Missing required fields
 		}
@@ -132,12 +141,13 @@ func TestUserV1Handler_Create(t *testing.T) {
 
 		e.ServeHTTP(rec, req)
 
-		assert.Equal(t, http.StatusBadRequest, rec.Code)
-		assert.Contains(t, rec.Body.String(), "Validation failed")
+		assert.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+		assert.Contains(t, rec.Body.String(), `"code":"VALIDATION_FAILED"`)
+		assert.Contains(t, rec.Body.String(), `"errors":[`)
 	})
 
 	t.Run("Service Error - Already Exist", func(t *testing.T) {
-		e := echo.New()
+		e := newEcho()
 		reqBody := models.CreateUserRequest{
 			Name:     "Test",
 			Email:    "exist@example.com",
@@ -149,7 +159,7 @@ func TestUserV1Handler_Create(t *testing.T) {
 		rec := httptest.NewRecorder()
 
 		mockSvc := new(MockUserService)
-		mockSvc.On("Create", mock.Anything, mock.Anything).Return(nil, errorc.Error(errorc.ErrorAlreadyExist))
+		mockSvc.On("Create", mock.Anything, mock.Anything).Return(nil, apperr.AlreadyExists.New())
 
 		svc := &service.Service{User: mockSvc}
 		g := e.Group("/v1")
@@ -158,12 +168,41 @@ func TestUserV1Handler_Create(t *testing.T) {
 		e.ServeHTTP(rec, req)
 
 		assert.Equal(t, http.StatusConflict, rec.Code)
+		assert.Contains(t, rec.Body.String(), `"code":"ALREADY_EXISTS"`)
+	})
+
+	t.Run("Service Error - Internal Detail Never Leaks", func(t *testing.T) {
+		e := newEcho()
+		reqBody := models.CreateUserRequest{
+			Name:     "Test",
+			Email:    "test@example.com",
+			Password: "password123",
+		}
+		jsonBody, _ := json.Marshal(reqBody)
+		req := httptest.NewRequest(http.MethodPost, "/v1/users", bytes.NewReader(jsonBody))
+		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+		rec := httptest.NewRecorder()
+
+		mockSvc := new(MockUserService)
+		mockSvc.On("Create", mock.Anything, mock.Anything).
+			Return(nil, apperr.Database.New().Internal("failed to create user").Wrap(errors.New("pq: connection refused")))
+
+		svc := &service.Service{User: mockSvc}
+		g := e.Group("/v1")
+		v1.NewUserV1(g, svc, nil, nil, tokenstore.NewNoopStore())
+
+		e.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusInternalServerError, rec.Code)
+		assert.Contains(t, rec.Body.String(), `"code":"DATABASE_ERROR"`)
+		assert.NotContains(t, rec.Body.String(), "pq:")
+		assert.NotContains(t, rec.Body.String(), "failed to create user")
 	})
 }
 
 func TestUserV1Handler_GetTokens(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
-		e := echo.New()
+		e := newEcho()
 		reqBody := models.GetUserTokenRequest{
 			Email:    "test@example.com",
 			Password: "password123",
@@ -198,7 +237,7 @@ func TestUserV1Handler_GetTokens(t *testing.T) {
 	})
 
 	t.Run("Validation Error", func(t *testing.T) {
-		e := echo.New()
+		e := newEcho()
 		reqBody := models.GetUserTokenRequest{} // Empty request
 		jsonBody, _ := json.Marshal(reqBody)
 		req := httptest.NewRequest(http.MethodPost, "/v1/users/tokens", bytes.NewReader(jsonBody))
@@ -212,12 +251,13 @@ func TestUserV1Handler_GetTokens(t *testing.T) {
 
 		e.ServeHTTP(rec, req)
 
-		assert.Equal(t, http.StatusBadRequest, rec.Code)
-		assert.Contains(t, rec.Body.String(), "Validation failed")
+		assert.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+		assert.Contains(t, rec.Body.String(), `"code":"VALIDATION_FAILED"`)
+		assert.Contains(t, rec.Body.String(), `"errors":[`)
 	})
 
 	t.Run("Invalid Credentials", func(t *testing.T) {
-		e := echo.New()
+		e := newEcho()
 		reqBody := models.GetUserTokenRequest{
 			Email:    "test@example.com",
 			Password: "wrongpassword",
@@ -228,7 +268,7 @@ func TestUserV1Handler_GetTokens(t *testing.T) {
 		rec := httptest.NewRecorder()
 
 		mockSvc := new(MockUserService)
-		mockSvc.On("GetTokens", mock.Anything, mock.Anything).Return(nil, errorc.Error(errorc.ErrorInvalidInput))
+		mockSvc.On("GetTokens", mock.Anything, mock.Anything).Return(nil, apperr.InvalidInput.New().Public(herr.Msg("Invalid password")))
 
 		svc := &service.Service{User: mockSvc}
 		g := e.Group("/v1")
@@ -236,7 +276,8 @@ func TestUserV1Handler_GetTokens(t *testing.T) {
 
 		e.ServeHTTP(rec, req)
 
-		// ErrorInvalidInput typically maps to 400 Bad Request
 		assert.Equal(t, http.StatusBadRequest, rec.Code)
+		assert.Contains(t, rec.Body.String(), `"code":"INVALID_INPUT"`)
+		assert.Contains(t, rec.Body.String(), "Invalid password")
 	})
 }
