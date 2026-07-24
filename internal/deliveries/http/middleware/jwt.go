@@ -1,13 +1,13 @@
 package middleware
 
 import (
-	"go-echo-boilerplate/internal/pkg/errorc"
+	"go-echo-boilerplate/internal/pkg/apperr"
 	"go-echo-boilerplate/internal/pkg/jwtc"
-	"go-echo-boilerplate/internal/pkg/response"
 	"go-echo-boilerplate/internal/pkg/tokenstore"
 	"go-echo-boilerplate/internal/pkg/validator"
 	"strings"
 
+	"github.com/jeremygprawira/herr"
 	"github.com/labstack/echo/v4"
 )
 
@@ -30,12 +30,12 @@ func BearerAuthMiddleware(config *jwtc.Configuration, store tokenstore.TokenStor
 			// Extract Authorization header
 			authHeader := ctx.Request().Header.Get("Authorization")
 			if authHeader == "" {
-				return response.Error(ctx, errorc.Error(errorc.ErrorUnauthorized, "authorization header is required"))
+				return apperr.Unauthorized.New().Public(herr.Msg("authorization header is required"))
 			}
 
 			// Validate Bearer token format
 			if !strings.HasPrefix(authHeader, "Bearer ") {
-				return response.Error(ctx, errorc.Error(errorc.ErrorUnauthorized, "invalid authorization format"))
+				return apperr.Unauthorized.New().Public(herr.Msg("invalid authorization format"))
 			}
 
 			// Extract token string
@@ -44,15 +44,15 @@ func BearerAuthMiddleware(config *jwtc.Configuration, store tokenstore.TokenStor
 			// Validate access token (handles signature, expiration, type validation)
 			claims, err := validator.AccessToken(tokenString, config)
 			if err != nil {
-				return response.Error(ctx, errorc.Error(errorc.ErrorUnauthorized, err.Error()))
+				return apperr.Unauthorized.New().Wrap(err)
 			}
 
 			revoked, rerr := store.IsRevoked(ctx.Request().Context(), claims.ID)
 			if rerr != nil {
-				return response.Error(ctx, errorc.Error(errorc.ErrorInternalServer, rerr))
+				return apperr.Internal.New().Internal("failed to check token revocation").Wrap(rerr)
 			}
 			if revoked {
-				return response.Error(ctx, errorc.Error(errorc.ErrorUnauthorized, "token revoked"))
+				return apperr.Unauthorized.New().Public(herr.Msg("token revoked"))
 			}
 
 			// Inject claims into context for downstream handlers

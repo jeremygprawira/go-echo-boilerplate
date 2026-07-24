@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"go-echo-boilerplate/internal/pkg/apperr"
 	"go-echo-boilerplate/internal/pkg/logger"
 	"io"
 	"net/http"
@@ -165,16 +166,19 @@ func (m *Middleware) LoggingMiddleware(log logger.Logger) echo.MiddlewareFunc {
 						// Do NOT re-panic: re-panicking unwinds past emitWideEvent,
 						// so the canonical log line would never be emitted.
 						panicStack := string(debug.Stack())
+
+						// Render the 500 through the central handler first...
+						err = apperr.Internal.New().Internalf("panic: %v", r)
+						ectx.Error(err)
+
+						// ...then record the panic detail last so it wins over the
+						// generic enrichment the central handler just wrote.
 						logger.AddError(ctx, &logger.ErrorContext{
 							Type:      "PanicError",
 							Message:   fmt.Sprintf("panic: %v", r),
 							Retriable: false,
 							Stack:     panicStack,
 						})
-						// Convert panic to a 500 error so the normal post-handler
-						// path (emitWideEvent) runs and emits the wide event.
-						err = echo.ErrInternalServerError
-						ectx.Error(err)
 					}
 				}()
 
@@ -184,6 +188,12 @@ func (m *Middleware) LoggingMiddleware(log logger.Logger) echo.MiddlewareFunc {
 
 				err = next(ectx)
 			}()
+
+			// Render returned errors through the central handler BEFORE capturing
+			// response data, so the wide event sees the real status and body.
+			if err != nil && !ectx.Response().Committed {
+				ectx.Error(err)
+			}
 
 			// ================================================================
 			// Capture Response Data (with masking)

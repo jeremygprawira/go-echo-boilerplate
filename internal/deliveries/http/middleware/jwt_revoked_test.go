@@ -9,6 +9,7 @@ import (
 
 	"go-echo-boilerplate/internal/clients/redisclient"
 	"go-echo-boilerplate/internal/config"
+	httpdelivery "go-echo-boilerplate/internal/deliveries/http"
 	"go-echo-boilerplate/internal/deliveries/http/middleware"
 	"go-echo-boilerplate/internal/models"
 	"go-echo-boilerplate/internal/pkg/generator"
@@ -50,6 +51,7 @@ func TestBearer_RejectsRevokedToken(t *testing.T) {
 	require.NoError(t, store.Revoke(context.Background(), claims.ID, time.Minute))
 
 	e := echo.New()
+	e.HTTPErrorHandler = httpdelivery.ErrorHandler
 	e.GET("/me", func(c echo.Context) error { return c.NoContent(http.StatusOK) },
 		middleware.BearerAuthMiddleware(cfg, store))
 
@@ -74,6 +76,7 @@ func TestBearer_AllowsNonRevokedToken(t *testing.T) {
 	store := tokenstore.NewNoopStore()
 
 	e := echo.New()
+	e.HTTPErrorHandler = httpdelivery.ErrorHandler
 	e.GET("/me", func(c echo.Context) error { return c.NoContent(http.StatusOK) },
 		middleware.BearerAuthMiddleware(cfg, store))
 
