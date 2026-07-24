@@ -54,9 +54,10 @@ func NewUserV1(v1 *echo.Group, service *service.Service, config *config.Configur
 // @Produce json
 // @Param request body models.CreateUserRequest true "User Registration Details"
 // @Success 201 {object} models.Response{data=models.CreateUserResponse} "User Created Successfully"
-// @Failure 400 {object} models.Response "Invalid Input / Validation Error"
-// @Failure 409 {object} models.Response "User Already Exists (Email or Phone)"
-// @Failure 500 {object} models.Response "Internal Server Error"
+// @Failure 400 {object} models.ErrorWireResponse "Invalid Input"
+// @Failure 422 {object} models.ErrorWireResponse "Validation Failed"
+// @Failure 409 {object} models.ErrorWireResponse "User Already Exists (Email or Phone)"
+// @Failure 500 {object} models.ErrorWireResponse "Internal Server Error"
 // @Router /api/v1/users [post]
 func (h *userV1Handler) Create(ctx echo.Context) error {
 	var request models.CreateUserRequest
@@ -84,9 +85,10 @@ func (h *userV1Handler) Create(ctx echo.Context) error {
 // @Produce json
 // @Param request body models.GetUserTokenRequest true "User Token Request"
 // @Success 200 {object} models.Response{data=models.GetUserTokenResponse} "User Tokens Retrieved Successfully"
-// @Failure 400 {object} models.Response "Invalid Input / Validation Error"
-// @Failure 404 {object} models.Response "User Not Found"
-// @Failure 500 {object} models.Response "Internal Server Error"
+// @Failure 400 {object} models.ErrorWireResponse "Invalid Input"
+// @Failure 422 {object} models.ErrorWireResponse "Validation Failed"
+// @Failure 404 {object} models.ErrorWireResponse "User Not Found"
+// @Failure 500 {object} models.ErrorWireResponse "Internal Server Error"
 // @Router /api/v1/users/tokens [post]
 func (h *userV1Handler) GetTokens(ctx echo.Context) error {
 	var request models.GetUserTokenRequest
@@ -126,8 +128,9 @@ func (h *userV1Handler) GetTokens(ctx echo.Context) error {
 // @Produce json
 // @Param request body models.RefreshTokenRequest true "Refresh Token"
 // @Success 200 {object} models.Response{data=models.GetUserTokenResponse} "Tokens Refreshed Successfully"
-// @Failure 400 {object} models.Response "Invalid Input / Validation Error"
-// @Failure 401 {object} models.Response "Invalid or Revoked Refresh Token"
+// @Failure 400 {object} models.ErrorWireResponse "Invalid Input"
+// @Failure 422 {object} models.ErrorWireResponse "Validation Failed"
+// @Failure 401 {object} models.ErrorWireResponse "Invalid or Revoked Refresh Token"
 // @Router /api/v1/users/tokens/refresh [post]
 func (h *userV1Handler) RefreshTokens(ctx echo.Context) error {
 	var request models.RefreshTokenRequest
@@ -155,7 +158,7 @@ func (h *userV1Handler) RefreshTokens(ctx echo.Context) error {
 // @Tags Users
 // @Produce json
 // @Success 200 {object} models.Response "Logged Out Successfully"
-// @Failure 401 {object} models.Response "Unauthorized"
+// @Failure 401 {object} models.ErrorWireResponse "Unauthorized"
 // @Router /api/v1/users/logout [post]
 // @Security BearerAuth
 func (h *userV1Handler) Logout(ctx echo.Context) error {
@@ -190,9 +193,9 @@ func (h *userV1Handler) Logout(ctx echo.Context) error {
 // @Accept json
 // @Produce json
 // @Success 200 {object} models.Response{data=models.GetUserByAccountNumberResponse} "User Information Retrieved Successfully"
-// @Failure 400 {object} models.Response "Invalid Input / Validation Error"
-// @Failure 404 {object} models.Response "User Not Found"
-// @Failure 500 {object} models.Response "Internal Server Error"
+// @Failure 401 {object} models.ErrorWireResponse "Unauthorized"
+// @Failure 404 {object} models.ErrorWireResponse "User Not Found"
+// @Failure 500 {object} models.ErrorWireResponse "Internal Server Error"
 // @Router /api/v1/users/me [get]
 // @Security BearerAuth
 func (h *userV1Handler) GetUserByAccessToken(ctx echo.Context) error {
