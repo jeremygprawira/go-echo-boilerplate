@@ -39,6 +39,6 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Install gosec
-        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.21.4
+        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.28.0
       - name: gosec
         run: gosec ./...

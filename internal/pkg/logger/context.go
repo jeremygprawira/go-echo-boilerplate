@@ -93,32 +93,6 @@ func (w *WideEvent) SetTraceID(traceID string) {
 	w.TraceID = traceID
 }
 
-// add adds business context to the wide event.
-// Thread-safe: can be called concurrently from multiple goroutines.
-//
-// Memory Safety: If BusinessData exceeds MaxBusinessDataSize, additional
-// entries are silently dropped to prevent unbounded memory growth.
-func (w *WideEvent) add(key string, value interface{}) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	// Check if key already exists (update doesn't count against limit)
-	if _, exists := w.BusinessData[key]; exists {
-		w.BusinessData[key] = value
-		return
-	}
-
-	// Enforce size limit for new entries
-	if w.businessDataLen >= MaxBusinessDataSize {
-		// Silently drop to prevent memory overflow
-		// In production, you might want to log this to metrics
-		return
-	}
-
-	w.BusinessData[key] = value
-	w.businessDataLen++
-}
-
 // addMap adds multiple business context fields from a map.
 // Thread-safe: can be called concurrently from multiple goroutines.
 //
