@@ -39,17 +39,30 @@ definitions:
         example: "2026-01-24T15:57:37+07:00"
         type: string
     type: object
-  models.ErrorResponse:
+  models.ErrorValidationResponse:
     properties:
       code:
-        type: integer
-      errors: {}
+        type: string
+      field:
+        type: string
       message:
         type: string
-      metadata:
-        $ref: '#/definitions/models.Metadata'
-      status:
+    type: object
+  models.ErrorWireResponse:
+    properties:
+      code:
+        example: USER_NOT_FOUND
         type: string
+      errors:
+        items:
+          $ref: '#/definitions/models.ErrorValidationResponse'
+        type: array
+      message:
+        example: user not found
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
     type: object
   models.GetUserByAccountNumberResponse:
     properties:
@@ -148,6 +161,13 @@ definitions:
         example: "6281234567890"
         type: string
     type: object
+  models.RefreshTokenRequest:
+    properties:
+      refreshToken:
+        type: string
+    required:
+    - refreshToken
+    type: object
   models.Response:
     properties:
       code:
@@ -207,18 +227,41 @@ paths:
                   $ref: '#/definitions/models.CreateUserResponse'
               type: object
         "400":
-          description: Invalid Input / Validation Error
+          description: Invalid Input
           schema:
-            $ref: '#/definitions/models.Response'
+            $ref: '#/definitions/models.ErrorWireResponse'
         "409":
           description: User Already Exists (Email or Phone)
           schema:
-            $ref: '#/definitions/models.Response'
+            $ref: '#/definitions/models.ErrorWireResponse'
+        "422":
+          description: Validation Failed
+          schema:
+            $ref: '#/definitions/models.ErrorWireResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/models.Response'
+            $ref: '#/definitions/models.ErrorWireResponse'
       summary: Create New User
+      tags:
+      - Users
+  /api/v1/users/logout:
+    post:
+      description: Revoke the current access token and refresh token
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Logged Out Successfully
+          schema:
+            $ref: '#/definitions/models.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorWireResponse'
+      security:
+      - BearerAuth: []
+      summary: Logout
       tags:
       - Users
   /api/v1/users/me:
@@ -238,18 +281,18 @@ paths:
                 data:
                   $ref: '#/definitions/models.GetUserByAccountNumberResponse'
               type: object
-        "400":
-          description: Invalid Input / Validation Error
+        "401":
+          description: Unauthorized
           schema:
-            $ref: '#/definitions/models.Response'
+            $ref: '#/definitions/models.ErrorWireResponse'
         "404":
           description: User Not Found
           schema:
-            $ref: '#/definitions/models.Response'
+            $ref: '#/definitions/models.ErrorWireResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/models.Response'
+            $ref: '#/definitions/models.ErrorWireResponse'
       security:
       - BearerAuth: []
       summary: Get User By Access Token
@@ -280,18 +323,62 @@ paths:
                   $ref: '#/definitions/models.GetUserTokenResponse'
               type: object
         "400":
-          description: Invalid Input / Validation Error
+          description: Invalid Input
           schema:
-            $ref: '#/definitions/models.Response'
+            $ref: '#/definitions/models.ErrorWireResponse'
         "404":
           description: User Not Found
           schema:
-            $ref: '#/definitions/models.Response'
+            $ref: '#/definitions/models.ErrorWireResponse'
+        "422":
+          description: Validation Failed
+          schema:
+            $ref: '#/definitions/models.ErrorWireResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/models.Response'
+            $ref: '#/definitions/models.ErrorWireResponse'
       summary: Get Tokens
+      tags:
+      - Users
+  /api/v1/users/tokens/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Exchange a valid, non-revoked refresh token for a new access+refresh
+        pair
+      parameters:
+      - description: Refresh Token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.RefreshTokenRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Tokens Refreshed Successfully
+          schema:
+            allOf:
+            - $ref: '#/definitions/models.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.GetUserTokenResponse'
+              type: object
+        "400":
+          description: Invalid Input
+          schema:
+            $ref: '#/definitions/models.ErrorWireResponse'
+        "401":
+          description: Invalid or Revoked Refresh Token
+          schema:
+            $ref: '#/definitions/models.ErrorWireResponse'
+        "422":
+          description: Validation Failed
+          schema:
+            $ref: '#/definitions/models.ErrorWireResponse'
+      summary: Refresh Tokens
       tags:
       - Users
   /health:
@@ -316,7 +403,7 @@ paths:
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/models.ErrorResponse'
+            $ref: '#/definitions/models.ErrorWireResponse'
       summary: Check health status
       tags:
       - Health

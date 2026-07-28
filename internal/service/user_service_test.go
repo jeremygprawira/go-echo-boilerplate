@@ -4,15 +4,15 @@ import (
 	"context"
 	"errors"
 	"go-echo-boilerplate/internal/models"
-	"go-echo-boilerplate/internal/pkg/errorc"
+	"go-echo-boilerplate/internal/pkg/apperr"
 	"go-echo-boilerplate/internal/pkg/generator"
 	"go-echo-boilerplate/internal/pkg/jwtc"
 	"go-echo-boilerplate/internal/repository"
 	"go-echo-boilerplate/internal/service"
-	"net/http"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -62,14 +62,18 @@ func (m *MockUserRepository) GetOneByAccountNumber(ctx context.Context, accountN
 	return args.Get(0).(*models.User), args.Error(1)
 }
 
+func (m *MockUserRepository) GetOneByID(ctx context.Context, id int) (*models.User, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.User), args.Error(1)
+}
+
 func TestUserService_Create(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		mockRepo := new(MockUserRepository)
 
-		// Expect CheckByEmailOrPhoneNumber to return false (not found)
-		mockRepo.On("CheckByEmailOrPhoneNumber", mock.Anything, "test@example.com", "+6281234567890").Return(false, nil)
-
-		// Expect Create to succeed
 		mockRepo.On("Create", mock.Anything, mock.MatchedBy(func(u *models.User) bool {
 			return u.Email != nil && *u.Email == "test@example.com" && u.Name == "Test User"
 		})).Return(nil)
@@ -126,14 +130,14 @@ func TestUserService_Create(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Nil(t, user)
-		assert.Contains(t, err.Error(), "Invalid phone number format") // Matches errorc.ErrorInvalidInput or message
-		// Note check specific error message based on implementation
+		assert.True(t, apperr.InvalidInput.Is(err))
 	})
 
 	t.Run("User Already Exists", func(t *testing.T) {
 		mockRepo := new(MockUserRepository)
 
-		mockRepo.On("CheckByEmailOrPhoneNumber", mock.Anything, mock.Anything, mock.Anything).Return(true, nil)
+		mockRepo.On("Create", mock.Anything, mock.Anything).
+			Return(&pgconn.PgError{Code: "23505"})
 
 		deps := service.Dependencies{
 			Repository: repository.Repository{
@@ -152,33 +156,7 @@ func TestUserService_Create(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Nil(t, user)
-		assert.Equal(t, errorc.ErrorAlreadyExist.Response.Code, errorc.GetResponse(err).Code)
-
-		mockRepo.AssertExpectations(t)
-	})
-
-	t.Run("DB Check Error", func(t *testing.T) {
-		mockRepo := new(MockUserRepository)
-
-		mockRepo.On("CheckByEmailOrPhoneNumber", mock.Anything, mock.Anything, mock.Anything).Return(false, errors.New("db error"))
-
-		deps := service.Dependencies{
-			Repository: repository.Repository{
-				User: mockRepo,
-			},
-		}
-
-		svc := service.NewUserService(&deps)
-
-		req := &models.CreateUserRequest{
-			Email: "test@example.com",
-		}
-
-		user, err := svc.Create(context.Background(), req)
-
-		assert.Error(t, err)
-		assert.Nil(t, user)
-		assert.Equal(t, errorc.ErrorDatabase.Response.Code, errorc.GetResponse(err).Code)
+		assert.True(t, apperr.AlreadyExists.Is(err))
 
 		mockRepo.AssertExpectations(t)
 	})
@@ -186,7 +164,6 @@ func TestUserService_Create(t *testing.T) {
 	t.Run("DB Create Error", func(t *testing.T) {
 		mockRepo := new(MockUserRepository)
 
-		mockRepo.On("CheckByEmailOrPhoneNumber", mock.Anything, mock.Anything, mock.Anything).Return(false, nil)
 		mockRepo.On("Create", mock.Anything, mock.Anything).Return(errors.New("db create error"))
 
 		deps := service.Dependencies{
@@ -206,7 +183,7 @@ func TestUserService_Create(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Nil(t, user)
-		assert.Equal(t, errorc.ErrorDatabase.Response.Code, errorc.GetResponse(err).Code)
+		assert.True(t, apperr.Database.Is(err))
 
 		mockRepo.AssertExpectations(t)
 	})
@@ -279,9 +256,7 @@ func TestUserService_GetTokens(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Nil(t, resp)
-		respErr := errorc.GetResponse(err)
-		assert.Equal(t, http.StatusUnauthorized, respErr.Code)
-		assert.Equal(t, "invalid credentials", respErr.Message)
+		assert.True(t, apperr.Unauthorized.Is(err))
 
 		mockRepo.AssertExpectations(t)
 	})
@@ -315,9 +290,7 @@ func TestUserService_GetTokens(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Nil(t, resp)
-		respErr := errorc.GetResponse(err)
-		assert.Equal(t, http.StatusUnauthorized, respErr.Code)
-		assert.Equal(t, "invalid credentials", respErr.Message)
+		assert.True(t, apperr.Unauthorized.Is(err))
 
 		mockRepo.AssertExpectations(t)
 	})
@@ -342,9 +315,7 @@ func TestGetTokens_UserNotFound_GenericError(t *testing.T) {
 	})
 
 	require.Error(t, err)
-	resp := errorc.GetResponse(err)
-	require.Equal(t, http.StatusUnauthorized, resp.Code)
-	require.Equal(t, "invalid credentials", resp.Message)
+	require.True(t, apperr.Unauthorized.Is(err))
 
 	mockRepo.AssertExpectations(t)
 }
@@ -369,9 +340,7 @@ func TestGetTokens_WrongPassword_SameGenericError(t *testing.T) {
 	})
 
 	require.Error(t, err)
-	resp := errorc.GetResponse(err)
-	require.Equal(t, http.StatusUnauthorized, resp.Code)
-	require.Equal(t, "invalid credentials", resp.Message)
+	require.True(t, apperr.Unauthorized.Is(err))
 
 	mockRepo.AssertExpectations(t)
 }

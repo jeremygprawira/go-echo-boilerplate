@@ -1,4 +1,4 @@
-.PHONY: help build build-prod run dev clean test test-coverage test-integration docker-up docker-down docker-logs docker-clean docs lint lint-fix tidy migrate-up migrate-down migrate-status migrate-create check-config install-tools security-scan run-local run-dev run-uat run-prod
+.PHONY: help build build-prod build-consumer run run-consumer dev clean test test-coverage test-integration docker-up docker-down docker-logs docker-clean docs lint lint-fix tidy migrate-up migrate-down migrate-status migrate-create check-config install-tools security-scan run-local run-dev run-uat run-prod
 
 # Default target
 .DEFAULT_GOAL := help
@@ -40,7 +40,9 @@ help:
 	@echo "🏗️  Build & Development:"
 	@echo "  make build                    - Build the application binary"
 	@echo "  make build-prod               - Build optimized production binary"
+	@echo "  make build-consumer           - Build the Kafka consumer binary"
 	@echo "  make run                      - Run with config (ENV=local|dev|uat|prod)"
+	@echo "  make run-consumer             - Run the Kafka consumer (ENV=local|dev|uat|prod)"
 	@echo "  make dev                      - Run with hot-reload (air)"
 	@echo "  make clean                    - Remove binaries and artifacts"
 	@echo "  make tidy                     - Clean and download Go modules"
@@ -113,6 +115,12 @@ build-prod:
 	@echo "✅ Production build complete: bin/$(BINARY_NAME)"
 	@ls -lh bin/$(BINARY_NAME)
 
+build-consumer:
+	@echo "🔨 Building consumer binary..."
+	@mkdir -p bin
+	@go build -o bin/consumer ./cmd/consumer
+	@echo "✅ Build complete: bin/consumer"
+
 # ============================================================================
 # Run Commands (Environment-Specific)
 # ============================================================================
@@ -135,6 +143,10 @@ run-uat:
 
 run-prod:
 	@$(MAKE) run ENV=prod
+
+run-consumer:
+	@echo "🚀 Running consumer with ENV=$(ENV)..."
+	@ENV=$(ENV) go run ./cmd/consumer
 
 # Hot-reload development (requires air: go install github.com/air-verse/air@latest)
 dev:

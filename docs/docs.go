@@ -59,21 +59,58 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Invalid Input / Validation Error",
+                        "description": "Invalid Input",
                         "schema": {
-                            "$ref": "#/definitions/models.Response"
+                            "$ref": "#/definitions/models.ErrorWireResponse"
                         }
                     },
                     "409": {
                         "description": "User Already Exists (Email or Phone)",
                         "schema": {
-                            "$ref": "#/definitions/models.Response"
+                            "$ref": "#/definitions/models.ErrorWireResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Failed",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorWireResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
+                            "$ref": "#/definitions/models.ErrorWireResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/users/logout": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Revoke the current access token and refresh token",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Logout",
+                "responses": {
+                    "200": {
+                        "description": "Logged Out Successfully",
+                        "schema": {
                             "$ref": "#/definitions/models.Response"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorWireResponse"
                         }
                     }
                 }
@@ -116,22 +153,22 @@ const docTemplate = `{
                             ]
                         }
                     },
-                    "400": {
-                        "description": "Invalid Input / Validation Error",
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/models.Response"
+                            "$ref": "#/definitions/models.ErrorWireResponse"
                         }
                     },
                     "404": {
                         "description": "User Not Found",
                         "schema": {
-                            "$ref": "#/definitions/models.Response"
+                            "$ref": "#/definitions/models.ErrorWireResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/models.Response"
+                            "$ref": "#/definitions/models.ErrorWireResponse"
                         }
                     }
                 }
@@ -181,21 +218,91 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Invalid Input / Validation Error",
+                        "description": "Invalid Input",
                         "schema": {
-                            "$ref": "#/definitions/models.Response"
+                            "$ref": "#/definitions/models.ErrorWireResponse"
                         }
                     },
                     "404": {
                         "description": "User Not Found",
                         "schema": {
-                            "$ref": "#/definitions/models.Response"
+                            "$ref": "#/definitions/models.ErrorWireResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Failed",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorWireResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/models.Response"
+                            "$ref": "#/definitions/models.ErrorWireResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/users/tokens/refresh": {
+            "post": {
+                "description": "Exchange a valid, non-revoked refresh token for a new access+refresh pair",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Refresh Tokens",
+                "parameters": [
+                    {
+                        "description": "Refresh Token",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.RefreshTokenRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Tokens Refreshed Successfully",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.GetUserTokenResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid Input",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorWireResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid or Revoked Refresh Token",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorWireResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Failed",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorWireResponse"
                         }
                     }
                 }
@@ -239,7 +346,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/models.ErrorResponse"
+                            "$ref": "#/definitions/models.ErrorWireResponse"
                         }
                     }
                 }
@@ -303,21 +410,40 @@ const docTemplate = `{
                 }
             }
         },
-        "models.ErrorResponse": {
+        "models.ErrorValidationResponse": {
             "type": "object",
             "properties": {
                 "code": {
-                    "type": "integer"
+                    "type": "string"
                 },
-                "errors": {},
+                "field": {
+                    "type": "string"
+                },
                 "message": {
                     "type": "string"
+                }
+            }
+        },
+        "models.ErrorWireResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "USER_NOT_FOUND"
+                },
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.ErrorValidationResponse"
+                    }
+                },
+                "message": {
+                    "type": "string",
+                    "example": "user not found"
                 },
                 "metadata": {
-                    "$ref": "#/definitions/models.Metadata"
-                },
-                "status": {
-                    "type": "string"
+                    "type": "object",
+                    "additionalProperties": true
                 }
             }
         },
@@ -460,6 +586,17 @@ const docTemplate = `{
                 "number": {
                     "type": "string",
                     "example": "6281234567890"
+                }
+            }
+        },
+        "models.RefreshTokenRequest": {
+            "type": "object",
+            "required": [
+                "refreshToken"
+            ],
+            "properties": {
+                "refreshToken": {
+                    "type": "string"
                 }
             }
         },

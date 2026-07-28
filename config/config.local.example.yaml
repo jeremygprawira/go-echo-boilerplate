@@ -45,3 +45,18 @@ google:
   redirect_uri: ""
   state: ""
   user_info_url: "https://www.googleapis.com/oauth2/v2/userinfo"
+
+# Optional infrastructure clients (all off by default)
+redis:
+  enabled: false
+  addr: localhost:6379
+  password: ""
+  db: 0
+kafka:
+  enabled: false
+  brokers: ["localhost:9092"]
+  group_id: go-echo-boilerplate
+firebase:
+  enabled: false
+  project_id: ""
+  credentials_file: ""

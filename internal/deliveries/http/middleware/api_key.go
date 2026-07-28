@@ -4,8 +4,7 @@ import (
 	"crypto/subtle"
 
 	"go-echo-boilerplate/internal/config"
-	"go-echo-boilerplate/internal/pkg/errorc"
-	"go-echo-boilerplate/internal/pkg/response"
+	"go-echo-boilerplate/internal/pkg/apperr"
 
 	"github.com/labstack/echo/v4"
 )
@@ -15,7 +14,7 @@ func (m *Middleware) ApiKeyMiddleware(config *config.Configuration) echo.Middlew
 		return func(ctx echo.Context) error {
 			apiKey := ctx.Request().Header.Get("X-API-Key")
 			if apiKey == "" {
-				return response.Error(ctx, errorc.ErrorUnauthorized)
+				return apperr.Unauthorized.New().Internal("missing X-API-Key header")
 			}
 
 			// ConstantTimeCompare avoids leaking the API key one byte at a time via a
@@ -23,7 +22,7 @@ func (m *Middleware) ApiKeyMiddleware(config *config.Configuration) echo.Middlew
 			// mismatched byte, letting an attacker infer the key length and contents
 			// from response latency across many requests.
 			if subtle.ConstantTimeCompare([]byte(apiKey), []byte(config.Authorization.APIKey)) != 1 {
-				return response.Error(ctx, errorc.ErrorUnauthorized)
+				return apperr.Unauthorized.New().Internal("X-API-Key does not match configured key")
 			}
 
 			return next(ctx)

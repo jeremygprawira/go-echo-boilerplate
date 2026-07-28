@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"go-echo-boilerplate/internal/models"
-	"go-echo-boilerplate/internal/pkg/errorc"
+	"go-echo-boilerplate/internal/pkg/apperr"
 	"go-echo-boilerplate/internal/pkg/formatter"
 	"go-echo-boilerplate/internal/pkg/generator"
 	"go-echo-boilerplate/internal/pkg/logger"
 	"go-echo-boilerplate/internal/pkg/validator"
 
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jeremygprawira/herr"
 )
 
 // pgUniqueViolation is the PostgreSQL error code for a UNIQUE constraint violation.
@@ -20,12 +21,15 @@ const pgUniqueViolation = "23505"
 // dummyPasswordHash is a valid bcrypt hash compared against on the
 // user-not-found path so login timing does not reveal whether an account
 // exists. It corresponds to no real password.
-const dummyPasswordHash = "$2a$12$BOZVmY4H76pfJnkVfAJEk.m5t0QcXHgphRl4wrKGSl8F7A5PnQRC2"
+//nolint:gosec // G101: not a credential — a fixed decoy hash for constant-time comparison, not a secret.
+const dummyPasswordHash = "$2a$12$BOZVmY4H76pfJnkVfAJEk.m5t0QcXHgphRl4wrKGSl8F7A5PnQRC2" //#nosec G101 -- decoy bcrypt hash for timing-safe login, not a real credential
 
 type UserService interface {
 	Create(ctx context.Context, request *models.CreateUserRequest) (*models.User, error)
 	GetTokens(ctx context.Context, request *models.GetUserTokenRequest) (*models.GetUserTokenResponse, error)
 	GetByAccountNumber(ctx context.Context, accountNumber string) (*models.User, error)
+	RefreshTokens(ctx context.Context, refreshToken string) (*models.GetUserTokenResponse, error)
+	Logout(ctx context.Context, accessJTI string, refreshToken string) error
 }
 
 type userService struct {
@@ -59,7 +63,7 @@ func (us *userService) Create(ctx context.Context, request *models.CreateUserReq
 			CountryCode: phoneCountryCode,
 		})
 		if err != nil {
-			return nil, errorc.Error(errorc.ErrorInvalidInput, err, "Invalid phone number format")
+			return nil, apperr.InvalidInput.New().Public(herr.Msg("Invalid phone number format")).Wrap(err)
 		}
 		phoneNumber = *formattedPhoneNumber
 	}
@@ -69,13 +73,17 @@ func (us *userService) Create(ctx context.Context, request *models.CreateUserReq
 	// Generate unique account number
 	accountNumber, err := generator.AccountNumber()
 	if err != nil {
-		return nil, errorc.Error(errorc.ErrorInternalServer, err, "Failed to generate account number")
+		return nil, apperr.Internal.New().Internal("failed to generate account number").Wrap(err)
+	}
+
+	if err := validator.PasswordWithinBcryptLimit(request.Password); err != nil {
+		return nil, apperr.InvalidInput.New().Public(herr.Msg("Password too long")).Wrap(err)
 	}
 
 	// Hash password
 	hashedPassword, err := generator.Hash(request.Password)
 	if err != nil {
-		return nil, errorc.Error(errorc.ErrorInternalServer, err, "Failed to hash password")
+		return nil, apperr.Internal.New().Internal("failed to hash password").Wrap(err)
 	}
 
 	var emailPtr *string
@@ -109,9 +117,9 @@ func (us *userService) Create(ctx context.Context, request *models.CreateUserReq
 		logger.AddToKey(ctx, "user", "is_inserted_to_db", false)
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation {
-			return nil, errorc.Error(errorc.ErrorAlreadyExist, err, "User already exists with that email or phone number")
+			return nil, apperr.AlreadyExists.New().Public(herr.Msg("User already exists with that email or phone number")).Wrap(err)
 		}
-		return nil, errorc.Error(errorc.ErrorDatabase, err, "Failed to create user")
+		return nil, apperr.Database.New().Internal("failed to create user").Wrap(err)
 	}
 
 	return user, nil
@@ -130,7 +138,7 @@ func (us *userService) GetTokens(ctx context.Context, request *models.GetUserTok
 			CountryCode: request.PhoneNumber.CountryCode,
 		})
 		if err != nil {
-			return nil, errorc.Error(errorc.ErrorInvalidInput, err, "Invalid phone number format")
+			return nil, apperr.InvalidInput.New().Public(herr.Msg("Invalid phone number format")).Wrap(err)
 		}
 		request.PhoneNumber.Number = *formattedPhoneNumber
 		logger.AddToKey(ctx, "user", "formatted_phone", request.PhoneNumber.Number)
@@ -138,7 +146,7 @@ func (us *userService) GetTokens(ctx context.Context, request *models.GetUserTok
 
 	user, err := us.d.Repository.User.GetCredentialsByEmailOrPhoneNumber(ctx, request.Email, request.PhoneNumber.Number)
 	if err != nil {
-		return nil, errorc.Error(errorc.ErrorDatabase, err, "Failed to get user credentials")
+		return nil, apperr.Database.New().Internal("failed to get user credentials").Wrap(err)
 	}
 
 	// Always run a bcrypt comparison — even when the user does not exist — so an
@@ -151,19 +159,24 @@ func (us *userService) GetTokens(ctx context.Context, request *models.GetUserTok
 
 	match, err := validator.Hash(request.Password, storedHash)
 	if err != nil {
-		return nil, errorc.Error(errorc.ErrorInternalServer, err, "Failed to verify credentials")
+		return nil, apperr.Internal.New().Internal("failed to verify credentials").Wrap(err)
 	}
 
 	if user == nil || !match {
-		return nil, errorc.Error(errorc.ErrorUnauthorized, "invalid credentials")
+		return nil, apperr.Unauthorized.New().Public(herr.Msg("invalid credentials"))
 	}
 
+	return us.issueTokens(user)
+}
+
+// issueTokens generates a fresh access+refresh pair for user and shapes the
+// GetUserTokenResponse. Shared by GetTokens (login) and RefreshTokens.
+func (us *userService) issueTokens(user *models.User) (*models.GetUserTokenResponse, error) {
 	var tokens []models.Token
 
-	// Generate tokens
 	accessToken, err := generator.AccessToken(user, us.d.JWTConfig)
 	if err != nil {
-		return nil, errorc.Error(errorc.ErrorInternalServer, err, "Failed to generate access token")
+		return nil, apperr.Internal.New().Internal("failed to generate access token").Wrap(err)
 	}
 
 	tokens = append(tokens, models.Token{
@@ -174,7 +187,7 @@ func (us *userService) GetTokens(ctx context.Context, request *models.GetUserTok
 
 	refreshToken, err := generator.RefreshToken(user, us.d.JWTConfig)
 	if err != nil {
-		return nil, errorc.Error(errorc.ErrorInternalServer, err, "Failed to generate refresh token")
+		return nil, apperr.Internal.New().Internal("failed to generate refresh token").Wrap(err)
 	}
 
 	tokens = append(tokens, models.Token{
@@ -203,6 +216,58 @@ func (us *userService) GetTokens(ctx context.Context, request *models.GetUserTok
 	}, nil
 }
 
+// RefreshTokens validates a refresh token, rejects it if already revoked,
+// rotates it (revoking the presented JTI), and issues a fresh access+refresh pair.
+func (us *userService) RefreshTokens(ctx context.Context, refreshToken string) (*models.GetUserTokenResponse, error) {
+	claims, err := validator.RefreshToken(refreshToken, us.d.JWTConfig)
+	if err != nil {
+		return nil, apperr.Unauthorized.New().Public(herr.Msg("invalid refresh token")).Wrap(err)
+	}
+
+	revoked, err := us.d.TokenStore.IsRevoked(ctx, claims.ID)
+	if err != nil {
+		return nil, apperr.Internal.New().Internal("failed to check token revocation").Wrap(err)
+	}
+	if revoked {
+		return nil, apperr.Unauthorized.New().Public(herr.Msg("refresh token revoked"))
+	}
+
+	user, err := us.d.Repository.User.GetOneByID(ctx, claims.UserID)
+	if err != nil || user == nil {
+		return nil, apperr.Unauthorized.New().Public(herr.Msg("invalid refresh token")).Wrap(err)
+	}
+
+	// Rotate: revoke the presented refresh token so it cannot be replayed.
+	if err := us.d.TokenStore.Revoke(ctx, claims.ID, us.d.JWTConfig.RefreshTokenDuration); err != nil {
+		return nil, apperr.Internal.New().Internal("failed to revoke refresh token").Wrap(err)
+	}
+
+	return us.issueTokens(user)
+}
+
+// Logout ends the caller's session: it revokes the access-token JTI so the
+// access token stops being accepted before its natural expiry, and — when a
+// refresh token is presented — revokes the refresh token's JTI too so it can
+// no longer mint new access tokens. An unparseable/expired refresh token is
+// ignored: it cannot be used anyway, and logout must stay idempotent.
+func (us *userService) Logout(ctx context.Context, accessJTI string, refreshToken string) error {
+	if accessJTI != "" {
+		if err := us.d.TokenStore.Revoke(ctx, accessJTI, us.d.JWTConfig.AccessTokenDuration); err != nil {
+			return apperr.Internal.New().Internal("failed to revoke access token").Wrap(err)
+		}
+	}
+
+	if refreshToken != "" {
+		if claims, err := validator.RefreshToken(refreshToken, us.d.JWTConfig); err == nil {
+			if err := us.d.TokenStore.Revoke(ctx, claims.ID, us.d.JWTConfig.RefreshTokenDuration); err != nil {
+				return apperr.Internal.New().Internal("failed to revoke refresh token").Wrap(err)
+			}
+		}
+	}
+
+	return nil
+}
+
 func (us *userService) GetByAccountNumber(ctx context.Context, accountNumber string) (*models.User, error) {
 	logger.AddToKey(ctx, "user", map[string]any{
 		"operation":      "user.get_by_account_number",
@@ -211,11 +276,11 @@ func (us *userService) GetByAccountNumber(ctx context.Context, accountNumber str
 
 	user, err := us.d.Repository.User.GetOneByAccountNumber(ctx, accountNumber)
 	if err != nil {
-		return nil, errorc.Error(errorc.ErrorDatabase, err, "Failed to get user")
+		return nil, apperr.Database.New().Internal("failed to get user").Wrap(err)
 	}
 
 	if user == nil {
-		return nil, errorc.Error(errorc.ErrorDataNotFound, "User not found")
+		return nil, apperr.DataNotFound.New().Public(herr.Msg("User not found"))
 	}
 
 	return user, nil
