@@ -1,7 +1,7 @@
-// Package apperr is the application's error catalog: one immutable herr.Class
-// per stable error code. Services and middleware stamp instances with
-// apperr.X.New() and never construct ad-hoc error responses.
-package apperr
+// Package errorc (error customized) is the application's error catalog: one
+// immutable herr.Class per stable error code. Services and middleware stamp
+// instances with errorc.X.New() and never construct ad-hoc error responses.
+package errorc
 
 import "github.com/jeremygprawira/herr"
 

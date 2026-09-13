@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	"go-echo-boilerplate/internal/pkg/apperr"
+	"go-echo-boilerplate/internal/pkg/errorc"
 	"go-echo-boilerplate/internal/pkg/logger"
 
 	"github.com/labstack/echo/v4"
@@ -20,7 +20,7 @@ func (m *Middleware) RecoverMiddleware(log logger.Logger) echo.MiddlewareFunc {
 						logger.String("path", c.Request().URL.Path),
 					)
 
-					c.Error(apperr.Internal.New().Internalf("panic: %v", r))
+					c.Error(errorc.Internal.New().Internalf("panic: %v", r))
 				}
 			}()
 			return next(c)

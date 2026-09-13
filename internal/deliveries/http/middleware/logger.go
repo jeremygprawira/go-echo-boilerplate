@@ -11,7 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"go-echo-boilerplate/internal/pkg/apperr"
+	"go-echo-boilerplate/internal/pkg/errorc"
 	"go-echo-boilerplate/internal/pkg/logger"
 	"io"
 	"net/http"
@@ -168,7 +168,7 @@ func (m *Middleware) LoggingMiddleware(log logger.Logger) echo.MiddlewareFunc {
 						panicStack := string(debug.Stack())
 
 						// Render the 500 through the central handler first...
-						err = apperr.Internal.New().Internalf("panic: %v", r)
+						err = errorc.Internal.New().Internalf("panic: %v", r)
 						ectx.Error(err)
 
 						// ...then record the panic detail last so it wins over the

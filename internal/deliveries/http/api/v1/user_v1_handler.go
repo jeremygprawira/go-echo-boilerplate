@@ -4,7 +4,7 @@ import (
 	"go-echo-boilerplate/internal/config"
 	"go-echo-boilerplate/internal/deliveries/http/middleware"
 	"go-echo-boilerplate/internal/models"
-	"go-echo-boilerplate/internal/pkg/apperr"
+	"go-echo-boilerplate/internal/pkg/errorc"
 	"go-echo-boilerplate/internal/pkg/jwtc"
 	"go-echo-boilerplate/internal/pkg/response"
 	"go-echo-boilerplate/internal/pkg/tokenstore"
@@ -66,7 +66,7 @@ func (h *userV1Handler) Create(ctx echo.Context) error {
 	}
 
 	if err := validator.Input(request); err != nil {
-		return apperr.FromValidation(err)
+		return errorc.FromValidation(err)
 	}
 
 	user, err := h.service.User.Create(ctx.Request().Context(), &request)
@@ -97,7 +97,7 @@ func (h *userV1Handler) GetTokens(ctx echo.Context) error {
 	}
 
 	if err := validator.Input(request); err != nil {
-		return apperr.FromValidation(err)
+		return errorc.FromValidation(err)
 	}
 
 	user, err := h.service.User.GetTokens(ctx.Request().Context(), &request)
@@ -139,7 +139,7 @@ func (h *userV1Handler) RefreshTokens(ctx echo.Context) error {
 	}
 
 	if err := validator.Input(request); err != nil {
-		return apperr.FromValidation(err)
+		return errorc.FromValidation(err)
 	}
 
 	tokens, err := h.service.User.RefreshTokens(ctx.Request().Context(), request.RefreshToken)

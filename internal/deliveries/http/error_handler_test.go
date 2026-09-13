@@ -3,7 +3,7 @@ package http
 import (
 	"encoding/json"
 	"errors"
-	"go-echo-boilerplate/internal/pkg/apperr"
+	"go-echo-boilerplate/internal/pkg/errorc"
 	nethttp "net/http"
 	"net/http/httptest"
 	"testing"
@@ -33,7 +33,7 @@ func decode(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
 func TestErrorHandler_HerrPassThrough(t *testing.T) {
 	ctx, rec := newErrCtx(t)
 
-	ErrorHandler(apperr.DataNotFound.New(), ctx)
+	ErrorHandler(errorc.DataNotFound.New(), ctx)
 
 	assert.Equal(t, nethttp.StatusNotFound, rec.Code)
 	body := decode(t, rec)
@@ -77,7 +77,7 @@ func TestErrorHandler_UnknownErrorDoesNotLeak(t *testing.T) {
 func TestErrorHandler_InternalDetailDoesNotLeak(t *testing.T) {
 	ctx, rec := newErrCtx(t)
 
-	ErrorHandler(apperr.Database.New().Internal("failed to create user").Wrap(errors.New("pq: duplicate key")), ctx)
+	ErrorHandler(errorc.Database.New().Internal("failed to create user").Wrap(errors.New("pq: duplicate key")), ctx)
 
 	assert.Equal(t, nethttp.StatusInternalServerError, rec.Code)
 	assert.NotContains(t, rec.Body.String(), "failed to create user")
@@ -88,7 +88,7 @@ func TestErrorHandler_CommittedResponseUntouched(t *testing.T) {
 	ctx, rec := newErrCtx(t)
 	require.NoError(t, ctx.JSON(nethttp.StatusOK, map[string]string{"status": "OK"}))
 
-	ErrorHandler(apperr.Internal.New(), ctx)
+	ErrorHandler(errorc.Internal.New(), ctx)
 
 	assert.Equal(t, nethttp.StatusOK, rec.Code)
 	assert.NotContains(t, rec.Body.String(), "INTERNAL_SERVER_ERROR")
@@ -100,7 +100,7 @@ func TestErrorHandler_GeneratesRequestIDWhenMissing(t *testing.T) {
 	rec := httptest.NewRecorder()
 	ctx := e.NewContext(req, rec) // no X-Request-ID set
 
-	ErrorHandler(apperr.Unauthorized.New(), ctx)
+	ErrorHandler(errorc.Unauthorized.New(), ctx)
 
 	metadata, ok := decode(t, rec)["metadata"].(map[string]any)
 	require.True(t, ok)

@@ -3,32 +3,34 @@ package service_test
 import (
 	"context"
 	"testing"
+	"time"
 
-	"go-echo-boilerplate/internal/clients/redisclient"
-	"go-echo-boilerplate/internal/config"
 	"go-echo-boilerplate/internal/models"
-	"go-echo-boilerplate/internal/pkg/apperr"
+	"go-echo-boilerplate/internal/pkg/errorc"
 	"go-echo-boilerplate/internal/pkg/generator"
 	"go-echo-boilerplate/internal/pkg/tokenstore"
 	"go-echo-boilerplate/internal/pkg/validator"
 	"go-echo-boilerplate/internal/repository"
 	"go-echo-boilerplate/internal/service"
 
-	"github.com/alicebob/miniredis/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
-func fakeCacheForService(t *testing.T) *redisclient.Client {
-	t.Helper()
-	mr, err := miniredis.Run()
-	require.NoError(t, err)
-	t.Cleanup(mr.Close)
+// inMemoryStore is a minimal TokenStore fake for exercising revocation logic
+// without a real backend.
+type inMemoryStore struct{ revoked map[string]bool }
 
-	c, err := redisclient.New(config.Redis{Enabled: true, Addr: mr.Addr()})
-	require.NoError(t, err)
-	return c
+func newInMemoryStore() *inMemoryStore { return &inMemoryStore{revoked: map[string]bool{}} }
+
+func (s *inMemoryStore) Revoke(ctx context.Context, jti string, ttl time.Duration) error {
+	s.revoked[jti] = true
+	return nil
+}
+
+func (s *inMemoryStore) IsRevoked(ctx context.Context, jti string) (bool, error) {
+	return s.revoked[jti], nil
 }
 
 func TestUserService_RefreshTokens(t *testing.T) {
@@ -65,7 +67,7 @@ func TestUserService_RefreshTokens(t *testing.T) {
 		refreshToken, err := generator.RefreshToken(user, testJWTConfig())
 		require.NoError(t, err)
 
-		store := tokenstore.NewRedisStore(fakeCacheForService(t))
+		store := newInMemoryStore()
 
 		claims, err := validator.RefreshToken(refreshToken.Token, testJWTConfig())
 		require.NoError(t, err)
@@ -83,7 +85,7 @@ func TestUserService_RefreshTokens(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Nil(t, resp)
-		assert.True(t, apperr.Unauthorized.Is(err))
+		assert.True(t, errorc.Unauthorized.Is(err))
 	})
 
 	t.Run("Invalid refresh token is rejected", func(t *testing.T) {
@@ -101,7 +103,7 @@ func TestUserService_RefreshTokens(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Nil(t, resp)
-		assert.True(t, apperr.Unauthorized.Is(err))
+		assert.True(t, errorc.Unauthorized.Is(err))
 	})
 
 	t.Run("Deleted user is rejected, not issued fresh tokens", func(t *testing.T) {
@@ -128,7 +130,7 @@ func TestUserService_RefreshTokens(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Nil(t, resp)
-		assert.True(t, apperr.Unauthorized.Is(err))
+		assert.True(t, errorc.Unauthorized.Is(err))
 
 		mockRepo.AssertExpectations(t)
 	})
@@ -137,7 +139,7 @@ func TestUserService_RefreshTokens(t *testing.T) {
 func TestUserService_Logout(t *testing.T) {
 	t.Run("Revokes the access JTI", func(t *testing.T) {
 		mockRepo := new(MockUserRepository)
-		store := tokenstore.NewRedisStore(fakeCacheForService(t))
+		store := newInMemoryStore()
 
 		deps := service.Dependencies{
 			Repository: repository.Repository{User: mockRepo},
@@ -156,7 +158,7 @@ func TestUserService_Logout(t *testing.T) {
 
 	t.Run("Also revokes the presented refresh token's JTI", func(t *testing.T) {
 		mockRepo := new(MockUserRepository)
-		store := tokenstore.NewRedisStore(fakeCacheForService(t))
+		store := newInMemoryStore()
 		user := &models.User{ID: 1, AccountNumber: "123456"}
 
 		refreshToken, err := generator.RefreshToken(user, testJWTConfig())
@@ -186,7 +188,7 @@ func TestUserService_Logout(t *testing.T) {
 
 	t.Run("An unparseable refresh token does not fail logout", func(t *testing.T) {
 		mockRepo := new(MockUserRepository)
-		store := tokenstore.NewRedisStore(fakeCacheForService(t))
+		store := newInMemoryStore()
 
 		deps := service.Dependencies{
 			Repository: repository.Repository{User: mockRepo},

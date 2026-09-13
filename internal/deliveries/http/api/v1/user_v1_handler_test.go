@@ -8,7 +8,7 @@ import (
 	httpdelivery "go-echo-boilerplate/internal/deliveries/http"
 	v1 "go-echo-boilerplate/internal/deliveries/http/api/v1"
 	"go-echo-boilerplate/internal/models"
-	"go-echo-boilerplate/internal/pkg/apperr"
+	"go-echo-boilerplate/internal/pkg/errorc"
 	"go-echo-boilerplate/internal/pkg/tokenstore"
 	"go-echo-boilerplate/internal/service"
 	"net/http"
@@ -159,7 +159,7 @@ func TestUserV1Handler_Create(t *testing.T) {
 		rec := httptest.NewRecorder()
 
 		mockSvc := new(MockUserService)
-		mockSvc.On("Create", mock.Anything, mock.Anything).Return(nil, apperr.AlreadyExists.New())
+		mockSvc.On("Create", mock.Anything, mock.Anything).Return(nil, errorc.AlreadyExists.New())
 
 		svc := &service.Service{User: mockSvc}
 		g := e.Group("/v1")
@@ -185,7 +185,7 @@ func TestUserV1Handler_Create(t *testing.T) {
 
 		mockSvc := new(MockUserService)
 		mockSvc.On("Create", mock.Anything, mock.Anything).
-			Return(nil, apperr.Database.New().Internal("failed to create user").Wrap(errors.New("pq: connection refused")))
+			Return(nil, errorc.Database.New().Internal("failed to create user").Wrap(errors.New("pq: connection refused")))
 
 		svc := &service.Service{User: mockSvc}
 		g := e.Group("/v1")
@@ -268,7 +268,7 @@ func TestUserV1Handler_GetTokens(t *testing.T) {
 		rec := httptest.NewRecorder()
 
 		mockSvc := new(MockUserService)
-		mockSvc.On("GetTokens", mock.Anything, mock.Anything).Return(nil, apperr.Unauthorized.New().Public(herr.Msg("invalid credentials")))
+		mockSvc.On("GetTokens", mock.Anything, mock.Anything).Return(nil, errorc.Unauthorized.New().Public(herr.Msg("invalid credentials")))
 
 		svc := &service.Service{User: mockSvc}
 		g := e.Group("/v1")

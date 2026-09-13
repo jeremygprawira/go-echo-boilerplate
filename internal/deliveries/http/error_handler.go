@@ -2,7 +2,7 @@ package http
 
 import (
 	"errors"
-	"go-echo-boilerplate/internal/pkg/apperr"
+	"go-echo-boilerplate/internal/pkg/errorc"
 	"go-echo-boilerplate/internal/pkg/logger"
 	"go-echo-boilerplate/internal/pkg/stringc"
 	"net/http"
@@ -78,7 +78,7 @@ func coerce(err error) *herr.Error {
 		return e
 	}
 
-	return apperr.Internal.New().Wrap(err)
+	return errorc.Internal.New().Wrap(err)
 }
 
 // classForStatus maps well-known HTTP statuses to catalog classes so
@@ -86,17 +86,17 @@ func coerce(err error) *herr.Error {
 func classForStatus(status int) *herr.Class {
 	switch status {
 	case http.StatusBadRequest:
-		return apperr.InvalidInput
+		return errorc.InvalidInput
 	case http.StatusUnauthorized:
-		return apperr.Unauthorized
+		return errorc.Unauthorized
 	case http.StatusForbidden:
-		return apperr.Forbidden
+		return errorc.Forbidden
 	case http.StatusNotFound:
-		return apperr.DataNotFound
+		return errorc.DataNotFound
 	case http.StatusConflict:
-		return apperr.AlreadyExists
+		return errorc.AlreadyExists
 	case http.StatusUnprocessableEntity:
-		return apperr.Validation
+		return errorc.Validation
 	default:
 		return nil
 	}

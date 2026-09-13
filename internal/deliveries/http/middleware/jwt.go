@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	"go-echo-boilerplate/internal/pkg/apperr"
+	"go-echo-boilerplate/internal/pkg/errorc"
 	"go-echo-boilerplate/internal/pkg/jwtc"
 	"go-echo-boilerplate/internal/pkg/tokenstore"
 	"go-echo-boilerplate/internal/pkg/validator"
@@ -30,12 +30,12 @@ func BearerAuthMiddleware(config *jwtc.Configuration, store tokenstore.TokenStor
 			// Extract Authorization header
 			authHeader := ctx.Request().Header.Get("Authorization")
 			if authHeader == "" {
-				return apperr.Unauthorized.New().Public(herr.Msg("authorization header is required"))
+				return errorc.Unauthorized.New().Public(herr.Msg("authorization header is required"))
 			}
 
 			// Validate Bearer token format
 			if !strings.HasPrefix(authHeader, "Bearer ") {
-				return apperr.Unauthorized.New().Public(herr.Msg("invalid authorization format"))
+				return errorc.Unauthorized.New().Public(herr.Msg("invalid authorization format"))
 			}
 
 			// Extract token string
@@ -44,15 +44,15 @@ func BearerAuthMiddleware(config *jwtc.Configuration, store tokenstore.TokenStor
 			// Validate access token (handles signature, expiration, type validation)
 			claims, err := validator.AccessToken(tokenString, config)
 			if err != nil {
-				return apperr.Unauthorized.New().Wrap(err)
+				return errorc.Unauthorized.New().Wrap(err)
 			}
 
 			revoked, rerr := store.IsRevoked(ctx.Request().Context(), claims.ID)
 			if rerr != nil {
-				return apperr.Internal.New().Internal("failed to check token revocation").Wrap(rerr)
+				return errorc.Internal.New().Internal("failed to check token revocation").Wrap(rerr)
 			}
 			if revoked {
-				return apperr.Unauthorized.New().Public(herr.Msg("token revoked"))
+				return errorc.Unauthorized.New().Public(herr.Msg("token revoked"))
 			}
 
 			// Inject claims into context for downstream handlers

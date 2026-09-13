@@ -1,10 +1,10 @@
-package apperr_test
+package errorc_test
 
 import (
 	"encoding/json"
 	"errors"
 	"go-echo-boilerplate/internal/models"
-	"go-echo-boilerplate/internal/pkg/apperr"
+	"go-echo-boilerplate/internal/pkg/errorc"
 	"testing"
 
 	"github.com/hashicorp/go-multierror"
@@ -15,7 +15,7 @@ import (
 
 func TestFromValidation(t *testing.T) {
 	t.Run("nil returns nil", func(t *testing.T) {
-		assert.Nil(t, apperr.FromValidation(nil))
+		assert.Nil(t, errorc.FromValidation(nil))
 	})
 
 	t.Run("multierror maps to typed field errors", func(t *testing.T) {
@@ -25,9 +25,9 @@ func TestFromValidation(t *testing.T) {
 			models.ErrorValidationResponse{Code: "REQUIRED", Field: "password", Message: "This field is required."},
 		)
 
-		err := apperr.FromValidation(merr)
+		err := errorc.FromValidation(merr)
 		require.Error(t, err)
-		assert.True(t, apperr.Validation.Is(err))
+		assert.True(t, errorc.Validation.Is(err))
 
 		var he *herr.Error
 		require.True(t, errors.As(err, &he))
@@ -53,9 +53,9 @@ func TestFromValidation(t *testing.T) {
 	})
 
 	t.Run("non-multierror stays a 422 with internal detail only", func(t *testing.T) {
-		err := apperr.FromValidation(errors.New("reflect: nil interface"))
+		err := errorc.FromValidation(errors.New("reflect: nil interface"))
 		require.Error(t, err)
-		assert.True(t, apperr.Validation.Is(err))
+		assert.True(t, errorc.Validation.Is(err))
 		body, jsonErr := json.Marshal(err)
 		require.NoError(t, jsonErr)
 		assert.NotContains(t, string(body), "reflect:")

@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"go-echo-boilerplate/internal/models"
-	"go-echo-boilerplate/internal/pkg/apperr"
+	"go-echo-boilerplate/internal/pkg/errorc"
 	"go-echo-boilerplate/internal/pkg/generator"
 	"go-echo-boilerplate/internal/pkg/jwtc"
 	"go-echo-boilerplate/internal/repository"
@@ -130,7 +130,7 @@ func TestUserService_Create(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Nil(t, user)
-		assert.True(t, apperr.InvalidInput.Is(err))
+		assert.True(t, errorc.InvalidInput.Is(err))
 	})
 
 	t.Run("User Already Exists", func(t *testing.T) {
@@ -156,7 +156,7 @@ func TestUserService_Create(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Nil(t, user)
-		assert.True(t, apperr.AlreadyExists.Is(err))
+		assert.True(t, errorc.AlreadyExists.Is(err))
 
 		mockRepo.AssertExpectations(t)
 	})
@@ -183,7 +183,7 @@ func TestUserService_Create(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Nil(t, user)
-		assert.True(t, apperr.Database.Is(err))
+		assert.True(t, errorc.Database.Is(err))
 
 		mockRepo.AssertExpectations(t)
 	})
@@ -256,7 +256,7 @@ func TestUserService_GetTokens(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Nil(t, resp)
-		assert.True(t, apperr.Unauthorized.Is(err))
+		assert.True(t, errorc.Unauthorized.Is(err))
 
 		mockRepo.AssertExpectations(t)
 	})
@@ -290,7 +290,7 @@ func TestUserService_GetTokens(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Nil(t, resp)
-		assert.True(t, apperr.Unauthorized.Is(err))
+		assert.True(t, errorc.Unauthorized.Is(err))
 
 		mockRepo.AssertExpectations(t)
 	})
@@ -315,7 +315,7 @@ func TestGetTokens_UserNotFound_GenericError(t *testing.T) {
 	})
 
 	require.Error(t, err)
-	require.True(t, apperr.Unauthorized.Is(err))
+	require.True(t, errorc.Unauthorized.Is(err))
 
 	mockRepo.AssertExpectations(t)
 }
@@ -340,7 +340,7 @@ func TestGetTokens_WrongPassword_SameGenericError(t *testing.T) {
 	})
 
 	require.Error(t, err)
-	require.True(t, apperr.Unauthorized.Is(err))
+	require.True(t, errorc.Unauthorized.Is(err))
 
 	mockRepo.AssertExpectations(t)
 }
