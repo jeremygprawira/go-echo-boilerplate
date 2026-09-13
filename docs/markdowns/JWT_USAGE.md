@@ -2,215 +2,99 @@
 
 ## Overview
 
-The JWT token generation system provides secure, stateless authentication using JSON Web Tokens (JWTs). This implementation includes:
+Dual-token JWT auth: short-lived access tokens + longer-lived refresh tokens, both HS256, both carrying a unique JTI so they can be individually revoked.
 
-- **Access Tokens**: Short-lived tokens for API authentication
-- **Refresh Tokens**: Long-lived tokens for obtaining new access tokens
-- **Token Validation**: Secure verification with signature checking and expiration handling
-
-## Security Features
-
-✅ **Cryptographically Signed**: Uses HMAC-SHA256 for token signing  
-✅ **Expiration Handling**: Built-in `exp` claim for automatic expiration  
-✅ **Token Type Validation**: Prevents misuse of refresh tokens as access tokens  
-✅ **Stateless**: No database lookup required for validation  
-✅ **Standard Compliant**: Follows RFC 7519 (JWT) specification
+- **Access Tokens**: short-lived, used for `Authorization: Bearer <token>` on protected routes
+- **Refresh Tokens**: longer-lived, exchanged for a fresh access+refresh pair via `/users/tokens/refresh`
+- **Revocation**: logout (`/users/logout`) revokes a token's JTI via the `tokenstore.TokenStore` port
 
 ## Configuration
 
-### 1. Config File (YAML)
-
-Set your configuration in `config/config.yaml` (or env specific variants):
+`config/config.<env>.yaml`:
 
 ```yaml
 authorization:
-  issuer: "go-echo-boilerplate"
+  issuer: go-echo-boilerplate
   access:
-    secret: "${JWT_ACCESS_SECRET}"
+    secret: replace-with-a-strong-access-secret
     duration: 15m
   refresh:
-    secret: "${JWT_REFRESH_SECRET}"
+    secret: replace-with-a-different-strong-refresh-secret
     duration: 168h # 7 days
-  api_key: "${API_KEY_SECRET}"
+  api_key: replace-with-an-api-key
 ```
 
-### 2. Go Config Struct
+Loaded into `jwtc.Configuration` via `jwtc.DefaultConfig(configuration)` in `internal/core/setup.go`. Access and refresh **must** use different secrets — `validator.AccessToken`/`validator.RefreshToken` each verify against their own secret and reject the other token type.
+
+## Claims
+
+Both token types carry `jwtc.Claims` (`internal/pkg/jwtc/jwtc.go`):
 
 ```go
-import "go-echo-boilerplate/internal/pkg/jwtc"
-
-// Usually loaded via Viper
-config := &jwtc.Configuration{
-    AccessTokenSecret:    "...",
-    AccessTokenDuration:  15 * time.Minute,
-    RefreshTokenDuration: 7 * 24 * time.Hour,
-    Issuer:               "go-echo-boilerplate",
+type Claims struct {
+    UserID        int    `json:"user_id"`
+    Email         string `json:"email"`
+    PhoneNumber   string `json:"phone_number"`
+    AccountNumber string `json:"account_number"`
+    TokenType     string `json:"token_type"` // "access" or "refresh"
+    jwt.RegisteredClaims                     // includes ID (JTI), ExpiresAt, IssuedAt, NotBefore, Issuer, Subject
 }
 ```
 
-## Usage Examples
+Refresh tokens only populate `UserID`/`TokenType`/registered claims — `Email`/`PhoneNumber`/`AccountNumber` are left empty so a leaked refresh token doesn't carry that data (see `generator.RefreshToken`).
 
-### Generate Access Token
+## Generating tokens
+
+`internal/pkg/generator/jwt.go`:
 
 ```go
-import (
-    "go-echo-boilerplate/internal/models"
-    "go-echo-boilerplate/internal/pkg/generator"
-)
-
-func loginUser(user *models.User) (string, error) {
-    // Generate token struct (*models.Token)
-    accessToken, err := generator.AccessToken(user, config)
-    if err != nil {
-        return "", err
-    }
-
-    return accessToken.Token, nil
-}
+accessToken, err := generator.AccessToken(user, jwtConfig)   // *models.Token{Type, Token, ExpiredIn}
+refreshToken, err := generator.RefreshToken(user, jwtConfig)
 ```
 
-### Generate Refresh Token
+Both return an error if `jwtConfig` is nil — there is no hardcoded fallback secret.
+
+## Validating tokens
+
+`internal/pkg/validator/jwt.go`:
 
 ```go
-func generateRefreshToken(user *models.User) (string, error) {
-    refreshToken, err := generator.RefreshToken(user, config)
-    if err != nil {
-        return "", err
-    }
-
-    return refreshToken.Token, nil
-}
+claims, err := validator.AccessToken(tokenString, jwtConfig)   // rejects TokenType != "access"
+claims, err := validator.RefreshToken(tokenString, jwtConfig)  // rejects TokenType != "refresh"
 ```
 
-### Validate Access Token (Middleware)
+## HTTP flow
 
-```go
-import "go-echo-boilerplate/internal/pkg/validator"
+Routes (`internal/deliveries/http/api/v1/user_v1_handler.go`), all under `/api/v1/users` behind the `X-API-Key` middleware:
 
-func AuthMiddleware(config *jwtc.Configuration) echo.MiddlewareFunc {
-    return func(next echo.HandlerFunc) echo.HandlerFunc {
-        return func(c echo.Context) error {
-            authHeader := c.Request().Header.Get("Authorization")
-            tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+| Route | Auth | Handler |
+|---|---|---|
+| `POST /users` | none | `Create` (register) |
+| `POST /users/tokens` | none | `GetTokens` (login) |
+| `POST /users/tokens/refresh` | none (refresh token in body) | `RefreshTokens` |
+| `GET /users/me` | Bearer | `GetUserByAccessToken` |
+| `POST /users/logout` | Bearer | `Logout` |
 
-            // Validate token using Validator package
-            claims, err := validator.AccessToken(tokenString, config)
-            if err != nil {
-                return echo.NewHTTPError(http.StatusUnauthorized, "invalid token")
-            }
+`middleware.BearerAuthMiddleware` (`internal/deliveries/http/middleware/jwt.go`) does, in order: check `Authorization: Bearer <token>` header present and well-formed → `validator.AccessToken` → `tokenStore.IsRevoked(ctx, claims.ID)` → set `userID`/`accountNumber`/`email`/`phoneNumber`/`jti` on the Echo context.
 
-            c.Set("user_id", claims.UserID)
-            return next(c)
-        }
-    }
-}
-```
+### Refresh (`UserService.RefreshTokens`)
 
-### Refresh Access Token Flow
+Validates the refresh token → rejects if its JTI is already revoked → loads the user → **rotates**: revokes the presented refresh JTI (so it can't be replayed) → issues a fresh access+refresh pair.
 
-```go
-func refreshAccessToken(refreshTokenString string) (string, error) {
-    // Validate refresh token
-    claims, err := validator.RefreshToken(refreshTokenString, config)
-    if err != nil {
-        return "", err
-    }
+### Logout (`UserService.Logout`)
 
-    // Fetch user (implement this)
-    user, err := getUserByID(claims.UserID)
+Revokes the current access token's JTI, and — if a refresh token is also presented — revokes its JTI too, so it can no longer be used to mint new tokens. An unparseable/expired refresh token is ignored so logout stays idempotent.
 
-    // Generate new token
-    newToken, err := generator.AccessToken(user, config)
-    return newToken.Token, nil
-}
-```
+## Revocation backend
 
-## Token Response Structure
+`tokenstore.TokenStore` (`internal/pkg/tokenstore/tokenstore.go`) is the port both of the above call. As of this writing the only implementation is `tokenstore.NewNoopStore()` (wired in `internal/core/setup.go`), which never actually revokes anything:
 
-### User Response with Tokens
+> **SECURITY:** with no real backend, `Revoke` is a no-op — logout and refresh-token rotation cannot invalidate a token before its natural expiry. A held access or refresh token stays valid for its full lifetime even after the user logs out.
 
-The application uses `GetUserTokenResponse` which includes safe handling of nullable fields:
+A Redis-backed `TokenStore` existed previously and was removed along with the rest of the optional-infra-clients work (see `docs/markdowns/BOILERPLATE_ASSESSMENT.md`). Reintroducing real revocation means adding a new `TokenStore` implementation and wiring it in `core.BuildDependencies` — the interface and every call site are already in place.
 
-```go
-type GetUserTokenResponse struct {
-    Type          string              `json:"type" example:"user"`
-    AccountNumber string              `json:"accountNumber"`
-    Name          string              `json:"name"`
-    Email         string              `json:"email"`
-    PhoneNumber   models.PhoneNumber  `json:"phoneNumber"`
-    Tokens        []models.Token      `json:"tokens"`
-}
+## Security notes
 
-// In your login handler
-func (h *authHandler) Login(c echo.Context) error {
-    // ... authenticate user ...
-
-    accessToken, _ := generator.AccessToken(user, h.jwtConfig)
-    refreshToken, _ := generator.RefreshToken(user, h.jwtConfig)
-
-    // Handle nullable email in User model
-    email := ""
-    if user.Email != nil {
-        email = *user.Email
-    }
-
-    response := &models.GetUserTokenResponse{
-        Type:          models.TYPE_USER,
-        AccountNumber: user.AccountNumber,
-        Name:          user.Name,
-        Email:         email,
-        Tokens: []models.Token{
-            {
-                Type:      models.TYPE_ACCESS_TOKEN,
-                Token:     accessToken.Token,
-                ExpiredIn: accessToken.ExpiredIn,
-            },
-            {
-                Type:      models.TYPE_REFRESH_TOKEN,
-                Token:     refreshToken.Token,
-                ExpiredIn: refreshToken.ExpiredIn,
-            },
-        },
-    }
-
-    return c.JSON(http.StatusOK, response)
-}
-```
-
-## JWT Claims Structure
-
-Each token contains the following claims:
-
-```json
-{
-  "user_id": 123,
-  "email": "user@example.com",
-  "phone_number": "+6281234567890",
-  "account_number": "1234567890123456",
-  "token_type": "access",
-  "exp": 1706102400,
-  "iat": 1706101500,
-  "nbf": 1706101500,
-  "iss": "go-echo-boilerplate",
-  "sub": "123"
-}
-```
-
-## Security Best Practices
-
-### 1. Secret Key Management
-
-```bash
-# Set in environment (do not commit to git)
-export JWT_ACCESS_SECRET="strong-random-secret"
-export JWT_REFRESH_SECRET="another-strong-secret"
-```
-
-### 2. Token Storage
-
-- **Access Token**: Store in memory (not LocalStorage)
-- **Refresh Token**: Store in httpOnly, Secure cookies
-
-### 3. Nullable Fields
-
-The `User` model supports nullable Email/Phone. The JWT generator safely handles this by including an empty string in the claims if the value is `nil` in the database.
+- **Secrets**: set `authorization.access.secret` / `authorization.refresh.secret` per environment; never commit real values (see `config.local.example.yaml` for placeholders). They must differ from each other.
+- **Token storage on the client**: keep the access token in memory, not `localStorage`; store the refresh token in an httpOnly, Secure cookie if you control the client.
+- **Password length**: bcrypt truncates beyond 72 bytes — `validator.PasswordWithinBcryptLimit` and `generator.Hash` both reject longer passwords instead of silently truncating.
