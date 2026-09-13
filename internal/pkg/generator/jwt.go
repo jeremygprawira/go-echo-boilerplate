@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 // GenerateAccessToken generates a JWT access token for the given user
@@ -32,6 +33,7 @@ func AccessToken(user *models.User, config *jwtc.Configuration) (*models.Token, 
 		AccountNumber: user.AccountNumber,
 		TokenType:     "access",
 		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        uuid.NewString(),
 			ExpiresAt: jwt.NewNumericDate(now.Add(config.AccessTokenDuration)),
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
@@ -69,6 +71,7 @@ func RefreshToken(user *models.User, config *jwtc.Configuration) (*models.Token,
 		TokenType: "refresh",
 		// Email, PhoneNumber, and AccountNumber intentionally omitted for security
 		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        uuid.NewString(),
 			ExpiresAt: jwt.NewNumericDate(now.Add(config.RefreshTokenDuration)),
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),

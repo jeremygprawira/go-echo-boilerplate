@@ -14,6 +14,7 @@ type Repository struct {
 	transaction pgsql.TransactionRepository
 }
 
+// New wires the storage-neutral Repository, backed by Postgres.
 func New(database *database.Database) *Repository {
 	postgre := pgsql.New(database.PostgreDatabase)
 	return &Repository{

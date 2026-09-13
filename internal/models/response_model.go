@@ -9,13 +9,6 @@ type (
 		Total int
 		Limit int
 	}
-	ErrorResponse struct {
-		Code     int         `json:"code"`
-		Status   string      `json:"status"`
-		Message  string      `json:"message"`
-		Errors   interface{} `json:"errors,omitempty"`
-		Metadata Metadata    `json:"metadata"`
-	}
 
 	Response struct {
 		Code       int               `json:"code" example:"200"`
@@ -41,4 +34,14 @@ type ErrorValidationResponse struct {
 
 func (e ErrorValidationResponse) Error() string {
 	return fmt.Sprintf("code: %s, field: %s, message: %s", e.Code, e.Field, e.Message)
+}
+
+// ErrorWireResponse documents herr's error wire body for Swagger only.
+// The actual body is rendered by herr (internal/deliveries/http/error_handler.go);
+// this struct must mirror it, never be constructed at runtime.
+type ErrorWireResponse struct {
+	Code     string                    `json:"code" example:"USER_NOT_FOUND"`
+	Message  string                    `json:"message" example:"user not found"`
+	Errors   []ErrorValidationResponse `json:"errors,omitempty"`
+	Metadata map[string]interface{}    `json:"metadata,omitempty"`
 }

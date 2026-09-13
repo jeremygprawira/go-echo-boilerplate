@@ -12,6 +12,7 @@ type UserRepository interface {
 	CheckByEmailOrPhoneNumber(ctx context.Context, email string, phoneNumber string) (bool, error)
 	GetCredentialsByEmailOrPhoneNumber(ctx context.Context, email string, phoneNumber string) (*models.User, error)
 	GetOneByAccountNumber(ctx context.Context, accountNumber string) (*models.User, error)
+	GetOneByID(ctx context.Context, id int) (*models.User, error)
 }
 
 type userRepository struct {
@@ -51,6 +52,24 @@ func (ur *userRepository) GetOneByAccountNumber(ctx context.Context, accountNumb
 
 	if err := ur.db.WithContext(ctx).Raw(QueryGetByAccountNumber, accountNumber).Scan(&user).Error; err != nil {
 		return nil, err
+	}
+
+	return &user, nil
+}
+
+func (ur *userRepository) GetOneByID(ctx context.Context, id int) (*models.User, error) {
+	var user models.User
+
+	result := ur.db.WithContext(ctx).Raw(QueryGetByID, id).Scan(&user)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	// GORM's Scan on a Raw query does not return ErrRecordNotFound; a
+	// non-matching id leaves user as its zero value with RowsAffected == 0.
+	// Callers (e.g. RefreshTokens) rely on a nil return to treat this as
+	// "user not found" rather than proceeding with a zero-value user.
+	if result.RowsAffected == 0 {
+		return nil, nil
 	}
 
 	return &user, nil

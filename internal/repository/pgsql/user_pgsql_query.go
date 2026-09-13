@@ -26,4 +26,10 @@ var (
 		SELECT id, account_number, name, email, phone_number, phone_country_code, created_at, updated_at FROM users
 		WHERE account_number = $1
 	`
+
+	// QueryGetByID gets the user's profile by internal numeric ID.
+	QueryGetByID = `
+		SELECT id, account_number, name, email, phone_number, phone_country_code, created_at, updated_at FROM users
+		WHERE id = $1
+	`
 )

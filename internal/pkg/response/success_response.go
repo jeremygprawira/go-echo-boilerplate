@@ -86,6 +86,13 @@ func SuccessList(ctx echo.Context, code int, message string, data interface{}) e
 	})
 }
 
+// SuccessPagination returns a list response with pagination metadata.
+//
+// Phase 4 (Ops & Polish) deviation: the plan specified a separate
+// SuccessListPaginated(ctx, status, message, data, pagination) helper, but
+// it was intentionally not implemented because SuccessPagination already
+// covers the Phase 4 pagination response requirement (status code, message,
+// data, and models.PaginationOutput in a single envelope).
 func SuccessPagination(ctx echo.Context, code int, message string, pagination models.PaginationOutput, data interface{}) error {
 	requestID, _ := ctx.Get("X-Request-ID").(string)
 	if requestID == "" {

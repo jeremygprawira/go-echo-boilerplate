@@ -99,11 +99,6 @@ func getStringValue(fl v10.FieldLevel) (string, bool) {
 	return "", false
 }
 
-// Helper function to check if string is empty or whitespace
-func isEmptyOrWhitespace(s string) bool {
-	return s == "" || strings.TrimSpace(s) == ""
-}
-
 func registerNoSpecialCharacters() {
 	if err := valid.RegisterValidation("nospecial", func(fl v10.FieldLevel) bool {
 		str, ok := getStringValue(fl)

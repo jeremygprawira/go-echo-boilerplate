@@ -1,0 +1,12 @@
+bin/
+tmp/
+coverage/
+*.log
+.env
+# Never bake real environment configs (DB credentials, JWT secrets) into
+# the image; only the checked-in example file is allowed through.
+config/config.*.yaml
+!config/config.local.example.yaml
+.git
+.serena
+docs/superpowers

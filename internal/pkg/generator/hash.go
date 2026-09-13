@@ -36,6 +36,10 @@ const (
 //
 // For custom cost factors, use NewBcryptHasherWithCost instead.
 func Hash(password string) (string, error) {
+	if len([]byte(password)) > 72 {
+		return "", fmt.Errorf("password exceeds bcrypt's 72-byte limit")
+	}
+
 	// Generate hash with embedded salt using recommended cost
 	hashedBytes, err := bcrypt.GenerateFromPassword([]byte(password), RecommendedCost)
 	if err != nil {
