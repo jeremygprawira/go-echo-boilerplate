@@ -7,8 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"go-echo-boilerplate/internal/clients/redisclient"
-	"go-echo-boilerplate/internal/config"
 	httpdelivery "go-echo-boilerplate/internal/deliveries/http"
 	"go-echo-boilerplate/internal/deliveries/http/middleware"
 	"go-echo-boilerplate/internal/models"
@@ -17,21 +15,23 @@ import (
 	"go-echo-boilerplate/internal/pkg/tokenstore"
 	"go-echo-boilerplate/internal/pkg/validator"
 
-	"github.com/alicebob/miniredis/v2"
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/require"
 )
 
-// fakeCache returns a miniredis-backed redisclient.Client for use as a cache.Cache.
-func fakeCache(t *testing.T) *redisclient.Client {
-	t.Helper()
-	mr, err := miniredis.Run()
-	require.NoError(t, err)
-	t.Cleanup(mr.Close)
+// inMemoryStore is a minimal TokenStore fake for exercising middleware
+// revocation checks without a real backend.
+type inMemoryStore struct{ revoked map[string]bool }
 
-	c, err := redisclient.New(config.Redis{Enabled: true, Addr: mr.Addr()})
-	require.NoError(t, err)
-	return c
+func newInMemoryStore() *inMemoryStore { return &inMemoryStore{revoked: map[string]bool{}} }
+
+func (s *inMemoryStore) Revoke(ctx context.Context, jti string, ttl time.Duration) error {
+	s.revoked[jti] = true
+	return nil
+}
+
+func (s *inMemoryStore) IsRevoked(ctx context.Context, jti string) (bool, error) {
+	return s.revoked[jti], nil
 }
 
 func TestBearer_RejectsRevokedToken(t *testing.T) {
@@ -47,7 +47,7 @@ func TestBearer_RejectsRevokedToken(t *testing.T) {
 	claims, err := validator.AccessToken(tok.Token, cfg)
 	require.NoError(t, err)
 
-	store := tokenstore.NewRedisStore(fakeCache(t))
+	store := newInMemoryStore()
 	require.NoError(t, store.Revoke(context.Background(), claims.ID, time.Minute))
 
 	e := echo.New()
