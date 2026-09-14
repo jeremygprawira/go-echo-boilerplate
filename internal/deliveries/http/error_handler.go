@@ -66,7 +66,7 @@ func coerce(err error) *herr.Error {
 			statusText := http.StatusText(echoErr.Code)
 			e = herr.New(stringc.TrimAndUpperCase(stringc.SnakeCase(statusText))).
 				Status(echoErr.Code).
-				Public(herr.Msg(statusText))
+				Public(herr.Message(statusText))
 			if echoErr.Code < http.StatusInternalServerError {
 				e = e.Kind(herr.KindInvalid)
 			}

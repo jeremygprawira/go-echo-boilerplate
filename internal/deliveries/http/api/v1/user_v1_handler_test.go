@@ -268,7 +268,7 @@ func TestUserV1Handler_GetTokens(t *testing.T) {
 		rec := httptest.NewRecorder()
 
 		mockSvc := new(MockUserService)
-		mockSvc.On("GetTokens", mock.Anything, mock.Anything).Return(nil, errorc.Unauthorized.New().Public(herr.Msg("invalid credentials")))
+		mockSvc.On("GetTokens", mock.Anything, mock.Anything).Return(nil, errorc.Unauthorized.New().Public(herr.Message("invalid credentials")))
 
 		svc := &service.Service{User: mockSvc}
 		g := e.Group("/v1")

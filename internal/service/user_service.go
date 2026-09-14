@@ -64,7 +64,7 @@ func (us *userService) Create(ctx context.Context, request *models.CreateUserReq
 			CountryCode: phoneCountryCode,
 		})
 		if err != nil {
-			return nil, errorc.InvalidInput.New().Public(herr.Msg("Invalid phone number format")).Wrap(err)
+			return nil, errorc.InvalidInput.New().Public(herr.Message("Invalid phone number format")).Wrap(err)
 		}
 		phoneNumber = *formattedPhoneNumber
 	}
@@ -78,7 +78,7 @@ func (us *userService) Create(ctx context.Context, request *models.CreateUserReq
 	}
 
 	if err := validator.PasswordWithinBcryptLimit(request.Password); err != nil {
-		return nil, errorc.InvalidInput.New().Public(herr.Msg("Password too long")).Wrap(err)
+		return nil, errorc.InvalidInput.New().Public(herr.Message("Password too long")).Wrap(err)
 	}
 
 	// Hash password
@@ -118,7 +118,7 @@ func (us *userService) Create(ctx context.Context, request *models.CreateUserReq
 		logger.AddToKey(ctx, "user", "is_inserted_to_db", false)
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation {
-			return nil, errorc.AlreadyExists.New().Public(herr.Msg("User already exists with that email or phone number")).Wrap(err)
+			return nil, errorc.AlreadyExists.New().Public(herr.Message("User already exists with that email or phone number")).Wrap(err)
 		}
 		return nil, errorc.Database.New().Internal("failed to create user").Wrap(err)
 	}
@@ -139,7 +139,7 @@ func (us *userService) GetTokens(ctx context.Context, request *models.GetUserTok
 			CountryCode: request.PhoneNumber.CountryCode,
 		})
 		if err != nil {
-			return nil, errorc.InvalidInput.New().Public(herr.Msg("Invalid phone number format")).Wrap(err)
+			return nil, errorc.InvalidInput.New().Public(herr.Message("Invalid phone number format")).Wrap(err)
 		}
 		request.PhoneNumber.Number = *formattedPhoneNumber
 		logger.AddToKey(ctx, "user", "formatted_phone", request.PhoneNumber.Number)
@@ -164,7 +164,7 @@ func (us *userService) GetTokens(ctx context.Context, request *models.GetUserTok
 	}
 
 	if user == nil || !match {
-		return nil, errorc.Unauthorized.New().Public(herr.Msg("invalid credentials"))
+		return nil, errorc.Unauthorized.New().Public(herr.Message("invalid credentials"))
 	}
 
 	return us.issueTokens(user)
@@ -222,7 +222,7 @@ func (us *userService) issueTokens(user *models.User) (*models.GetUserTokenRespo
 func (us *userService) RefreshTokens(ctx context.Context, refreshToken string) (*models.GetUserTokenResponse, error) {
 	claims, err := validator.RefreshToken(refreshToken, us.d.JWTConfig)
 	if err != nil {
-		return nil, errorc.Unauthorized.New().Public(herr.Msg("invalid refresh token")).Wrap(err)
+		return nil, errorc.Unauthorized.New().Public(herr.Message("invalid refresh token")).Wrap(err)
 	}
 
 	revoked, err := us.d.TokenStore.IsRevoked(ctx, claims.ID)
@@ -230,12 +230,12 @@ func (us *userService) RefreshTokens(ctx context.Context, refreshToken string) (
 		return nil, errorc.Internal.New().Internal("failed to check token revocation").Wrap(err)
 	}
 	if revoked {
-		return nil, errorc.Unauthorized.New().Public(herr.Msg("refresh token revoked"))
+		return nil, errorc.Unauthorized.New().Public(herr.Message("refresh token revoked"))
 	}
 
 	user, err := us.d.Repository.User.GetOneByID(ctx, claims.UserID)
 	if err != nil || user == nil {
-		return nil, errorc.Unauthorized.New().Public(herr.Msg("invalid refresh token")).Wrap(err)
+		return nil, errorc.Unauthorized.New().Public(herr.Message("invalid refresh token")).Wrap(err)
 	}
 
 	// Rotate: revoke the presented refresh token so it cannot be replayed.
@@ -281,7 +281,7 @@ func (us *userService) GetByAccountNumber(ctx context.Context, accountNumber str
 	}
 
 	if user == nil {
-		return nil, errorc.DataNotFound.New().Public(herr.Msg("User not found"))
+		return nil, errorc.DataNotFound.New().Public(herr.Message("User not found"))
 	}
 
 	return user, nil

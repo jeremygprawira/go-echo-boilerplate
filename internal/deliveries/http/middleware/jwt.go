@@ -30,12 +30,12 @@ func BearerAuthMiddleware(config *jwtc.Configuration, store tokenstore.TokenStor
 			// Extract Authorization header
 			authHeader := ctx.Request().Header.Get("Authorization")
 			if authHeader == "" {
-				return errorc.Unauthorized.New().Public(herr.Msg("authorization header is required"))
+				return errorc.Unauthorized.New().Public(herr.Message("authorization header is required"))
 			}
 
 			// Validate Bearer token format
 			if !strings.HasPrefix(authHeader, "Bearer ") {
-				return errorc.Unauthorized.New().Public(herr.Msg("invalid authorization format"))
+				return errorc.Unauthorized.New().Public(herr.Message("invalid authorization format"))
 			}
 
 			// Extract token string
@@ -52,7 +52,7 @@ func BearerAuthMiddleware(config *jwtc.Configuration, store tokenstore.TokenStor
 				return errorc.Internal.New().Internal("failed to check token revocation").Wrap(rerr)
 			}
 			if revoked {
-				return errorc.Unauthorized.New().Public(herr.Msg("token revoked"))
+				return errorc.Unauthorized.New().Public(herr.Message("token revoked"))
 			}
 
 			// Inject claims into context for downstream handlers
