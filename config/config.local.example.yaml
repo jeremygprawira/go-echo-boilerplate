@@ -38,7 +38,7 @@ rate_limit:
   burst: 10
   expires_in: 3m
 
-# Idempotency-Key replay window for POST /users and POST /users/tokens/refresh
+# Idempotency-Key replay window for POST /users
 idempotency:
   ttl: 10m
 

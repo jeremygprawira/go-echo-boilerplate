@@ -89,11 +89,15 @@ Revokes the current access token's JTI, and — if a refresh token is also prese
 
 ## Revocation backend
 
-`tokenstore.TokenStore` (`internal/pkg/tokenstore/tokenstore.go`) is the port both of the above call. As of this writing the only implementation is `tokenstore.NewNoopStore()` (wired in `internal/core/setup.go`), which never actually revokes anything:
+`tokenstore.TokenStore` (`internal/pkg/tokenstore/tokenstore.go`) is the port both of the above call. `core.BuildDependencies` wires `tokenstore.DBStore`, which keeps revoked JTIs in the Postgres `revoked_tokens` table (migration `migration/db/postgre/20261014000000_revoked_tokens.sql`). Revocation therefore survives restarts and is shared by every instance.
 
-> **SECURITY:** with no real backend, `Revoke` is a no-op — logout and refresh-token rotation cannot invalidate a token before its natural expiry. A held access or refresh token stays valid for its full lifetime even after the user logs out.
+- `Revoke` stores the JTI with an expiry of now plus the token's full lifetime, so the row outlives the token.
+- `IsRevoked` ignores expired rows. A database error is returned as an error, never as "not revoked". The bearer middleware and `RefreshTokens` answer 500 for it, so revocation fails closed.
+- `DBStore` runs as a `graceful` process (`token-purge` in `cmd/http/main.go`). It deletes expired rows every hour and stops on shutdown.
 
-A Redis-backed `TokenStore` existed previously and was removed along with the rest of the optional-infra-clients work (see `docs/markdowns/BOILERPLATE_ASSESSMENT.md`). Reintroducing real revocation means adding a new `TokenStore` implementation and wiring it in `core.BuildDependencies` — the interface and every call site are already in place.
+`tokenstore.NewNoopStore()` revokes nothing. It is for tests only.
+
+`POST /users/tokens/refresh` has no `Idempotency` middleware. A cached replay would skip the revocation check and return tokens minted from a refresh token that has since been rotated or logged out. A client that loses a refresh response must log in again.
 
 ## Security notes
 

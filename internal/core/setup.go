@@ -5,6 +5,7 @@ import (
 	"go-echo-boilerplate/internal/config"
 	handler "go-echo-boilerplate/internal/deliveries/http"
 	"go-echo-boilerplate/internal/pkg/database"
+	"go-echo-boilerplate/internal/pkg/graceful"
 	"go-echo-boilerplate/internal/pkg/jwtc"
 	"go-echo-boilerplate/internal/pkg/logger"
 	"go-echo-boilerplate/internal/pkg/tokenstore"
@@ -21,6 +22,8 @@ type Dependencies struct {
 	Config     *config.Configuration
 	JWTConfig  *jwtc.Configuration
 	TokenStore tokenstore.TokenStore
+	// TokenPurge purges expired revocations until graceful shutdown.
+	TokenPurge graceful.Process
 	Log        *wlog.Logger
 }
 
@@ -38,9 +41,8 @@ func BuildDependencies(configuration *config.Configuration) (*Dependencies, erro
 
 	jwtConfig := jwtc.DefaultConfig(configuration)
 
-	store := tokenstore.NewNoopStore()
-
 	repo := repository.New(db)
+	store := tokenstore.NewDBStore(repo.RevokedToken)
 	svc := service.New(service.Dependencies{
 		Repository: *repo,
 		Config:     configuration,
@@ -60,6 +62,7 @@ func BuildDependencies(configuration *config.Configuration) (*Dependencies, erro
 		Config:     configuration,
 		JWTConfig:  jwtConfig,
 		TokenStore: store,
+		TokenPurge: store,
 		Log:        log,
 	}, nil
 }
@@ -74,11 +77,11 @@ func BuildHTTPServer(deps *Dependencies) *echo.Echo {
 	return e
 }
 
-func Setup(configuration *config.Configuration) (*echo.Echo, error) {
+func Setup(configuration *config.Configuration) (*echo.Echo, *Dependencies, error) {
 	deps, err := BuildDependencies(configuration)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return BuildHTTPServer(deps), nil
+	return BuildHTTPServer(deps), deps, nil
 }

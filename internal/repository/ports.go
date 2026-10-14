@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"go-echo-boilerplate/internal/models"
+	"time"
 )
 
 // UserRepository is the storage-neutral port for user persistence. Adapters
@@ -18,4 +19,11 @@ type UserRepository interface {
 // HealthRepository is the storage-neutral port for backend health checks.
 type HealthRepository interface {
 	Check(ctx context.Context) error
+}
+
+// RevokedTokenRepository is the storage-neutral port for revoked JWT IDs.
+type RevokedTokenRepository interface {
+	Revoke(ctx context.Context, jti string, expiresAt time.Time) error
+	IsRevoked(ctx context.Context, jti string, now time.Time) (bool, error)
+	PurgeExpired(ctx context.Context, now time.Time) error
 }

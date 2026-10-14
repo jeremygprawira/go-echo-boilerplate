@@ -10,7 +10,7 @@ The following were flagged in earlier reviews and are now fixed in the codebase:
 - **Config example key mismatch.** `config.local.example.yaml` matches the `authorization.access`/`authorization.refresh` model.
 - **Hardcoded fallback JWT secret.** `generator.AccessToken`/`RefreshToken` return an error on nil config instead of signing with a default secret.
 - **CORS wildcard + credentials.** Origins come from `config.CORS.AllowedOrigins`; credentials are only allowed when origins are non-wildcard (`internal/deliveries/http/middleware/cors.go`).
-- **No refresh/revocation flow.** `/users/tokens/refresh` and `/users/logout` exist, backed by `tokenstore.TokenStore` and JTI claims (see `docs/markdowns/JWT_USAGE.md`). Note: the only current `TokenStore` implementation is `NewNoopStore()` — revocation is wired end-to-end but has no real backend (Redis was removed; see that doc for the security implication).
+- **No refresh/revocation flow.** `/users/tokens/refresh` and `/users/logout` exist, backed by `tokenstore.TokenStore` and JTI claims (see `docs/markdowns/JWT_USAGE.md`). Revoked JTIs are stored in the Postgres `revoked_tokens` table by `tokenstore.DBStore`, and refresh no longer goes through the idempotency cache.
 - **User enumeration on login.** `UserService.GetTokens` always runs a bcrypt compare (against a dummy hash when the user doesn't exist) and returns one generic "invalid credentials" error.
 - **API key weaknesses.** Compared with `crypto/subtle.ConstantTimeCompare`; masked in wide-event logs.
 - **Missing baseline protections.** Rate limiting (`middleware.RateLimiter`), body size limit, `middleware.Secure()`, per-request context timeout, and Swagger gated off in prod are all in place (`internal/deliveries/http/middleware/default.go`, `router.go`).
@@ -28,4 +28,4 @@ The following were flagged in earlier reviews and are now fixed in the codebase:
 
 ## Deliberately not pursued
 
-- **Redis, Kafka, Firebase/Firestore.** These were originally scoped as optional infra clients (cache, event bus, alternate `UserRepository` adapter). All were implemented at one point and then removed by decision — the boilerplate intentionally stays Postgres-only for now. If revocation, caching, or eventing become real requirements, `tokenstore.TokenStore`, a would-be `cache.Cache` port, and `repository.UserRepository` are the seams to reintroduce a backend behind.
+- **Redis, Kafka, Firebase/Firestore.** These were originally scoped as optional infra clients (cache, event bus, alternate `UserRepository` adapter). All were implemented at one point and then removed by decision — the boilerplate intentionally stays Postgres-only for now. Revocation lives in Postgres (`tokenstore.DBStore`). If caching or eventing become real requirements, a would-be `cache.Cache` port and `repository.UserRepository` are the seams to add a backend behind.

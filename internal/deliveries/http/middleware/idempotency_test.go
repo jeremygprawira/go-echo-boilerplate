@@ -136,7 +136,7 @@ func newIdempotentServer() (*echo.Echo, *int32) {
 	e.HTTPErrorHandler = httpdelivery.ErrorHandler
 	var calls int32
 	e.Use(middleware.Idempotency(time.Minute))
-	e.POST("/tokens/refresh", func(c echo.Context) error {
+	e.POST("/users", func(c echo.Context) error {
 		n := atomic.AddInt32(&calls, 1)
 		return c.JSON(http.StatusOK, map[string]any{"call": n})
 	})
@@ -144,7 +144,7 @@ func newIdempotentServer() (*echo.Echo, *int32) {
 }
 
 func idempotentRequest(body, cookie string) *http.Request {
-	r := httptest.NewRequest(http.MethodPost, "/tokens/refresh", strings.NewReader(body))
+	r := httptest.NewRequest(http.MethodPost, "/users", strings.NewReader(body))
 	r.Header.Set("Idempotency-Key", "shared-key")
 	if cookie != "" {
 		r.Header.Set("Cookie", cookie)
