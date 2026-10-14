@@ -3,11 +3,19 @@ application:
   name:
   port:
   version: 
-  environment: 
+  environment: local # one of local, dev, uat, staging, prod, production
   host: 
   timeout:
   timezone: "Asia/Jakarta"
   max_body_size: 1M
+  # CIDRs of reverse proxies whose X-Forwarded-For is trusted, e.g. ["10.0.0.0/8"].
+  # Leave empty when clients connect directly.
+  trusted_proxies: []
+  # HTTP server timeouts (Go durations). Defaults: 5s, 15s, 30s, 60s.
+  read_header_timeout: 5s
+  read_timeout: 15s
+  write_timeout: 30s
+  idle_timeout: 60s
 postgresql:
   name:
   user:
@@ -18,15 +26,18 @@ postgresql:
   max_idle_conns: 10
   max_open_conns: 100
   conn_max_lifetime: "1h"
+# Each secret must be at least 32 bytes and must not contain "replace-with-",
+# so these placeholders fail startup until replaced. Generate each value with
+# `openssl rand -base64 48`, or call generator.APIKey() from Go.
 authorization:
   issuer: go-echo-boilerplate
   access:
-    secret: replace-with-a-strong-access-secret
+    secret: replace-with-a-random-access-secret-of-32-bytes-or-more
     duration: 15m
   refresh:
-    secret: replace-with-a-different-strong-refresh-secret
+    secret: replace-with-a-different-random-refresh-secret-of-32-bytes
     duration: 168h
-  api_key: replace-with-an-api-key
+  api_key: replace-with-a-random-api-key-of-32-bytes-or-more
 hash:
   salt:
 cors:
@@ -38,7 +49,7 @@ rate_limit:
   burst: 10
   expires_in: 3m
 
-# Idempotency-Key replay window for POST /users and POST /users/tokens/refresh
+# Idempotency-Key replay window for POST /users
 idempotency:
   ttl: 10m
 

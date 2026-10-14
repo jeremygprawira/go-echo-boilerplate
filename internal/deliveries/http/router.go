@@ -6,7 +6,6 @@ import (
 	healthcheck "go-echo-boilerplate/internal/deliveries/http/health_check"
 	"go-echo-boilerplate/internal/deliveries/http/middleware"
 	"go-echo-boilerplate/internal/pkg/jwtc"
-	"go-echo-boilerplate/internal/pkg/tokenstore"
 	"go-echo-boilerplate/internal/service"
 	"net/http"
 
@@ -32,7 +31,7 @@ import (
 // @host localhost:8080
 // @BasePath /api
 // @schemes http https
-func New(eco *echo.Echo, service *service.Service, config *config.Configuration, jwtConfig *jwtc.Configuration, tokenStore tokenstore.TokenStore, log *wlog.Logger) {
+func New(eco *echo.Echo, service *service.Service, config *config.Configuration, jwtConfig *jwtc.Configuration, revocation middleware.RevocationChecker, log *wlog.Logger) {
 	// Middleware for Recover and Logging
 	middleware := middleware.New(eco, config, log)
 	middleware.Default(config)
@@ -53,7 +52,7 @@ func New(eco *echo.Echo, service *service.Service, config *config.Configuration,
 	api.Use(middleware.ApiKeyMiddleware(config))
 
 	// Initialize V1 Handlers
-	v1.New(api, service, config, jwtConfig, tokenStore)
+	v1.New(api, service, config, jwtConfig, revocation)
 }
 
 func registerDocsRoutes(eco *echo.Echo, config *config.Configuration) {

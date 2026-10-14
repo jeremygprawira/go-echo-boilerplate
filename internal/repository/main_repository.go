@@ -8,8 +8,9 @@ import (
 )
 
 type Repository struct {
-	User   UserRepository
-	Health HealthRepository
+	User         UserRepository
+	Health       HealthRepository
+	RevokedToken RevokedTokenRepository
 
 	transaction pgsql.TransactionRepository
 }
@@ -18,9 +19,10 @@ type Repository struct {
 func New(database *database.Database) *Repository {
 	postgre := pgsql.New(database.PostgreDatabase)
 	return &Repository{
-		User:        postgre.User,
-		Health:      postgre.Health,
-		transaction: pgsql.NewTransactionRepository(database.PostgreDatabase),
+		User:         postgre.User,
+		Health:       postgre.Health,
+		RevokedToken: postgre.RevokedToken,
+		transaction:  pgsql.NewTransactionRepository(database.PostgreDatabase),
 	}
 }
 
@@ -29,6 +31,6 @@ func New(database *database.Database) *Repository {
 // transaction so writes across both repositories commit or roll back together.
 func (r *Repository) WithinTransaction(ctx context.Context, fn func(ctx context.Context, repo *Repository) error) error {
 	return r.transaction.Atomic(ctx, func(ctx context.Context, tx *pgsql.PostgreRepository) error {
-		return fn(ctx, &Repository{User: tx.User, Health: tx.Health})
+		return fn(ctx, &Repository{User: tx.User, Health: tx.Health, RevokedToken: tx.RevokedToken})
 	})
 }

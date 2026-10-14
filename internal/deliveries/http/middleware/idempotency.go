@@ -33,8 +33,8 @@ type idempotencyEntry struct {
 
 // idempotencyStore is a minimal in-memory cache keyed by method+path+key. Swap
 // for a distributed store (e.g. Redis) to share across instances or survive
-// restarts; per the class of operation this guards (auth token rotation),
-// an in-memory, single-instance store is an acceptable starting point.
+// restarts; for the operation this guards (registration retries), an
+// in-memory, single-instance store is an acceptable starting point.
 type idempotencyStore struct {
 	mu      sync.Mutex
 	entries map[string]idempotencyEntry
@@ -110,10 +110,13 @@ func (w *idempotencyCapture) Write(b []byte) (int, error) {
 // idempotency keys keep working exactly as before.
 //
 // A key is scoped to the caller: the cache key includes a hash of the Cookie
-// and Authorization headers, so a replayed response (which can carry freshly
-// minted tokens) never reaches a caller who did not present the original
-// credential, and one caller cannot see or block another caller's keys. Within
+// and Authorization headers, so a replayed response never reaches a caller who
+// did not present the original credential, and one caller cannot see or block
+// another caller's keys. Within
 // one caller, reusing a key with a different body is rejected with 422.
+//
+// Do not use this on a route whose handler must re-check state on every call,
+// such as refresh-token rotation: a replay skips the handler entirely.
 //
 // Only a successful (2xx) response is cached; a failed attempt can always be
 // retried with the same key once whatever caused the failure is fixed.

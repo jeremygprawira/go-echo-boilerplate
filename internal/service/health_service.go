@@ -2,8 +2,9 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"go-echo-boilerplate/internal/models"
+
+	"github.com/jeremygprawira/wlog"
 )
 
 type HealthService interface {
@@ -19,31 +20,24 @@ func NewHealthService(d *Dependencies) HealthService {
 }
 
 func (hs *healthService) Check(ctx context.Context) (*models.HealthResponse, error) {
-	var healthDetail []models.HealthDetailResponse
+	postgreHealth := models.HealthDetailResponse{Type: models.TYPE_HEALTH, Component: "PostgreSQL", Status: "OK"}
+	if err := hs.d.Repository.Health.Check(ctx); err != nil {
+		// The driver error names the database role, database and host, and
+		// /health is anonymous, so the detail goes to the wide event only.
+		wlog.Set(ctx, "health.postgresql_error", err.Error())
+		postgreHealth.Status = "ERROR"
+		postgreHealth.Description = "PostgreSQL is unreachable"
+	}
 
-	var postgreHealth models.HealthDetailResponse
-	postgreErr := hs.d.Repository.Health.Check(ctx)
-	if postgreErr != nil {
-		postgreHealth = models.HealthDetailResponse{
-			Type:        models.TYPE_HEALTH,
-			Component:   "PostgreSQL",
-			Status:      "ERROR",
-			Description: fmt.Sprintf("PostgreSQL is not healthy, due to %v", postgreErr),
-		}
-
-		healthDetail = append(healthDetail, postgreHealth)
-	} else {
-		postgreHealth = models.HealthDetailResponse{
-			Type:      models.TYPE_HEALTH,
-			Component: "PostgreSQL",
-			Status:    "OK",
-		}
-
-		healthDetail = append(healthDetail, postgreHealth)
+	healthy := postgreHealth.Status == "OK"
+	description := "Service is healthy"
+	if !healthy {
+		description = "Service is unhealthy"
 	}
 
 	return &models.HealthResponse{
-		Description:  "Service is healthy",
-		Dependencies: healthDetail,
+		Description:  description,
+		Healthy:      healthy,
+		Dependencies: []models.HealthDetailResponse{postgreHealth},
 	}, nil
 }

@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"container/list"
+	"net"
 	"net/http"
 	"strconv"
 	"sync"
@@ -12,9 +14,15 @@ import (
 	"golang.org/x/time/rate"
 )
 
+// rateLimiterMaxVisitors caps the store. When it is full, the least recently
+// seen identifier is evicted and the new one admitted, so a flood of new
+// clients costs fixed memory and never locks out a legitimate client.
+const rateLimiterMaxVisitors = 10_000
+
 // rateLimiterVisitor pairs a per-identifier token-bucket limiter with the
 // last time it was touched, so idle identifiers can be evicted.
 type rateLimiterVisitor struct {
+	id       string
 	limiter  *rate.Limiter
 	lastSeen time.Time
 }
@@ -24,20 +32,28 @@ type rateLimiterVisitor struct {
 // because that store doesn't expose the underlying limiter, and reporting
 // X-RateLimit-Remaining requires reading it. Swap this for a distributed
 // store when running multiple instances.
+//
+// lru orders visitors by lastSeen, most recent at the front, so both the
+// cap eviction and the idle sweep take the oldest entries from the back
+// without scanning the map.
 type rateLimiterStore struct {
 	mu        sync.Mutex
-	visitors  map[string]*rateLimiterVisitor
+	visitors  map[string]*list.Element
+	lru       *list.List
 	rateLimit rate.Limit
 	burst     int
 	expiresIn time.Duration
+	max       int
 }
 
 func newRateLimiterStore(r rate.Limit, burst int, expiresIn time.Duration) *rateLimiterStore {
 	s := &rateLimiterStore{
-		visitors:  make(map[string]*rateLimiterVisitor),
+		visitors:  make(map[string]*list.Element),
+		lru:       list.New(),
 		rateLimit: r,
 		burst:     burst,
 		expiresIn: expiresIn,
+		max:       rateLimiterMaxVisitors,
 	}
 	go s.evictLoop()
 	return s
@@ -47,13 +63,38 @@ func (s *rateLimiterStore) getLimiter(identifier string) *rate.Limiter {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	v, ok := s.visitors[identifier]
-	if !ok {
-		v = &rateLimiterVisitor{limiter: rate.NewLimiter(s.rateLimit, s.burst)}
-		s.visitors[identifier] = v
+	if el, ok := s.visitors[identifier]; ok {
+		v := el.Value.(*rateLimiterVisitor)
+		v.lastSeen = time.Now()
+		s.lru.MoveToFront(el)
+		return v.limiter
 	}
-	v.lastSeen = time.Now()
+
+	if s.lru.Len() >= s.max {
+		s.removeLocked(s.lru.Back())
+	}
+	v := &rateLimiterVisitor{id: identifier, limiter: rate.NewLimiter(s.rateLimit, s.burst), lastSeen: time.Now()}
+	s.visitors[identifier] = s.lru.PushFront(v)
 	return v.limiter
+}
+
+func (s *rateLimiterStore) removeLocked(el *list.Element) {
+	delete(s.visitors, el.Value.(*rateLimiterVisitor).id)
+	s.lru.Remove(el)
+}
+
+// clientIP returns c.RealIP() when it is an IP address. Anything else, such as
+// a raw header value Echo passed through, falls back to the TCP peer, so a
+// store key is never longer than an address.
+func clientIP(c echo.Context) string {
+	if ip := net.ParseIP(c.RealIP()); ip != nil {
+		return ip.String()
+	}
+	host, _, err := net.SplitHostPort(c.Request().RemoteAddr)
+	if err != nil {
+		return c.Request().RemoteAddr
+	}
+	return host
 }
 
 // evictLoop periodically drops identifiers idle longer than expiresIn so the
@@ -64,10 +105,8 @@ func (s *rateLimiterStore) evictLoop() {
 	for range ticker.C {
 		cutoff := time.Now().Add(-s.expiresIn)
 		s.mu.Lock()
-		for id, v := range s.visitors {
-			if v.lastSeen.Before(cutoff) {
-				delete(s.visitors, id)
-			}
+		for el := s.lru.Back(); el != nil && el.Value.(*rateLimiterVisitor).lastSeen.Before(cutoff); el = s.lru.Back() {
+			s.removeLocked(el)
 		}
 		s.mu.Unlock()
 	}
@@ -86,22 +125,19 @@ func (s *rateLimiterStore) evictLoop() {
 // well-behaved client can back off before being rejected, and a 429 carries
 // Retry-After computed from the token bucket's actual refill delay.
 //
-// Security assumption: this relies on Echo's default identifier extractor,
-// which keys off c.RealIP() and, absent a configured echo.IPExtractor, trusts
-// client-supplied X-Forwarded-For / X-Real-IP headers. That means the limiter
-// is only effective when the app runs behind a proxy/load balancer that
-// terminates client connections and sets X-Forwarded-For / X-Real-IP itself,
-// stripping any value the client tried to supply. Deployed directly
-// internet-facing (no trusted proxy in front), a client can rotate these
-// headers per request to obtain a fresh rate-limit bucket each time,
-// defeating this protection. If that's the deployment topology, configure a
-// trusted-proxy echo.IPExtractor (e.g. echo.ExtractIPFromXFFHeader with an
-// explicit trusted CIDR list) before relying on this limiter.
+// The client identity is c.RealIP(). core.BuildHTTPServer sets e.IPExtractor
+// from application.trusted_proxies, so a client cannot pick its own bucket by
+// sending X-Forwarded-For or X-Real-IP.
 func RateLimiter(cfg *appconfig.Configuration) echo.MiddlewareFunc {
+	mw, _ := rateLimiter(cfg)
+	return mw
+}
+
+func rateLimiter(cfg *appconfig.Configuration) (echo.MiddlewareFunc, *rateLimiterStore) {
 	if cfg == nil || !cfg.RateLimit.Enabled {
 		return func(next echo.HandlerFunc) echo.HandlerFunc {
 			return next
-		}
+		}, nil
 	}
 
 	expiresIn, err := time.ParseDuration(cfg.RateLimit.ExpiresIn)
@@ -114,7 +150,7 @@ func RateLimiter(cfg *appconfig.Configuration) echo.MiddlewareFunc {
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			limiter := store.getLimiter(c.RealIP())
+			limiter := store.getLimiter(clientIP(c))
 
 			reservation := limiter.ReserveN(time.Now(), 1)
 			delay := reservation.Delay()
@@ -138,5 +174,5 @@ func RateLimiter(cfg *appconfig.Configuration) echo.MiddlewareFunc {
 
 			return next(c)
 		}
-	}
+	}, store
 }

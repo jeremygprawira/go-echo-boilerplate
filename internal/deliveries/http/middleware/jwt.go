@@ -1,15 +1,21 @@
 package middleware
 
 import (
+	"context"
 	"go-echo-boilerplate/internal/pkg/errorc"
 	"go-echo-boilerplate/internal/pkg/jwtc"
-	"go-echo-boilerplate/internal/pkg/tokenstore"
 	"go-echo-boilerplate/internal/pkg/validator"
 	"strings"
 
 	"github.com/jeremygprawira/herr"
 	"github.com/labstack/echo/v4"
 )
+
+// RevocationChecker reports whether a JWT ID was revoked. An error means the
+// check could not run, and the middleware rejects the request.
+type RevocationChecker interface {
+	IsRevoked(ctx context.Context, jti string) (bool, error)
+}
 
 // BearerAuthMiddleware validates JWT access tokens from the Authorization header
 // and injects authenticated user claims into the request context.
@@ -24,7 +30,7 @@ import (
 //   - "account_number": string - The user's account number
 //   - "email": string - The user's email address
 //   - "phone_number": string - The user's phone number
-func BearerAuthMiddleware(config *jwtc.Configuration, store tokenstore.TokenStore) echo.MiddlewareFunc {
+func BearerAuthMiddleware(config *jwtc.Configuration, revocation RevocationChecker) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(ctx echo.Context) error {
 			// Extract Authorization header
@@ -47,7 +53,7 @@ func BearerAuthMiddleware(config *jwtc.Configuration, store tokenstore.TokenStor
 				return errorc.Unauthorized.New().Wrap(err)
 			}
 
-			revoked, rerr := store.IsRevoked(ctx.Request().Context(), claims.ID)
+			revoked, rerr := revocation.IsRevoked(ctx.Request().Context(), claims.ID)
 			if rerr != nil {
 				return errorc.Internal.New().Internal("failed to check token revocation").Wrap(rerr)
 			}

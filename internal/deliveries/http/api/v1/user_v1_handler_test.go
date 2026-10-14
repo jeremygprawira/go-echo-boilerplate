@@ -11,7 +11,6 @@ import (
 	"go-echo-boilerplate/internal/pkg/errorc"
 	"go-echo-boilerplate/internal/pkg/generator"
 	"go-echo-boilerplate/internal/pkg/jwtc"
-	"go-echo-boilerplate/internal/pkg/tokenstore"
 	"go-echo-boilerplate/internal/service"
 	"net/http"
 	"net/http/httptest"
@@ -24,6 +23,11 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+// notRevoked is a RevocationChecker that reports every token as live.
+type notRevoked struct{}
+
+func (notRevoked) IsRevoked(context.Context, string) (bool, error) { return false, nil }
 
 func strPtr(s string) *string {
 	return &s
@@ -117,7 +121,7 @@ func TestUserV1Handler_Create(t *testing.T) {
 
 		// Setup Group
 		g := e.Group("/v1")
-		v1.NewUserV1(g, svc, nil, nil, tokenstore.NewNoopStore())
+		v1.NewUserV1(g, svc, nil, nil, notRevoked{})
 
 		// ServeRequest
 		e.ServeHTTP(rec, req)
@@ -141,7 +145,7 @@ func TestUserV1Handler_Create(t *testing.T) {
 		// Setup Service
 		svc := &service.Service{User: new(MockUserService)}
 		g := e.Group("/v1")
-		v1.NewUserV1(g, svc, nil, nil, tokenstore.NewNoopStore())
+		v1.NewUserV1(g, svc, nil, nil, notRevoked{})
 
 		e.ServeHTTP(rec, req)
 
@@ -167,7 +171,7 @@ func TestUserV1Handler_Create(t *testing.T) {
 
 		svc := &service.Service{User: mockSvc}
 		g := e.Group("/v1")
-		v1.NewUserV1(g, svc, nil, nil, tokenstore.NewNoopStore())
+		v1.NewUserV1(g, svc, nil, nil, notRevoked{})
 
 		e.ServeHTTP(rec, req)
 
@@ -193,7 +197,7 @@ func TestUserV1Handler_Create(t *testing.T) {
 
 		svc := &service.Service{User: mockSvc}
 		g := e.Group("/v1")
-		v1.NewUserV1(g, svc, nil, nil, tokenstore.NewNoopStore())
+		v1.NewUserV1(g, svc, nil, nil, notRevoked{})
 
 		e.ServeHTTP(rec, req)
 
@@ -229,7 +233,7 @@ func TestUserV1Handler_GetTokens(t *testing.T) {
 
 		svc := &service.Service{User: mockSvc}
 		g := e.Group("/v1")
-		v1.NewUserV1(g, svc, nil, nil, tokenstore.NewNoopStore())
+		v1.NewUserV1(g, svc, nil, nil, notRevoked{})
 
 		e.ServeHTTP(rec, req)
 
@@ -251,7 +255,7 @@ func TestUserV1Handler_GetTokens(t *testing.T) {
 		mockSvc := new(MockUserService)
 		svc := &service.Service{User: mockSvc}
 		g := e.Group("/v1")
-		v1.NewUserV1(g, svc, nil, nil, tokenstore.NewNoopStore())
+		v1.NewUserV1(g, svc, nil, nil, notRevoked{})
 
 		e.ServeHTTP(rec, req)
 
@@ -276,7 +280,7 @@ func TestUserV1Handler_GetTokens(t *testing.T) {
 
 		svc := &service.Service{User: mockSvc}
 		g := e.Group("/v1")
-		v1.NewUserV1(g, svc, nil, nil, tokenstore.NewNoopStore())
+		v1.NewUserV1(g, svc, nil, nil, notRevoked{})
 
 		e.ServeHTTP(rec, req)
 
@@ -308,7 +312,7 @@ func TestUserV1Handler_RefreshTokens_TokenResolution(t *testing.T) {
 
 		svc := &service.Service{User: mockSvc}
 		g := e.Group("/v1")
-		v1.NewUserV1(g, svc, nil, nil, tokenstore.NewNoopStore())
+		v1.NewUserV1(g, svc, nil, nil, notRevoked{})
 
 		e.ServeHTTP(rec, req)
 
@@ -329,7 +333,7 @@ func TestUserV1Handler_RefreshTokens_TokenResolution(t *testing.T) {
 
 		svc := &service.Service{User: mockSvc}
 		g := e.Group("/v1")
-		v1.NewUserV1(g, svc, nil, nil, tokenstore.NewNoopStore())
+		v1.NewUserV1(g, svc, nil, nil, notRevoked{})
 
 		e.ServeHTTP(rec, req)
 
@@ -346,7 +350,7 @@ func TestUserV1Handler_RefreshTokens_TokenResolution(t *testing.T) {
 		mockSvc := new(MockUserService)
 		svc := &service.Service{User: mockSvc}
 		g := e.Group("/v1")
-		v1.NewUserV1(g, svc, nil, nil, tokenstore.NewNoopStore())
+		v1.NewUserV1(g, svc, nil, nil, notRevoked{})
 
 		e.ServeHTTP(rec, req)
 
@@ -383,7 +387,7 @@ func TestUserV1Handler_Logout_TokenResolution(t *testing.T) {
 
 		svc := &service.Service{User: mockSvc}
 		g := e.Group("/v1")
-		v1.NewUserV1(g, svc, nil, cfg, tokenstore.NewNoopStore())
+		v1.NewUserV1(g, svc, nil, cfg, notRevoked{})
 
 		e.ServeHTTP(rec, req)
 
@@ -403,7 +407,7 @@ func TestUserV1Handler_Logout_TokenResolution(t *testing.T) {
 
 		svc := &service.Service{User: mockSvc}
 		g := e.Group("/v1")
-		v1.NewUserV1(g, svc, nil, cfg, tokenstore.NewNoopStore())
+		v1.NewUserV1(g, svc, nil, cfg, notRevoked{})
 
 		e.ServeHTTP(rec, req)
 

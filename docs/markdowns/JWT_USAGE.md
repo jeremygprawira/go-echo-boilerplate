@@ -6,7 +6,7 @@ Dual-token JWT auth: short-lived access tokens + longer-lived refresh tokens, bo
 
 - **Access Tokens**: short-lived, used for `Authorization: Bearer <token>` on protected routes
 - **Refresh Tokens**: longer-lived, exchanged for a fresh access+refresh pair via `/users/tokens/refresh`
-- **Revocation**: logout (`/users/logout`) revokes a token's JTI via the `tokenstore.TokenStore` port
+- **Revocation**: logout (`/users/logout`) revokes a token's JTI in the Postgres `revoked_tokens` table
 
 ## Configuration
 
@@ -16,12 +16,12 @@ Dual-token JWT auth: short-lived access tokens + longer-lived refresh tokens, bo
 authorization:
   issuer: go-echo-boilerplate
   access:
-    secret: replace-with-a-strong-access-secret
+    secret: replace-with-a-random-access-secret-of-32-bytes-or-more
     duration: 15m
   refresh:
-    secret: replace-with-a-different-strong-refresh-secret
+    secret: replace-with-a-different-random-refresh-secret-of-32-bytes
     duration: 168h # 7 days
-  api_key: replace-with-an-api-key
+  api_key: replace-with-a-random-api-key-of-32-bytes-or-more
 ```
 
 Loaded into `jwtc.Configuration` via `jwtc.DefaultConfig(configuration)` in `internal/core/setup.go`. Access and refresh **must** use different secrets — `validator.AccessToken`/`validator.RefreshToken` each verify against their own secret and reject the other token type.
@@ -77,11 +77,11 @@ Routes (`internal/deliveries/http/api/v1/user_v1_handler.go`), all under `/api/v
 
 `RefreshTokens` and `Logout` both resolve the refresh token the same way (`jwtc.ResolveRefreshToken` in `internal/pkg/jwtc`): an explicit value in the request body wins; otherwise they fall back to the `refresh_token` cookie set by `GetTokens` (login). This lets a browser client rely purely on the httpOnly cookie, a non-browser client pass the token explicitly in the body, and either client call any of the three endpoints without caring which channel the others used.
 
-`middleware.BearerAuthMiddleware` (`internal/deliveries/http/middleware/jwt.go`) does, in order: check `Authorization: Bearer <token>` header present and well-formed → `validator.AccessToken` → `tokenStore.IsRevoked(ctx, claims.ID)` → set `userID`/`accountNumber`/`email`/`phoneNumber`/`jti` on the Echo context.
+`middleware.BearerAuthMiddleware` (`internal/deliveries/http/middleware/jwt.go`) does, in order: check `Authorization: Bearer <token>` header present and well-formed → `validator.AccessToken` → `revocation.IsRevoked(ctx, claims.ID)` (a `middleware.RevocationChecker`, which `service.TokenService` satisfies) → set `userID`/`accountNumber`/`email`/`phoneNumber`/`jti` on the Echo context.
 
 ### Refresh (`UserService.RefreshTokens`)
 
-Validates the refresh token → rejects if its JTI is already revoked → loads the user → **rotates**: revokes the presented refresh JTI (so it can't be replayed) → issues a fresh access+refresh pair.
+Validates the refresh token, then **claims** its JTI with `RevokedTokenRepository.Revoke`, which reports whether this call inserted the row. The claim is one `INSERT ... ON CONFLICT (jti) DO NOTHING`, so of several concurrent requests with the same token exactly one inserts the row. That request loads the user and gets a fresh access+refresh pair. Every other request, and any later replay, gets 401 and mints nothing.
 
 ### Logout (`UserService.Logout`)
 
@@ -89,14 +89,18 @@ Revokes the current access token's JTI, and — if a refresh token is also prese
 
 ## Revocation backend
 
-`tokenstore.TokenStore` (`internal/pkg/tokenstore/tokenstore.go`) is the port both of the above call. As of this writing the only implementation is `tokenstore.NewNoopStore()` (wired in `internal/core/setup.go`), which never actually revokes anything:
+`repository.RevokedTokenRepository` (`internal/repository/ports.go`, implemented in `internal/repository/pgsql/revocation_pgsql_repository.go`) holds the SQL. It keeps revoked JTIs in the Postgres `revoked_tokens` table (migration `migration/db/postgre/20261014000000_revoked_tokens.sql`). Revocation therefore survives restarts and is shared by every instance. The rules live in `internal/service`.
 
-> **SECURITY:** with no real backend, `Revoke` is a no-op — logout and refresh-token rotation cannot invalidate a token before its natural expiry. A held access or refresh token stays valid for its full lifetime even after the user logs out.
+- `RefreshTokens` and `Logout` store each JTI with an expiry of now plus the token's full lifetime, so the row outlives the token.
+- `service.TokenService.IsRevoked` ignores expired rows. A database error is returned as an error, never as "not revoked". The bearer middleware and `RefreshTokens` answer 500 for it, so revocation fails closed.
+- `service.TokenService` runs as a `graceful` process (`token-purge` in `cmd/http/main.go`). It deletes expired rows every hour and stops on shutdown.
 
-A Redis-backed `TokenStore` existed previously and was removed along with the rest of the optional-infra-clients work (see `docs/markdowns/BOILERPLATE_ASSESSMENT.md`). Reintroducing real revocation means adding a new `TokenStore` implementation and wiring it in `core.BuildDependencies` — the interface and every call site are already in place.
+Tests use an in-memory fake of `RevokedTokenRepository`, or of `middleware.RevocationChecker` in the delivery tests.
+
+`POST /users/tokens/refresh` has no `Idempotency` middleware. A cached replay would skip the revocation check and return tokens minted from a refresh token that has since been rotated or logged out. A client that loses a refresh response must log in again.
 
 ## Security notes
 
-- **Secrets**: set `authorization.access.secret` / `authorization.refresh.secret` per environment; never commit real values (see `config.local.example.yaml` for placeholders). They must differ from each other.
+- **Secrets**: set `authorization.access.secret` / `authorization.refresh.secret` per environment; never commit real values (see `config.local.example.yaml` for placeholders). They must differ from each other. `Config.Validate` rejects any of the two secrets or `authorization.api_key` that is shorter than 32 bytes or still contains `replace-with-`. Generate each with `openssl rand -base64 48` or `generator.APIKey()`.
 - **Token storage on the client**: keep the access token in memory, not `localStorage`; store the refresh token in an httpOnly, Secure cookie if you control the client.
 - **Password length**: bcrypt truncates beyond 72 bytes — `validator.PasswordWithinBcryptLimit` and `generator.Hash` both reject longer passwords instead of silently truncating.

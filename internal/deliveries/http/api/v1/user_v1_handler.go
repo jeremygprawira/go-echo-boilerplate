@@ -8,7 +8,6 @@ import (
 	"go-echo-boilerplate/internal/pkg/errorc"
 	"go-echo-boilerplate/internal/pkg/jwtc"
 	"go-echo-boilerplate/internal/pkg/response"
-	"go-echo-boilerplate/internal/pkg/tokenstore"
 	"go-echo-boilerplate/internal/pkg/validator"
 	"go-echo-boilerplate/internal/service"
 	"net/http"
@@ -21,19 +20,15 @@ type userV1Handler struct {
 	service    *service.Service
 	config     *config.Configuration
 	jwtConfig  *jwtc.Configuration
-	tokenStore tokenstore.TokenStore
+	revocation middleware.RevocationChecker
 }
 
-func NewUserV1(v1 *echo.Group, service *service.Service, config *config.Configuration, jwtConfig *jwtc.Configuration, tokenStore tokenstore.TokenStore) {
-	if tokenStore == nil {
-		tokenStore = tokenstore.NewNoopStore()
-	}
-
+func NewUserV1(v1 *echo.Group, service *service.Service, config *config.Configuration, jwtConfig *jwtc.Configuration, revocation middleware.RevocationChecker) {
 	h := &userV1Handler{
 		service:    service,
 		config:     config,
 		jwtConfig:  jwtConfig,
-		tokenStore: tokenStore,
+		revocation: revocation,
 	}
 
 	// Config.Validate rejects a bad ttl at startup, so the parse cannot fail
@@ -46,10 +41,12 @@ func NewUserV1(v1 *echo.Group, service *service.Service, config *config.Configur
 	noBearerRoute := v1.Group("/users")
 	noBearerRoute.POST("", h.Create, middleware.RateLimiter(config), middleware.Idempotency(idempotencyTTL))
 	noBearerRoute.POST("/tokens", h.GetTokens, middleware.RateLimiter(config))
-	noBearerRoute.POST("/tokens/refresh", h.RefreshTokens, middleware.RateLimiter(config), middleware.Idempotency(idempotencyTTL))
+	// No Idempotency here: a cached replay would skip the revocation check and
+	// hand out the tokens from an already rotated refresh token.
+	noBearerRoute.POST("/tokens/refresh", h.RefreshTokens, middleware.RateLimiter(config))
 
 	bearerRoute := v1.Group("/users")
-	bearerRoute.Use(middleware.BearerAuthMiddleware(h.jwtConfig, h.tokenStore))
+	bearerRoute.Use(middleware.BearerAuthMiddleware(h.jwtConfig, h.revocation))
 	bearerRoute.GET("/me", h.GetUserByAccessToken)
 	bearerRoute.POST("/logout", h.Logout)
 }
@@ -133,11 +130,10 @@ func (h *userV1Handler) GetTokens(ctx echo.Context) error {
 // token is read from the request body if present, else from the
 // refresh_token cookie set at login — see jwtc.ResolveRefreshToken.
 // @Summary Refresh Tokens
-// @Description Exchange a valid, non-revoked refresh token for a new access+refresh pair. The token may be supplied in the body or via the refresh_token cookie set at login; the body takes precedence. Since this rotates (revokes) the presented refresh token, pass an Idempotency-Key header so a retried request after a dropped response doesn't require a fresh login.
+// @Description Exchange a valid, non-revoked refresh token for a new access+refresh pair. The token may be supplied in the body or via the refresh_token cookie set at login; the body takes precedence. The presented refresh token is revoked, so a retry with it gets 401 and the client must log in again.
 // @Tags Users
 // @Accept json
 // @Produce json
-// @Param Idempotency-Key header string false "Optional key making a retried request safe to resend"
 // @Param request body models.RefreshTokenRequest false "Refresh Token (optional if the refresh_token cookie is set)"
 // @Success 200 {object} models.Response{data=models.GetUserTokenResponse} "Tokens Refreshed Successfully"
 // @Failure 400 {object} models.Response "Invalid Input"
