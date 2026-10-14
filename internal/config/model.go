@@ -21,6 +21,16 @@ type (
 		Timeout     int    `mapstructure:"timeout"`
 		Timezone    string `mapstructure:"timezone"`
 		MaxBodySize string `mapstructure:"max_body_size"`
+		// TrustedProxies lists the CIDRs of reverse proxies whose
+		// X-Forwarded-For entries are believed. Empty means clients connect
+		// directly and the TCP peer address identifies them.
+		TrustedProxies []string `mapstructure:"trusted_proxies"`
+		// HTTP server timeouts, as Go duration strings. config.Initialize
+		// defaults them to 5s, 15s, 30s and 60s.
+		ReadHeaderTimeout string `mapstructure:"read_header_timeout"`
+		ReadTimeout       string `mapstructure:"read_timeout"`
+		WriteTimeout      string `mapstructure:"write_timeout"`
+		IdleTimeout       string `mapstructure:"idle_timeout"`
 	}
 
 	CORS struct {

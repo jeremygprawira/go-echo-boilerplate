@@ -11,7 +11,7 @@ Companion to [BOILERPLATE_ASSESSMENT.md](./BOILERPLATE_ASSESSMENT.md). This was 
 
 ## Reverted
 
-- **Phase 3 — infrastructure clients (Redis/Kafka/Firebase)**: all three were built (Redis cache + JTI revocation store, Kafka publisher/consumer, Firebase/Firestore `UserRepository` adapter), then removed by decision. The refresh/revocation *flow* from 3.3 stayed — `/tokens/refresh` and `/logout` still exist — but `tokenstore.TokenStore` now only has `NewNoopStore()`, so revocation doesn't actually take effect (see JWT_USAGE.md). Re-adding a real backend means implementing `TokenStore` (and, if needed, a `Cache` port and a `UserRepository` adapter) again, not reopening this phase's old code.
+- **Phase 3 — infrastructure clients (Redis/Kafka/Firebase)**: all three were built (Redis cache + JTI revocation store, Kafka publisher/consumer, Firebase/Firestore `UserRepository` adapter), then removed by decision. The refresh/revocation *flow* from 3.3 stayed — `/tokens/refresh` and `/logout` still exist — and revocation is now stored in Postgres through `repository.RevokedTokenRepository` (see JWT_USAGE.md). Re-adding another backend means implementing that port (and, if needed, a `Cache` port and a `UserRepository` adapter) again, not reopening this phase's old code.
 
 ## Still open
 

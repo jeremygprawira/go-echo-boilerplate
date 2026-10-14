@@ -265,7 +265,7 @@ const docTemplate = `{
         },
         "/api/v1/users/tokens/refresh": {
             "post": {
-                "description": "Exchange a valid, non-revoked refresh token for a new access+refresh pair. The token may be supplied in the body or via the refresh_token cookie set at login; the body takes precedence. Since this rotates (revokes) the presented refresh token, pass an Idempotency-Key header so a retried request after a dropped response doesn't require a fresh login.",
+                "description": "Exchange a valid, non-revoked refresh token for a new access+refresh pair. The token may be supplied in the body or via the refresh_token cookie set at login; the body takes precedence. The presented refresh token is revoked, so a retry with it gets 401 and the client must log in again.",
                 "consumes": [
                     "application/json"
                 ],
@@ -277,12 +277,6 @@ const docTemplate = `{
                 ],
                 "summary": "Refresh Tokens",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Optional key making a retried request safe to resend",
-                        "name": "Idempotency-Key",
-                        "in": "header"
-                    },
                     {
                         "description": "Refresh Token (optional if the refresh_token cookie is set)",
                         "name": "request",
@@ -367,10 +361,25 @@ const docTemplate = `{
                             ]
                         }
                     },
-                    "500": {
-                        "description": "Internal Server Error",
+                    "503": {
+                        "description": "A dependency is unreachable",
                         "schema": {
-                            "$ref": "#/definitions/models.Response"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/models.HealthDetailResponse"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     }
                 }

@@ -7,12 +7,14 @@ import (
 type PostgreRepository struct {
 	Health HealthRepository
 
-	User UserRepository
+	User         UserRepository
+	RevokedToken RevokedTokenRepository
 }
 
 func New(db *gorm.DB) *PostgreRepository {
 	return &PostgreRepository{
-		Health: NewHealthRepository(db),
-		User:   NewUserRepository(db),
+		Health:       NewHealthRepository(db),
+		User:         NewUserRepository(db),
+		RevokedToken: NewRevokedTokenRepository(db),
 	}
 }

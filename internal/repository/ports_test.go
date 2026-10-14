@@ -13,5 +13,6 @@ import (
 func TestPgsqlSatisfiesPorts(t *testing.T) {
 	var _ repository.UserRepository = (pgsql.UserRepository)(nil)
 	var _ repository.HealthRepository = (pgsql.HealthRepository)(nil)
+	var _ repository.RevokedTokenRepository = (pgsql.RevokedTokenRepository)(nil)
 	require.True(t, true)
 }

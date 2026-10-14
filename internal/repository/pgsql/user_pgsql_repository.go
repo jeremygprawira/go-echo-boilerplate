@@ -40,8 +40,12 @@ func (ur *userRepository) CheckByEmailOrPhoneNumber(ctx context.Context, email s
 func (ur *userRepository) GetCredentialsByEmailOrPhoneNumber(ctx context.Context, email string, phoneNumber string) (*models.User, error) {
 	var user models.User
 
-	if err := ur.db.WithContext(ctx).Raw(QueryGetCredentialsByEmailOrPhoneNumber, email, phoneNumber).Scan(&user).Error; err != nil {
-		return nil, err
+	result := ur.db.WithContext(ctx).Raw(QueryGetCredentialsByEmailOrPhoneNumber, email, phoneNumber).Scan(&user)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, nil
 	}
 
 	return &user, nil
@@ -50,8 +54,12 @@ func (ur *userRepository) GetCredentialsByEmailOrPhoneNumber(ctx context.Context
 func (ur *userRepository) GetOneByAccountNumber(ctx context.Context, accountNumber string) (*models.User, error) {
 	var user models.User
 
-	if err := ur.db.WithContext(ctx).Raw(QueryGetByAccountNumber, accountNumber).Scan(&user).Error; err != nil {
-		return nil, err
+	result := ur.db.WithContext(ctx).Raw(QueryGetByAccountNumber, accountNumber).Scan(&user)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, nil
 	}
 
 	return &user, nil
@@ -66,8 +74,8 @@ func (ur *userRepository) GetOneByID(ctx context.Context, id int) (*models.User,
 	}
 	// GORM's Scan on a Raw query does not return ErrRecordNotFound; a
 	// non-matching id leaves user as its zero value with RowsAffected == 0.
-	// Callers (e.g. RefreshTokens) rely on a nil return to treat this as
-	// "user not found" rather than proceeding with a zero-value user.
+	// Callers rely on a nil return to treat this as "user not found" rather
+	// than proceeding with a zero-value user. The other lookups follow suit.
 	if result.RowsAffected == 0 {
 		return nil, nil
 	}

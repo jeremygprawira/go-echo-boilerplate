@@ -39,6 +39,7 @@ func TestHealthHandler_Check(t *testing.T) {
 		mockHealthSvc := new(MockHealthService)
 		expectedResp := &models.HealthResponse{
 			Description: "Service is healthy",
+			Healthy:     true,
 			Dependencies: []models.HealthDetailResponse{
 				{Component: "PostgreSQL", Status: "OK"},
 			},
