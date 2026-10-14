@@ -8,7 +8,6 @@ import (
 	"go-echo-boilerplate/internal/pkg/errorc"
 	"go-echo-boilerplate/internal/pkg/jwtc"
 	"go-echo-boilerplate/internal/pkg/response"
-	"go-echo-boilerplate/internal/pkg/tokenstore"
 	"go-echo-boilerplate/internal/pkg/validator"
 	"go-echo-boilerplate/internal/service"
 	"net/http"
@@ -21,15 +20,15 @@ type userV1Handler struct {
 	service    *service.Service
 	config     *config.Configuration
 	jwtConfig  *jwtc.Configuration
-	tokenStore tokenstore.TokenStore
+	revocation middleware.RevocationChecker
 }
 
-func NewUserV1(v1 *echo.Group, service *service.Service, config *config.Configuration, jwtConfig *jwtc.Configuration, tokenStore tokenstore.TokenStore) {
+func NewUserV1(v1 *echo.Group, service *service.Service, config *config.Configuration, jwtConfig *jwtc.Configuration, revocation middleware.RevocationChecker) {
 	h := &userV1Handler{
 		service:    service,
 		config:     config,
 		jwtConfig:  jwtConfig,
-		tokenStore: tokenStore,
+		revocation: revocation,
 	}
 
 	// Config.Validate rejects a bad ttl at startup, so the parse cannot fail
@@ -47,7 +46,7 @@ func NewUserV1(v1 *echo.Group, service *service.Service, config *config.Configur
 	noBearerRoute.POST("/tokens/refresh", h.RefreshTokens, middleware.RateLimiter(config))
 
 	bearerRoute := v1.Group("/users")
-	bearerRoute.Use(middleware.BearerAuthMiddleware(h.jwtConfig, h.tokenStore))
+	bearerRoute.Use(middleware.BearerAuthMiddleware(h.jwtConfig, h.revocation))
 	bearerRoute.GET("/me", h.GetUserByAccessToken)
 	bearerRoute.POST("/logout", h.Logout)
 }
