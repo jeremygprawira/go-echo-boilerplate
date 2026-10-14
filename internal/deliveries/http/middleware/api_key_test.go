@@ -36,7 +36,7 @@ func TestApiKeyMiddleware(t *testing.T) {
 		e.ServeHTTP(rec, req)
 
 		assert.Equal(t, http.StatusUnauthorized, rec.Code)
-		assert.Contains(t, rec.Body.String(), `"code":"UNAUTHORIZED"`)
+		assert.Contains(t, rec.Body.String(), `"errorCode":"UNAUTHORIZED"`)
 		assert.NotContains(t, rec.Body.String(), "X-API-Key") // internal detail stays internal
 	})
 

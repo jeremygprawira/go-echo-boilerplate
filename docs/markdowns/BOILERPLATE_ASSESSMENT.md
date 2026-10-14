@@ -17,7 +17,10 @@ The following were flagged in earlier reviews and are now fixed in the codebase:
 - **bcrypt truncation.** Passwords are rejected above bcrypt's 72-byte limit (`internal/pkg/validator/password_length.go`, `internal/pkg/generator/hash.go`).
 - **No Dockerfile/CI.** Both exist (`Dockerfile`, `builds/Dockerfile`, `.github/workflows/ci.yml`).
 - **Repository ports coupling.** Services depend on `repository.UserRepository`/`HealthRepository` interfaces, not a concrete `Postgre.User` field; `pgsql` is the sole adapter today.
-- **Pagination convention.** `models.Response.Pagination` (`PaginationOutput`) exists in the response envelope.
+- **Pagination convention.** `models.Response.Pagination` (`PaginationOutput`) exists in the response envelope, using cursor-based pagination (`?cursor=&limit=` in, `{nextCursor, hasMore, limit}` out) rather than offset/limit, so a list endpoint built on top of it won't degrade as the dataset grows. No endpoint uses it yet.
+- **Error/success envelope shape.** Errors now render through the same `models.Response` envelope as success responses — `Code` is always the numeric HTTP status regardless of outcome, and the catalog error identifier (e.g. `"VALIDATION_FAILED"`) lives in `ErrorCode` instead of overloading `Code`'s type (`internal/deliveries/http/error_handler.go`).
+- **Refresh-token transport.** `POST /users/tokens/refresh` and `POST /users/logout` both resolve the refresh token the same way — body value if present, else the `refresh_token` cookie — instead of each endpoint trusting a different channel.
+- **Rate-limit visibility.** `middleware.RateLimiter` now reports `X-RateLimit-Limit`/`X-RateLimit-Remaining` on every response (not just on rejection) and sets `Retry-After` — computed from the token bucket's actual refill delay — on a 429, so a well-behaved client can back off before being rejected instead of only finding out after.
 
 ## Still open
 

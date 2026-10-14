@@ -39,31 +39,6 @@ definitions:
         example: "2026-01-24T15:57:37+07:00"
         type: string
     type: object
-  models.ErrorValidationResponse:
-    properties:
-      code:
-        type: string
-      field:
-        type: string
-      message:
-        type: string
-    type: object
-  models.ErrorWireResponse:
-    properties:
-      code:
-        example: USER_NOT_FOUND
-        type: string
-      errors:
-        items:
-          $ref: '#/definitions/models.ErrorValidationResponse'
-        type: array
-      message:
-        example: user not found
-        type: string
-      metadata:
-        additionalProperties: true
-        type: object
-    type: object
   models.GetUserByAccountNumberResponse:
     properties:
       accountNumber:
@@ -132,25 +107,37 @@ definitions:
       type:
         type: string
     type: object
+  models.LogoutRequest:
+    properties:
+      refreshToken:
+        type: string
+    type: object
   models.Metadata:
     properties:
       requestId:
         type: string
+      retryAfter:
+        type: integer
+      retryable:
+        description: |-
+          Retryable/RetryAfter/TraceId are only ever populated on error
+          responses, carried over from herr's wire body.
+        type: boolean
       timestamp:
         type: string
       totalRows:
         type: integer
+      traceId:
+        type: string
     type: object
   models.PaginationOutput:
     properties:
+      hasMore:
+        type: boolean
       limit:
         type: integer
-      next:
+      nextCursor:
         type: string
-      prev:
-        type: string
-      total:
-        type: integer
     type: object
   models.PhoneNumber:
     properties:
@@ -165,8 +152,6 @@ definitions:
     properties:
       refreshToken:
         type: string
-    required:
-    - refreshToken
     type: object
   models.Response:
     properties:
@@ -174,6 +159,9 @@ definitions:
         example: 200
         type: integer
       data: {}
+      errorCode:
+        example: VALIDATION_FAILED
+        type: string
       errors: {}
       message:
         example: Request has been successfully processed.
@@ -205,9 +193,15 @@ paths:
     post:
       consumes:
       - application/json
-      description: Register a new user with email, phone number, and password. Auto-generates
-        account number.
+      description: 'Register a new user with email, phone number, and password. Auto-generates
+        account number. Optionally pass an Idempotency-Key header to make a retried
+        request safe: a repeated request with the same key returns the original response
+        instead of re-executing.'
       parameters:
+      - description: Optional key making a retried request safe to resend
+        in: header
+        name: Idempotency-Key
+        type: string
       - description: User Registration Details
         in: body
         name: request
@@ -229,25 +223,35 @@ paths:
         "400":
           description: Invalid Input
           schema:
-            $ref: '#/definitions/models.ErrorWireResponse'
+            $ref: '#/definitions/models.Response'
         "409":
           description: User Already Exists (Email or Phone)
           schema:
-            $ref: '#/definitions/models.ErrorWireResponse'
+            $ref: '#/definitions/models.Response'
         "422":
           description: Validation Failed
           schema:
-            $ref: '#/definitions/models.ErrorWireResponse'
+            $ref: '#/definitions/models.Response'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/models.ErrorWireResponse'
+            $ref: '#/definitions/models.Response'
       summary: Create New User
       tags:
       - Users
   /api/v1/users/logout:
     post:
-      description: Revoke the current access token and refresh token
+      consumes:
+      - application/json
+      description: Revoke the current access token and refresh token. The refresh
+        token may be supplied in the body or via the refresh_token cookie set at login;
+        the body takes precedence.
+      parameters:
+      - description: Refresh Token (optional if the refresh_token cookie is set)
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/models.LogoutRequest'
       produces:
       - application/json
       responses:
@@ -258,7 +262,7 @@ paths:
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/models.ErrorWireResponse'
+            $ref: '#/definitions/models.Response'
       security:
       - BearerAuth: []
       summary: Logout
@@ -284,15 +288,15 @@ paths:
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/models.ErrorWireResponse'
+            $ref: '#/definitions/models.Response'
         "404":
           description: User Not Found
           schema:
-            $ref: '#/definitions/models.ErrorWireResponse'
+            $ref: '#/definitions/models.Response'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/models.ErrorWireResponse'
+            $ref: '#/definitions/models.Response'
       security:
       - BearerAuth: []
       summary: Get User By Access Token
@@ -325,19 +329,19 @@ paths:
         "400":
           description: Invalid Input
           schema:
-            $ref: '#/definitions/models.ErrorWireResponse'
+            $ref: '#/definitions/models.Response'
         "404":
           description: User Not Found
           schema:
-            $ref: '#/definitions/models.ErrorWireResponse'
+            $ref: '#/definitions/models.Response'
         "422":
           description: Validation Failed
           schema:
-            $ref: '#/definitions/models.ErrorWireResponse'
+            $ref: '#/definitions/models.Response'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/models.ErrorWireResponse'
+            $ref: '#/definitions/models.Response'
       summary: Get Tokens
       tags:
       - Users
@@ -346,12 +350,18 @@ paths:
       consumes:
       - application/json
       description: Exchange a valid, non-revoked refresh token for a new access+refresh
-        pair
+        pair. The token may be supplied in the body or via the refresh_token cookie
+        set at login; the body takes precedence. Since this rotates (revokes) the
+        presented refresh token, pass an Idempotency-Key header so a retried request
+        after a dropped response doesn't require a fresh login.
       parameters:
-      - description: Refresh Token
+      - description: Optional key making a retried request safe to resend
+        in: header
+        name: Idempotency-Key
+        type: string
+      - description: Refresh Token (optional if the refresh_token cookie is set)
         in: body
         name: request
-        required: true
         schema:
           $ref: '#/definitions/models.RefreshTokenRequest'
       produces:
@@ -369,15 +379,15 @@ paths:
         "400":
           description: Invalid Input
           schema:
-            $ref: '#/definitions/models.ErrorWireResponse'
+            $ref: '#/definitions/models.Response'
         "401":
           description: Invalid or Revoked Refresh Token
           schema:
-            $ref: '#/definitions/models.ErrorWireResponse'
+            $ref: '#/definitions/models.Response'
         "422":
           description: Validation Failed
           schema:
-            $ref: '#/definitions/models.ErrorWireResponse'
+            $ref: '#/definitions/models.Response'
       summary: Refresh Tokens
       tags:
       - Users
@@ -403,7 +413,7 @@ paths:
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/models.ErrorWireResponse'
+            $ref: '#/definitions/models.Response'
       summary: Check health status
       tags:
       - Health

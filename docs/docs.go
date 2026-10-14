@@ -17,7 +17,7 @@ const docTemplate = `{
     "paths": {
         "/api/v1/users": {
             "post": {
-                "description": "Register a new user with email, phone number, and password. Auto-generates account number.",
+                "description": "Register a new user with email, phone number, and password. Auto-generates account number. Optionally pass an Idempotency-Key header to make a retried request safe: a repeated request with the same key returns the original response instead of re-executing.",
                 "consumes": [
                     "application/json"
                 ],
@@ -29,6 +29,12 @@ const docTemplate = `{
                 ],
                 "summary": "Create New User",
                 "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Optional key making a retried request safe to resend",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    },
                     {
                         "description": "User Registration Details",
                         "name": "request",
@@ -61,25 +67,25 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid Input",
                         "schema": {
-                            "$ref": "#/definitions/models.ErrorWireResponse"
+                            "$ref": "#/definitions/models.Response"
                         }
                     },
                     "409": {
                         "description": "User Already Exists (Email or Phone)",
                         "schema": {
-                            "$ref": "#/definitions/models.ErrorWireResponse"
+                            "$ref": "#/definitions/models.Response"
                         }
                     },
                     "422": {
                         "description": "Validation Failed",
                         "schema": {
-                            "$ref": "#/definitions/models.ErrorWireResponse"
+                            "$ref": "#/definitions/models.Response"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/models.ErrorWireResponse"
+                            "$ref": "#/definitions/models.Response"
                         }
                     }
                 }
@@ -92,7 +98,10 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Revoke the current access token and refresh token",
+                "description": "Revoke the current access token and refresh token. The refresh token may be supplied in the body or via the refresh_token cookie set at login; the body takes precedence.",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -100,6 +109,16 @@ const docTemplate = `{
                     "Users"
                 ],
                 "summary": "Logout",
+                "parameters": [
+                    {
+                        "description": "Refresh Token (optional if the refresh_token cookie is set)",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/models.LogoutRequest"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "Logged Out Successfully",
@@ -110,7 +129,7 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/models.ErrorWireResponse"
+                            "$ref": "#/definitions/models.Response"
                         }
                     }
                 }
@@ -156,19 +175,19 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/models.ErrorWireResponse"
+                            "$ref": "#/definitions/models.Response"
                         }
                     },
                     "404": {
                         "description": "User Not Found",
                         "schema": {
-                            "$ref": "#/definitions/models.ErrorWireResponse"
+                            "$ref": "#/definitions/models.Response"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/models.ErrorWireResponse"
+                            "$ref": "#/definitions/models.Response"
                         }
                     }
                 }
@@ -220,25 +239,25 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid Input",
                         "schema": {
-                            "$ref": "#/definitions/models.ErrorWireResponse"
+                            "$ref": "#/definitions/models.Response"
                         }
                     },
                     "404": {
                         "description": "User Not Found",
                         "schema": {
-                            "$ref": "#/definitions/models.ErrorWireResponse"
+                            "$ref": "#/definitions/models.Response"
                         }
                     },
                     "422": {
                         "description": "Validation Failed",
                         "schema": {
-                            "$ref": "#/definitions/models.ErrorWireResponse"
+                            "$ref": "#/definitions/models.Response"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/models.ErrorWireResponse"
+                            "$ref": "#/definitions/models.Response"
                         }
                     }
                 }
@@ -246,7 +265,7 @@ const docTemplate = `{
         },
         "/api/v1/users/tokens/refresh": {
             "post": {
-                "description": "Exchange a valid, non-revoked refresh token for a new access+refresh pair",
+                "description": "Exchange a valid, non-revoked refresh token for a new access+refresh pair. The token may be supplied in the body or via the refresh_token cookie set at login; the body takes precedence. Since this rotates (revokes) the presented refresh token, pass an Idempotency-Key header so a retried request after a dropped response doesn't require a fresh login.",
                 "consumes": [
                     "application/json"
                 ],
@@ -259,10 +278,15 @@ const docTemplate = `{
                 "summary": "Refresh Tokens",
                 "parameters": [
                     {
-                        "description": "Refresh Token",
+                        "type": "string",
+                        "description": "Optional key making a retried request safe to resend",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    },
+                    {
+                        "description": "Refresh Token (optional if the refresh_token cookie is set)",
                         "name": "request",
                         "in": "body",
-                        "required": true,
                         "schema": {
                             "$ref": "#/definitions/models.RefreshTokenRequest"
                         }
@@ -290,19 +314,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid Input",
                         "schema": {
-                            "$ref": "#/definitions/models.ErrorWireResponse"
+                            "$ref": "#/definitions/models.Response"
                         }
                     },
                     "401": {
                         "description": "Invalid or Revoked Refresh Token",
                         "schema": {
-                            "$ref": "#/definitions/models.ErrorWireResponse"
+                            "$ref": "#/definitions/models.Response"
                         }
                     },
                     "422": {
                         "description": "Validation Failed",
                         "schema": {
-                            "$ref": "#/definitions/models.ErrorWireResponse"
+                            "$ref": "#/definitions/models.Response"
                         }
                     }
                 }
@@ -346,7 +370,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/models.ErrorWireResponse"
+                            "$ref": "#/definitions/models.Response"
                         }
                     }
                 }
@@ -407,43 +431,6 @@ const docTemplate = `{
                 "updatedAt": {
                     "type": "string",
                     "example": "2026-01-24T15:57:37+07:00"
-                }
-            }
-        },
-        "models.ErrorValidationResponse": {
-            "type": "object",
-            "properties": {
-                "code": {
-                    "type": "string"
-                },
-                "field": {
-                    "type": "string"
-                },
-                "message": {
-                    "type": "string"
-                }
-            }
-        },
-        "models.ErrorWireResponse": {
-            "type": "object",
-            "properties": {
-                "code": {
-                    "type": "string",
-                    "example": "USER_NOT_FOUND"
-                },
-                "errors": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/models.ErrorValidationResponse"
-                    }
-                },
-                "message": {
-                    "type": "string",
-                    "example": "user not found"
-                },
-                "metadata": {
-                    "type": "object",
-                    "additionalProperties": true
                 }
             }
         },
@@ -545,34 +532,49 @@ const docTemplate = `{
                 }
             }
         },
+        "models.LogoutRequest": {
+            "type": "object",
+            "properties": {
+                "refreshToken": {
+                    "type": "string"
+                }
+            }
+        },
         "models.Metadata": {
             "type": "object",
             "properties": {
                 "requestId": {
                     "type": "string"
                 },
+                "retryAfter": {
+                    "type": "integer"
+                },
+                "retryable": {
+                    "description": "Retryable/RetryAfter/TraceId are only ever populated on error\nresponses, carried over from herr's wire body.",
+                    "type": "boolean"
+                },
                 "timestamp": {
                     "type": "string"
                 },
                 "totalRows": {
                     "type": "integer"
+                },
+                "traceId": {
+                    "type": "string"
                 }
             }
         },
         "models.PaginationOutput": {
             "type": "object",
             "properties": {
+                "hasMore": {
+                    "type": "boolean"
+                },
                 "limit": {
                     "type": "integer"
                 },
-                "next": {
+                "nextCursor": {
                     "type": "string"
-                },
-                "prev": {
-                    "type": "string"
-                },
-                "total": {
-                    "type": "integer"
                 }
             }
         },
@@ -591,9 +593,6 @@ const docTemplate = `{
         },
         "models.RefreshTokenRequest": {
             "type": "object",
-            "required": [
-                "refreshToken"
-            ],
             "properties": {
                 "refreshToken": {
                     "type": "string"
@@ -608,6 +607,10 @@ const docTemplate = `{
                     "example": 200
                 },
                 "data": {},
+                "errorCode": {
+                    "type": "string",
+                    "example": "VALIDATION_FAILED"
+                },
                 "errors": {},
                 "message": {
                     "type": "string",

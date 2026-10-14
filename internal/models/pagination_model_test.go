@@ -11,17 +11,17 @@ import (
 func TestParsePagination_Defaults(t *testing.T) {
 	p := models.ParsePagination("", "")
 	require.Equal(t, 20, p.Limit)
-	require.Equal(t, 0, p.Offset)
+	require.Equal(t, "", p.Cursor)
 }
 
 func TestParsePagination_CapsLimit(t *testing.T) {
-	p := models.ParsePagination("500", "40")
+	p := models.ParsePagination("42", "500")
 	require.Equal(t, 100, p.Limit)
-	require.Equal(t, 40, p.Offset)
+	require.Equal(t, "42", p.Cursor)
 }
 
-func TestParsePagination_IgnoresGarbage(t *testing.T) {
-	p := models.ParsePagination("abc", "-5")
+func TestParsePagination_IgnoresGarbageLimit(t *testing.T) {
+	p := models.ParsePagination("42", "abc")
 	require.Equal(t, 20, p.Limit)
-	require.Equal(t, 0, p.Offset)
+	require.Equal(t, "42", p.Cursor)
 }

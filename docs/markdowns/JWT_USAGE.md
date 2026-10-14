@@ -71,9 +71,11 @@ Routes (`internal/deliveries/http/api/v1/user_v1_handler.go`), all under `/api/v
 |---|---|---|
 | `POST /users` | none | `Create` (register) |
 | `POST /users/tokens` | none | `GetTokens` (login) |
-| `POST /users/tokens/refresh` | none (refresh token in body) | `RefreshTokens` |
+| `POST /users/tokens/refresh` | none | `RefreshTokens` |
 | `GET /users/me` | Bearer | `GetUserByAccessToken` |
 | `POST /users/logout` | Bearer | `Logout` |
+
+`RefreshTokens` and `Logout` both resolve the refresh token the same way (`resolveRefreshToken` in `user_v1_handler.go`): an explicit value in the request body wins; otherwise they fall back to the `refresh_token` cookie set by `GetTokens` (login). This lets a browser client rely purely on the httpOnly cookie, a non-browser client pass the token explicitly in the body, and either client call any of the three endpoints without caring which channel the others used.
 
 `middleware.BearerAuthMiddleware` (`internal/deliveries/http/middleware/jwt.go`) does, in order: check `Authorization: Bearer <token>` header present and well-formed → `validator.AccessToken` → `tokenStore.IsRevoked(ctx, claims.ID)` → set `userID`/`accountNumber`/`email`/`phoneNumber`/`jti` on the Echo context.
 

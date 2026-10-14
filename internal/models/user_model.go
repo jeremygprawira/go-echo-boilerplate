@@ -80,8 +80,20 @@ type (
 		Tokens        []Token     `json:"tokens"`
 	}
 
+	// RefreshTokenRequest carries the refresh token in the body. The field is
+	// optional here because the handler also accepts the token from the
+	// refresh_token cookie set at login — whichever is present is used, body
+	// taking precedence. Presence is enforced in the handler, not via a
+	// struct tag, since it depends on the cookie too.
 	RefreshTokenRequest struct {
-		RefreshToken string `json:"refreshToken" validate:"required"`
+		RefreshToken string `json:"refreshToken,omitempty"`
+	}
+
+	// LogoutRequest optionally carries the refresh token to revoke in the
+	// body, for clients that don't rely on the refresh_token cookie set at
+	// login. Same body-or-cookie resolution as RefreshTokenRequest.
+	LogoutRequest struct {
+		RefreshToken string `json:"refreshToken,omitempty"`
 	}
 )
 

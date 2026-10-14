@@ -37,7 +37,9 @@ func TestErrorHandler_HerrPassThrough(t *testing.T) {
 
 	assert.Equal(t, nethttp.StatusNotFound, rec.Code)
 	body := decode(t, rec)
-	assert.Equal(t, "DATA_NOT_FOUND", body["code"])
+	assert.Equal(t, float64(nethttp.StatusNotFound), body["code"])
+	assert.Equal(t, "ERROR", body["status"])
+	assert.Equal(t, "DATA_NOT_FOUND", body["errorCode"])
 	assert.Equal(t, "data not found", body["message"])
 	metadata, ok := body["metadata"].(map[string]any)
 	require.True(t, ok)
@@ -50,7 +52,18 @@ func TestErrorHandler_EchoHTTPErrorMapped(t *testing.T) {
 	ErrorHandler(echo.NewHTTPError(nethttp.StatusNotFound, "Not Found"), ctx)
 
 	assert.Equal(t, nethttp.StatusNotFound, rec.Code)
-	assert.Equal(t, "DATA_NOT_FOUND", decode(t, rec)["code"])
+	assert.Equal(t, "DATA_NOT_FOUND", decode(t, rec)["errorCode"])
+}
+
+func TestErrorHandler_RateLimitMapped(t *testing.T) {
+	ctx, rec := newErrCtx(t)
+
+	ErrorHandler(echo.NewHTTPError(nethttp.StatusTooManyRequests, "rate limit exceeded"), ctx)
+
+	assert.Equal(t, nethttp.StatusTooManyRequests, rec.Code)
+	body := decode(t, rec)
+	assert.Equal(t, float64(nethttp.StatusTooManyRequests), body["code"])
+	assert.Equal(t, "TOO_MANY_REQUESTS", body["errorCode"])
 }
 
 func TestErrorHandler_EchoHTTPErrorUnmappedStatus(t *testing.T) {
@@ -60,7 +73,7 @@ func TestErrorHandler_EchoHTTPErrorUnmappedStatus(t *testing.T) {
 
 	assert.Equal(t, nethttp.StatusMethodNotAllowed, rec.Code)
 	body := decode(t, rec)
-	assert.Equal(t, "METHOD_NOT_ALLOWED", body["code"])
+	assert.Equal(t, "METHOD_NOT_ALLOWED", body["errorCode"])
 	assert.Equal(t, "Method Not Allowed", body["message"])
 }
 
@@ -71,7 +84,7 @@ func TestErrorHandler_UnknownErrorDoesNotLeak(t *testing.T) {
 
 	assert.Equal(t, nethttp.StatusInternalServerError, rec.Code)
 	assert.NotContains(t, rec.Body.String(), "pq:")
-	assert.Equal(t, "INTERNAL_SERVER_ERROR", decode(t, rec)["code"])
+	assert.Equal(t, "INTERNAL_SERVER_ERROR", decode(t, rec)["errorCode"])
 }
 
 func TestErrorHandler_InternalDetailDoesNotLeak(t *testing.T) {
