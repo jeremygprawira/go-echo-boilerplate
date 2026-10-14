@@ -27,6 +27,8 @@ The following were flagged in earlier reviews and are now fixed in the codebase:
 
 ## Still open
 
+- **Registration reveals account existence by design.** `POST /users` answers 409 when the email or phone number is already registered, so an API-key holder can tell which identifiers exist. Login no longer leaks this: unknown accounts and wrong passwords get the same 401 after the same bcrypt work. Closing the register side needs an ownership verification flow (one generic response, then out-of-band confirmation), which is a product decision.
+
 - **Env-var config override doesn't work for nested keys.** `internal/config/config.go` calls `viper.AutomaticEnv()` without `SetEnvKeyReplacer`/`BindEnv`, so `POSTGRESQL_PASSWORD` won't map to `postgresql.password`. Secrets must live in YAML on disk; for container/K8s deployments you'd want env-var overrides to take precedence.
 
 ## Deliberately not pursued
