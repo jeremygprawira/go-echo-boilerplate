@@ -3,14 +3,21 @@ package http
 import (
 	"encoding/json"
 	"errors"
+	"go-echo-boilerplate/internal/config"
 	"go-echo-boilerplate/internal/pkg/errorc"
+	"go-echo-boilerplate/internal/pkg/logger"
 	nethttp "net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/jeremygprawira/wlog"
+	wlogzap "github.com/jeremygprawira/wlog/log/zap"
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func newErrCtx(t *testing.T) (echo.Context, *httptest.ResponseRecorder) {
@@ -19,7 +26,7 @@ func newErrCtx(t *testing.T) (echo.Context, *httptest.ResponseRecorder) {
 	req := httptest.NewRequest(nethttp.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 	ctx := e.NewContext(req, rec)
-	ctx.Set("X-Request-ID", "req-123")
+	rec.Header().Set(echo.HeaderXRequestID, "req-123")
 	return ctx, rec
 }
 
@@ -118,4 +125,24 @@ func TestErrorHandler_GeneratesRequestIDWhenMissing(t *testing.T) {
 	metadata, ok := decode(t, rec)["metadata"].(map[string]any)
 	require.True(t, ok)
 	assert.NotEmpty(t, metadata["requestId"])
+}
+
+func TestErrorHandler_RecordsCoercedErrorOnEvent(t *testing.T) {
+	core, logs := observer.New(zapcore.DebugLevel)
+	wl, err := logger.NewWlog(&config.Configuration{}, wlogzap.Drain(zap.New(core)))
+	require.NoError(t, err)
+	ctx, _ := newErrCtx(t)
+	eventCtx, end := wlog.Start(wl.WithContext(ctx.Request().Context()), "GET /x")
+	ctx.SetRequest(ctx.Request().WithContext(eventCtx))
+
+	ErrorHandler(echo.NewHTTPError(nethttp.StatusNotFound, "Not Found"), ctx)
+	end()
+
+	entries := logs.TakeAll()
+	require.Len(t, entries, 1)
+	assert.Equal(t, zapcore.ErrorLevel, entries[0].Level)
+	errFields, ok := entries[0].ContextMap()["error"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "DATA_NOT_FOUND", errFields["code"])
+	assert.Equal(t, "framework: Not Found", errFields["message"])
 }

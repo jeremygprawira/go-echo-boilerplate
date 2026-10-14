@@ -5,7 +5,6 @@ import (
 	"errors"
 	"go-echo-boilerplate/internal/models"
 	"go-echo-boilerplate/internal/pkg/errorc"
-	"go-echo-boilerplate/internal/pkg/logger"
 	"go-echo-boilerplate/internal/pkg/stringc"
 	"net/http"
 	"strconv"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jeremygprawira/herr"
+	"github.com/jeremygprawira/wlog"
 	"github.com/labstack/echo/v4"
 )
 
@@ -43,32 +43,21 @@ func decodeWireBody(herrErr *herr.Error) wireBody {
 
 // ErrorHandler is the single rendering point for every error returned by a
 // handler or middleware. Registered as e.HTTPErrorHandler in core.Setup. It
-// folds herr's safe wire body into the same models.Response envelope success
-// responses use, so Code is always the HTTP status (int) regardless of
-// outcome — the catalog error identifier lives in ErrorCode instead.
+// records the error on the wide event once, then folds herr's safe wire body
+// into the same models.Response envelope success responses use, so Code is
+// always the HTTP status (int) regardless of outcome and the catalog error
+// identifier lives in ErrorCode instead.
 func ErrorHandler(err error, ctx echo.Context) {
+	herrErr := coerce(err)
+	wlog.Error(ctx.Request().Context(), herrErr)
 	if ctx.Response().Committed {
 		return
 	}
 
-	herrErr := coerce(err)
-
-	requestID, _ := ctx.Get("X-Request-ID").(string)
+	requestID := ctx.Response().Header().Get(echo.HeaderXRequestID)
 	if requestID == "" {
 		requestID = uuid.New().String()
 	}
-
-	record := herr.LogRecord(herrErr)
-	errType := "AppError"
-	if record.HTTPStatus >= http.StatusInternalServerError {
-		errType = "InternalError"
-	}
-	logger.AddError(ctx.Request().Context(), &logger.ErrorContext{
-		Type:    errType,
-		Code:    record.Code,
-		Message: herrErr.Error(), // code + internal detail + cause; logs are trusted
-		Stack:   record.Stack,
-	})
 
 	body := decodeWireBody(herrErr)
 
@@ -104,8 +93,8 @@ func ErrorHandler(err error, ctx echo.Context) {
 		},
 	}
 
-	if writeErr := ctx.JSON(herrErr.HTTPStatus(), resp); writeErr != nil && logger.Instance != nil {
-		logger.Instance.Error(ctx.Request().Context(), "failed to write error response", logger.Error(writeErr))
+	if writeErr := ctx.JSON(herrErr.HTTPStatus(), resp); writeErr != nil {
+		wlog.Set(ctx.Request().Context(), "error_response_write_failed", writeErr.Error())
 	}
 }
 
