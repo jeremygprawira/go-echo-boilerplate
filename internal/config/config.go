@@ -25,6 +25,10 @@ func Initialize(ctx context.Context) (*Configuration, error) {
 	viper.SetDefault("rate_limit.burst", 10)
 	viper.SetDefault("rate_limit.expires_in", "3m")
 	viper.SetDefault("idempotency.ttl", "10m")
+	viper.SetDefault("application.read_header_timeout", "5s")
+	viper.SetDefault("application.read_timeout", "15s")
+	viper.SetDefault("application.write_timeout", "30s")
+	viper.SetDefault("application.idle_timeout", "60s")
 
 	viper.AddConfigPath("./config")
 	viper.SetConfigName(configName)

@@ -14,6 +14,10 @@ func validCfg() *Configuration {
 	c.Authorization.APIKey = "api-key-0123456789abcdef0123456789abcdef"
 	c.RateLimit = RateLimit{Enabled: true, Rate: 5, Burst: 10, ExpiresIn: "3m"}
 	c.Idempotency = Idempotency{TTL: "10m"}
+	c.Application.ReadHeaderTimeout = "5s"
+	c.Application.ReadTimeout = "15s"
+	c.Application.WriteTimeout = "30s"
+	c.Application.IdleTimeout = "60s"
 	return c
 }
 
@@ -103,4 +107,29 @@ func TestValidate_RejectsPlaceholderAndShortSecrets(t *testing.T) {
 			assert.Error(t, c.Validate(), "%s = %q", field, v)
 		}
 	}
+}
+
+func TestValidate_ServerTimeouts(t *testing.T) {
+	setters := map[string]func(*Configuration, string){
+		"read_header_timeout": func(c *Configuration, v string) { c.Application.ReadHeaderTimeout = v },
+		"read_timeout":        func(c *Configuration, v string) { c.Application.ReadTimeout = v },
+		"write_timeout":       func(c *Configuration, v string) { c.Application.WriteTimeout = v },
+		"idle_timeout":        func(c *Configuration, v string) { c.Application.IdleTimeout = v },
+	}
+	for name, set := range setters {
+		for _, v := range []string{"", "soon", "0s", "-1s"} {
+			c := validCfg()
+			set(c, v)
+			assert.Error(t, c.Validate(), "%s = %q", name, v)
+		}
+	}
+}
+
+func TestValidate_ApplicationTimeout(t *testing.T) {
+	c := validCfg()
+	c.Application.Timeout = -1
+	require.Error(t, c.Validate())
+
+	c.Application.Timeout = 0
+	require.NoError(t, c.Validate(), "application.timeout stays optional")
 }

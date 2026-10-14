@@ -12,6 +12,7 @@ import (
 	"go-echo-boilerplate/internal/repository"
 	"go-echo-boilerplate/internal/service"
 	"net"
+	"time"
 
 	"github.com/jeremygprawira/wlog"
 	"github.com/labstack/echo/v4"
@@ -74,6 +75,14 @@ func BuildHTTPServer(deps *Dependencies) *echo.Echo {
 	e.HidePort = true
 	e.HTTPErrorHandler = handler.ErrorHandler
 	e.IPExtractor = ipExtractor(deps.Config.Application.TrustedProxies)
+
+	// Config.Validate rejects a bad or non-positive value at startup. An unset
+	// value (handler tests) parses to zero, which means no timeout.
+	app := deps.Config.Application
+	e.Server.ReadHeaderTimeout, _ = time.ParseDuration(app.ReadHeaderTimeout)
+	e.Server.ReadTimeout, _ = time.ParseDuration(app.ReadTimeout)
+	e.Server.WriteTimeout, _ = time.ParseDuration(app.WriteTimeout)
+	e.Server.IdleTimeout, _ = time.ParseDuration(app.IdleTimeout)
 
 	handler.New(e, deps.Service, deps.Config, deps.JWTConfig, deps.TokenStore, deps.Log)
 	return e

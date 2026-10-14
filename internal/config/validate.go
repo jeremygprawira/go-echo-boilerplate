@@ -70,6 +70,21 @@ func (c *Configuration) Validate() error {
 		errs = append(errs, errors.New("rate_limit.burst must be greater than 0"))
 	}
 
+	for name, value := range map[string]string{
+		"application.read_header_timeout": c.Application.ReadHeaderTimeout,
+		"application.read_timeout":        c.Application.ReadTimeout,
+		"application.write_timeout":       c.Application.WriteTimeout,
+		"application.idle_timeout":        c.Application.IdleTimeout,
+	} {
+		if d, err := time.ParseDuration(value); err != nil {
+			errs = append(errs, fmt.Errorf("%s is invalid: %w", name, err))
+		} else if d <= 0 {
+			errs = append(errs, fmt.Errorf("%s must be greater than 0", name))
+		}
+	}
+	if c.Application.Timeout < 0 {
+		errs = append(errs, errors.New("application.timeout must not be negative"))
+	}
 	for _, cidr := range c.Application.TrustedProxies {
 		if _, _, err := net.ParseCIDR(cidr); err != nil {
 			errs = append(errs, fmt.Errorf("application.trusted_proxies entry %q is not a CIDR: %w", cidr, err))

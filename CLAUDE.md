@@ -29,6 +29,7 @@ Notes:
 - Swagger docs are a generated Go package (`docs/docs.go`) imported by the router (`_ "go-echo-boilerplate/docs"`). After changing handler `@` annotations, run `make docs` or the build serves stale docs.
 - Migrations use goose against `migration/db/postgre`; the Makefile exports `.env` before running.
 - `application.trusted_proxies` (list of CIDRs, default empty) sets `e.IPExtractor` in `core.BuildHTTPServer`. Empty means `c.RealIP()` is the TCP peer. Otherwise it is the rightmost `X-Forwarded-For` entry not inside a listed proxy range. The rate limiter keys on it.
+- `application.read_header_timeout`, `read_timeout`, `write_timeout`, `idle_timeout` (Go durations, defaults 5s/15s/30s/60s) are set on `e.Server` in `core.BuildHTTPServer`. `Validate` requires each to be positive and rejects a negative `application.timeout`.
 
 ## Architecture
 
