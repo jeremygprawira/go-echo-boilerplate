@@ -13,6 +13,7 @@ The following were flagged in earlier reviews and are now fixed in the codebase:
 - **No refresh/revocation flow.** `/users/tokens/refresh` and `/users/logout` exist, backed by `tokenstore.TokenStore` and JTI claims (see `docs/markdowns/JWT_USAGE.md`). Revoked JTIs are stored in the Postgres `revoked_tokens` table by `tokenstore.DBStore`, and refresh no longer goes through the idempotency cache.
 - **User enumeration on login.** `UserService.GetTokens` always runs a bcrypt compare (against a dummy hash when the user doesn't exist) and returns one generic "invalid credentials" error.
 - **API key weaknesses.** Compared with `crypto/subtle.ConstantTimeCompare`; masked in wide-event logs.
+- **Weak or placeholder secrets.** `Config.Validate` rejects an access secret, refresh secret or API key shorter than 32 bytes or containing `replace-with-`, so the example config cannot start unchanged.
 - **Missing baseline protections.** Rate limiting (`middleware.RateLimiter`), body size limit, `middleware.Secure()`, per-request context timeout, and Swagger gated off in prod are all in place (`internal/deliveries/http/middleware/default.go`, `router.go`).
 - **bcrypt truncation.** Passwords are rejected above bcrypt's 72-byte limit (`internal/pkg/validator/password_length.go`, `internal/pkg/generator/hash.go`).
 - **No Dockerfile/CI.** Both exist (`Dockerfile`, `builds/Dockerfile`, `.github/workflows/ci.yml`).

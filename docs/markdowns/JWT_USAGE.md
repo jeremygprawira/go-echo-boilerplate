@@ -16,12 +16,12 @@ Dual-token JWT auth: short-lived access tokens + longer-lived refresh tokens, bo
 authorization:
   issuer: go-echo-boilerplate
   access:
-    secret: replace-with-a-strong-access-secret
+    secret: replace-with-a-random-access-secret-of-32-bytes-or-more
     duration: 15m
   refresh:
-    secret: replace-with-a-different-strong-refresh-secret
+    secret: replace-with-a-different-random-refresh-secret-of-32-bytes
     duration: 168h # 7 days
-  api_key: replace-with-an-api-key
+  api_key: replace-with-a-random-api-key-of-32-bytes-or-more
 ```
 
 Loaded into `jwtc.Configuration` via `jwtc.DefaultConfig(configuration)` in `internal/core/setup.go`. Access and refresh **must** use different secrets — `validator.AccessToken`/`validator.RefreshToken` each verify against their own secret and reject the other token type.
@@ -101,6 +101,6 @@ Revokes the current access token's JTI, and — if a refresh token is also prese
 
 ## Security notes
 
-- **Secrets**: set `authorization.access.secret` / `authorization.refresh.secret` per environment; never commit real values (see `config.local.example.yaml` for placeholders). They must differ from each other.
+- **Secrets**: set `authorization.access.secret` / `authorization.refresh.secret` per environment; never commit real values (see `config.local.example.yaml` for placeholders). They must differ from each other. `Config.Validate` rejects any of the two secrets or `authorization.api_key` that is shorter than 32 bytes or still contains `replace-with-`. Generate each with `openssl rand -base64 48` or `generator.APIKey()`.
 - **Token storage on the client**: keep the access token in memory, not `localStorage`; store the refresh token in an httpOnly, Secure cookie if you control the client.
 - **Password length**: bcrypt truncates beyond 72 bytes — `validator.PasswordWithinBcryptLimit` and `generator.Hash` both reject longer passwords instead of silently truncating.

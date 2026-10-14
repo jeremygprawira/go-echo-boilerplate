@@ -21,15 +21,18 @@ postgresql:
   max_idle_conns: 10
   max_open_conns: 100
   conn_max_lifetime: "1h"
+# Each secret must be at least 32 bytes and must not contain "replace-with-",
+# so these placeholders fail startup until replaced. Generate each value with
+# `openssl rand -base64 48`, or call generator.APIKey() from Go.
 authorization:
   issuer: go-echo-boilerplate
   access:
-    secret: replace-with-a-strong-access-secret
+    secret: replace-with-a-random-access-secret-of-32-bytes-or-more
     duration: 15m
   refresh:
-    secret: replace-with-a-different-strong-refresh-secret
+    secret: replace-with-a-different-random-refresh-secret-of-32-bytes
     duration: 168h
-  api_key: replace-with-an-api-key
+  api_key: replace-with-a-random-api-key-of-32-bytes-or-more
 hash:
   salt:
 cors:
