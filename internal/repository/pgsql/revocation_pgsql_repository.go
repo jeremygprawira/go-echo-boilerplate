@@ -22,7 +22,7 @@ func NewRevokedTokenRepository(db *gorm.DB) RevokedTokenRepository {
 }
 
 func (r *revokedTokenRepository) Revoke(ctx context.Context, jti string, expiresAt time.Time) (bool, error) {
-	result := r.db.WithContext(ctx).Exec(QueryRevokeToken, jti, expiresAt)
+	result := r.db.WithContext(ctx).Exec(QueryInsertRevocation, jti, expiresAt)
 	if result.Error != nil {
 		return false, result.Error
 	}
@@ -31,12 +31,12 @@ func (r *revokedTokenRepository) Revoke(ctx context.Context, jti string, expires
 
 func (r *revokedTokenRepository) IsRevoked(ctx context.Context, jti string, now time.Time) (bool, error) {
 	var revoked bool
-	if err := r.db.WithContext(ctx).Raw(QueryIsTokenRevoked, jti, now).Scan(&revoked).Error; err != nil {
+	if err := r.db.WithContext(ctx).Raw(QueryRevocationExists, jti, now).Scan(&revoked).Error; err != nil {
 		return false, err
 	}
 	return revoked, nil
 }
 
 func (r *revokedTokenRepository) PurgeExpired(ctx context.Context, now time.Time) error {
-	return r.db.WithContext(ctx).Exec(QueryPurgeExpiredTokens, now).Error
+	return r.db.WithContext(ctx).Exec(QueryDeleteExpiredRevocations, now).Error
 }
