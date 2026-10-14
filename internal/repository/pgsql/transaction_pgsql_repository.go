@@ -3,8 +3,8 @@ package pgsql
 import (
 	"context"
 	"fmt"
-	"go-echo-boilerplate/internal/pkg/logger"
 
+	"github.com/jeremygprawira/wlog"
 	"gorm.io/gorm"
 )
 
@@ -103,16 +103,7 @@ func (tr *transactionRepository) Atomic(ctx context.Context, fc func(ctx context
 			// Convert panic to error for consistent error handling and propagate
 			// it back to the caller via the named return.
 			atomicError = fmt.Errorf("transaction failed due to panic: %v", p)
-
-			// Log the panic with rich error context
-			// Note: The updated context from LogError won't propagate from defer,
-			// but the middleware will still pick it up from the original context
-			logger.LogError(ctx, logger.ErrorContext{
-				Type:      "PanicError",
-				Code:      "DATABASE_TRANSACTION_PANIC",
-				Message:   atomicError.Error(),
-				Retriable: false,
-			})
+			recordTransactionError(ctx, "DATABASE_TRANSACTION_PANIC", atomicError)
 
 		} else if atomicError != nil {
 			// Step 2b: Handle explicit errors returned by the function
@@ -120,13 +111,7 @@ func (tr *transactionRepository) Atomic(ctx context.Context, fc func(ctx context
 			if rbErr := tx.Rollback().Error; rbErr != nil {
 				// If rollback itself fails, wrap both errors for debugging
 				atomicError = fmt.Errorf("failed to rollback transaction (original error: %w): %v", atomicError, rbErr)
-
-				logger.LogError(ctx, logger.ErrorContext{
-					Type:      "RollbackError",
-					Code:      "DATABASE_TRANSACTION_ROLLBACK",
-					Message:   atomicError.Error(),
-					Retriable: false,
-				})
+				recordTransactionError(ctx, "DATABASE_TRANSACTION_ROLLBACK", atomicError)
 			}
 		} else {
 			// Step 2c: Success path - commit the transaction
@@ -134,13 +119,7 @@ func (tr *transactionRepository) Atomic(ctx context.Context, fc func(ctx context
 			if commitErr := tx.Commit().Error; commitErr != nil {
 				// If commit fails, update err so it's returned to caller
 				atomicError = fmt.Errorf("failed to commit transaction: %w", commitErr)
-
-				logger.LogError(ctx, logger.ErrorContext{
-					Type:      "CommitError",
-					Code:      "DATABASE_TRANSACTION_COMMIT",
-					Message:   atomicError.Error(),
-					Retriable: false,
-				})
+				recordTransactionError(ctx, "DATABASE_TRANSACTION_COMMIT", atomicError)
 			}
 		}
 	}()
@@ -157,4 +136,10 @@ func (tr *transactionRepository) Atomic(ctx context.Context, fc func(ctx context
 	// Step 4: Return nil on success
 	// The defer block will commit the transaction (Step 2c)
 	return nil
+}
+
+// recordTransactionError puts the failure on the request's wide event.
+func recordTransactionError(ctx context.Context, code string, err error) {
+	wlog.SetGroup(ctx, "transaction", "error_code", code)
+	wlog.Error(ctx, err)
 }
