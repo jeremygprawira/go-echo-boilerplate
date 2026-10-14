@@ -3,6 +3,8 @@ package database
 import (
 	"fmt"
 	"go-echo-boilerplate/internal/config"
+	"log"
+	"os"
 	"time"
 
 	"gorm.io/driver/postgres"
@@ -20,19 +22,11 @@ func ConnectToPostgreSQL(config *config.Configuration) (*gorm.DB, error) {
 		config.PostgreSQL.SSLMode,
 		config.Application.Timezone)
 
-	// Silence GORM's built-in logger in production to avoid raw SQL leaking into
-	// logs. In any other environment (local, staging) use Info level so developers
-	// retain full query visibility.
-	gormLogLevel := logger.Info
-	if config.Application.Environment == "production" {
-		gormLogLevel = logger.Silent
-	}
-
 	db, err := gorm.Open(postgres.New(postgres.Config{
 		DSN:                  connection,
 		PreferSimpleProtocol: true, // disables implicit prepared statement usage
 	}), &gorm.Config{
-		Logger: logger.Default.LogMode(gormLogLevel),
+		Logger: gormLogger(config, log.New(os.Stdout, "\r\n", log.LstdFlags)),
 		NowFunc: func() time.Time {
 			loc, err := time.LoadLocation(config.Application.Timezone)
 			if err != nil {
@@ -68,6 +62,22 @@ func ConnectToPostgreSQL(config *config.Configuration) (*gorm.DB, error) {
 	}
 
 	return db, nil
+}
+
+// gormLogger silences GORM's built-in logger in production. Elsewhere it logs
+// every statement at Info level, but with placeholders instead of bound
+// values, so password hashes and PII never reach stdout.
+func gormLogger(config *config.Configuration, w logger.Writer) logger.Interface {
+	level := logger.Info
+	if config.IsProduction() {
+		level = logger.Silent
+	}
+	return logger.New(w, logger.Config{
+		SlowThreshold:        200 * time.Millisecond,
+		LogLevel:             level,
+		ParameterizedQueries: true,
+		Colorful:             true,
+	})
 }
 
 func DisconnectFromPostgreSQL(db *gorm.DB) error {
