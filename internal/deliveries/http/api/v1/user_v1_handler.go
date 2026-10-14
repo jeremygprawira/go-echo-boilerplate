@@ -2,6 +2,7 @@ package v1
 
 import (
 	"go-echo-boilerplate/internal/config"
+	"go-echo-boilerplate/internal/constant"
 	"go-echo-boilerplate/internal/deliveries/http/middleware"
 	"go-echo-boilerplate/internal/models"
 	"go-echo-boilerplate/internal/pkg/errorc"
@@ -15,31 +16,6 @@ import (
 
 	"github.com/labstack/echo/v4"
 )
-
-// refreshTokenCookieName is the single cookie name used to carry the refresh
-// token for clients that don't (or can't) keep it in a request body.
-const refreshTokenCookieName = "refresh_token"
-
-// idempotencyTTL bounds how long a cached response is replayed for a repeated
-// Idempotency-Key on register/refresh. Long enough to cover a client's own
-// retry window, short enough that a stale cache entry isn't a long-lived
-// surprise.
-const idempotencyTTL = 10 * time.Minute
-
-// resolveRefreshToken applies one consistent precedence rule wherever a
-// refresh token may arrive: an explicit body value wins; otherwise fall back
-// to the refresh_token cookie set at login. Both /tokens/refresh and /logout
-// use this so a client can integrate with either channel and get the same
-// behavior from both endpoints.
-func resolveRefreshToken(ctx echo.Context, bodyToken string) string {
-	if bodyToken != "" {
-		return bodyToken
-	}
-	if cookie, err := ctx.Cookie(refreshTokenCookieName); err == nil {
-		return cookie.Value
-	}
-	return ""
-}
 
 type userV1Handler struct {
 	service    *service.Service
@@ -58,6 +34,13 @@ func NewUserV1(v1 *echo.Group, service *service.Service, config *config.Configur
 		config:     config,
 		jwtConfig:  jwtConfig,
 		tokenStore: tokenStore,
+	}
+
+	// Config.Validate rejects a bad ttl at startup, so the parse cannot fail
+	// here. A nil config (handler tests) leaves the ttl at zero.
+	var idempotencyTTL time.Duration
+	if config != nil {
+		idempotencyTTL, _ = time.ParseDuration(config.Idempotency.TTL)
 	}
 
 	noBearerRoute := v1.Group("/users")
@@ -134,7 +117,7 @@ func (h *userV1Handler) GetTokens(ctx echo.Context) error {
 	ExpiresAt := time.Now().Add(time.Second * time.Duration(user.Tokens[1].ExpiredIn))
 
 	ctx.SetCookie(&http.Cookie{
-		Name:     refreshTokenCookieName,
+		Name:     constant.RefreshTokenCookieName,
 		Value:    user.Tokens[1].Token,
 		Expires:  ExpiresAt,
 		HttpOnly: true,
@@ -148,7 +131,7 @@ func (h *userV1Handler) GetTokens(ctx echo.Context) error {
 
 // RefreshTokens rotates a refresh token for a fresh access+refresh pair. The
 // token is read from the request body if present, else from the
-// refresh_token cookie set at login — see resolveRefreshToken.
+// refresh_token cookie set at login — see jwtc.ResolveRefreshToken.
 // @Summary Refresh Tokens
 // @Description Exchange a valid, non-revoked refresh token for a new access+refresh pair. The token may be supplied in the body or via the refresh_token cookie set at login; the body takes precedence. Since this rotates (revokes) the presented refresh token, pass an Idempotency-Key header so a retried request after a dropped response doesn't require a fresh login.
 // @Tags Users
@@ -167,7 +150,7 @@ func (h *userV1Handler) RefreshTokens(ctx echo.Context) error {
 		return err
 	}
 
-	refreshToken := resolveRefreshToken(ctx, request.RefreshToken)
+	refreshToken := jwtc.ResolveRefreshToken(ctx.Request(), request.RefreshToken)
 	if refreshToken == "" {
 		return errorc.Validation.New().FieldError("refreshToken", "MISSING_FIELD", "refreshToken is required")
 	}
@@ -182,7 +165,7 @@ func (h *userV1Handler) RefreshTokens(ctx echo.Context) error {
 
 // Logout revokes the caller's access token, and the refresh token — read from
 // the request body if present, else the refresh_token cookie — so neither is
-// accepted again before their natural expiry. See resolveRefreshToken.
+// accepted again before their natural expiry. See jwtc.ResolveRefreshToken.
 // @Summary Logout
 // @Description Revoke the current access token and refresh token. The refresh token may be supplied in the body or via the refresh_token cookie set at login; the body takes precedence.
 // @Tags Users
@@ -199,14 +182,14 @@ func (h *userV1Handler) Logout(ctx echo.Context) error {
 	var request models.LogoutRequest
 	_ = ctx.Bind(&request) // body is optional; the cookie fallback covers callers with none
 
-	refreshToken := resolveRefreshToken(ctx, request.RefreshToken)
+	refreshToken := jwtc.ResolveRefreshToken(ctx.Request(), request.RefreshToken)
 
 	if err := h.service.User.Logout(ctx.Request().Context(), jti, refreshToken); err != nil {
 		return err
 	}
 
 	ctx.SetCookie(&http.Cookie{
-		Name:     refreshTokenCookieName,
+		Name:     constant.RefreshTokenCookieName,
 		Value:    "",
 		MaxAge:   -1,
 		HttpOnly: true,

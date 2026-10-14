@@ -7,6 +7,7 @@ type (
 		Authorization Authorization `mapstructure:"authorization"`
 		CORS          CORS          `mapstructure:"cors"`
 		RateLimit     RateLimit     `mapstructure:"rate_limit"`
+		Idempotency   Idempotency   `mapstructure:"idempotency"`
 
 		Google Google `mapstructure:"google"`
 	}
@@ -43,6 +44,15 @@ type (
 		// ExpiresIn is how long an idle client's bucket is retained before
 		// being evicted from the in-memory store (Go duration string, e.g. "3m").
 		ExpiresIn string `mapstructure:"expires_in"`
+	}
+
+	// Idempotency configures how long Idempotency replays a cached response
+	// for a repeated Idempotency-Key. config.Initialize defaults ttl to 10m,
+	// long enough for a client's own retry window and short enough that a
+	// stale entry is not a long-lived surprise.
+	Idempotency struct {
+		// TTL is a Go duration string, e.g. "10m".
+		TTL string `mapstructure:"ttl"`
 	}
 
 	PostgreSQL struct {

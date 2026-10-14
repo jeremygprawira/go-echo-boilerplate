@@ -290,7 +290,7 @@ func TestUserV1Handler_GetTokens(t *testing.T) {
 }
 
 // TestUserV1Handler_RefreshTokens_TokenResolution covers the body-or-cookie
-// precedence shared by RefreshTokens and Logout (resolveRefreshToken):
+// precedence shared by RefreshTokens and Logout (jwtc.ResolveRefreshToken):
 // an explicit body value wins; otherwise the refresh_token cookie is used;
 // with neither present, the request is rejected before reaching the service.
 func TestUserV1Handler_RefreshTokens_TokenResolution(t *testing.T) {
