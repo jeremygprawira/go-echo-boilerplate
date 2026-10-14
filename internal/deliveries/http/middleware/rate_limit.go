@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"net"
 	"net/http"
 	"strconv"
 	"sync"
@@ -11,6 +12,11 @@ import (
 	"github.com/labstack/echo/v4"
 	"golang.org/x/time/rate"
 )
+
+// rateLimiterMaxVisitors caps the store. When it is full, the least recently
+// seen identifier is evicted to make room, so a flood of new clients costs
+// fixed memory instead of growing without bound.
+const rateLimiterMaxVisitors = 10_000
 
 // rateLimiterVisitor pairs a per-identifier token-bucket limiter with the
 // last time it was touched, so idle identifiers can be evicted.
@@ -30,6 +36,7 @@ type rateLimiterStore struct {
 	rateLimit rate.Limit
 	burst     int
 	expiresIn time.Duration
+	max       int
 }
 
 func newRateLimiterStore(r rate.Limit, burst int, expiresIn time.Duration) *rateLimiterStore {
@@ -38,6 +45,7 @@ func newRateLimiterStore(r rate.Limit, burst int, expiresIn time.Duration) *rate
 		rateLimit: r,
 		burst:     burst,
 		expiresIn: expiresIn,
+		max:       rateLimiterMaxVisitors,
 	}
 	go s.evictLoop()
 	return s
@@ -49,11 +57,42 @@ func (s *rateLimiterStore) getLimiter(identifier string) *rate.Limiter {
 
 	v, ok := s.visitors[identifier]
 	if !ok {
+		if len(s.visitors) >= s.max {
+			s.evictOldestLocked()
+		}
 		v = &rateLimiterVisitor{limiter: rate.NewLimiter(s.rateLimit, s.burst)}
 		s.visitors[identifier] = v
 	}
 	v.lastSeen = time.Now()
 	return v.limiter
+}
+
+// evictOldestLocked drops the least recently seen identifier. Caller holds mu.
+// ponytail: linear scan, only when the store is full; use an LRU list if
+// floods at the cap ever show up in profiles.
+func (s *rateLimiterStore) evictOldestLocked() {
+	var oldestID string
+	var oldest time.Time
+	for id, v := range s.visitors {
+		if oldestID == "" || v.lastSeen.Before(oldest) {
+			oldestID, oldest = id, v.lastSeen
+		}
+	}
+	delete(s.visitors, oldestID)
+}
+
+// clientIP returns c.RealIP() when it is an IP address. Anything else, such as
+// a raw header value Echo passed through, falls back to the TCP peer, so a
+// store key is never longer than an address.
+func clientIP(c echo.Context) string {
+	if ip := net.ParseIP(c.RealIP()); ip != nil {
+		return ip.String()
+	}
+	host, _, err := net.SplitHostPort(c.Request().RemoteAddr)
+	if err != nil {
+		return c.Request().RemoteAddr
+	}
+	return host
 }
 
 // evictLoop periodically drops identifiers idle longer than expiresIn so the
@@ -90,10 +129,15 @@ func (s *rateLimiterStore) evictLoop() {
 // from application.trusted_proxies, so a client cannot pick its own bucket by
 // sending X-Forwarded-For or X-Real-IP.
 func RateLimiter(cfg *appconfig.Configuration) echo.MiddlewareFunc {
+	mw, _ := rateLimiter(cfg)
+	return mw
+}
+
+func rateLimiter(cfg *appconfig.Configuration) (echo.MiddlewareFunc, *rateLimiterStore) {
 	if cfg == nil || !cfg.RateLimit.Enabled {
 		return func(next echo.HandlerFunc) echo.HandlerFunc {
 			return next
-		}
+		}, nil
 	}
 
 	expiresIn, err := time.ParseDuration(cfg.RateLimit.ExpiresIn)
@@ -106,7 +150,7 @@ func RateLimiter(cfg *appconfig.Configuration) echo.MiddlewareFunc {
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			limiter := store.getLimiter(c.RealIP())
+			limiter := store.getLimiter(clientIP(c))
 
 			reservation := limiter.ReserveN(time.Now(), 1)
 			delay := reservation.Delay()
@@ -130,5 +174,5 @@ func RateLimiter(cfg *appconfig.Configuration) echo.MiddlewareFunc {
 
 			return next(c)
 		}
-	}
+	}, store
 }
