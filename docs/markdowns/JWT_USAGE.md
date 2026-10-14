@@ -81,7 +81,7 @@ Routes (`internal/deliveries/http/api/v1/user_v1_handler.go`), all under `/api/v
 
 ### Refresh (`UserService.RefreshTokens`)
 
-Validates the refresh token → rejects if its JTI is already revoked → loads the user → **rotates**: revokes the presented refresh JTI (so it can't be replayed) → issues a fresh access+refresh pair.
+Validates the refresh token, then **claims** its JTI with `TokenStore.Claim`. The claim is one `INSERT ... ON CONFLICT (jti) DO NOTHING`, so of several concurrent requests with the same token exactly one inserts the row. That request loads the user and gets a fresh access+refresh pair. Every other request, and any later replay, gets 401 and mints nothing.
 
 ### Logout (`UserService.Logout`)
 

@@ -22,8 +22,10 @@ type HealthRepository interface {
 }
 
 // RevokedTokenRepository is the storage-neutral port for revoked JWT IDs.
+// Revoke reports whether this call inserted the jti, so a caller can claim a
+// token atomically.
 type RevokedTokenRepository interface {
-	Revoke(ctx context.Context, jti string, expiresAt time.Time) error
+	Revoke(ctx context.Context, jti string, expiresAt time.Time) (bool, error)
 	IsRevoked(ctx context.Context, jti string, now time.Time) (bool, error)
 	PurgeExpired(ctx context.Context, now time.Time) error
 }

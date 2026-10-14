@@ -29,6 +29,14 @@ func (s *inMemoryStore) Revoke(ctx context.Context, jti string, ttl time.Duratio
 	return nil
 }
 
+func (s *inMemoryStore) Claim(ctx context.Context, jti string, ttl time.Duration) (bool, error) {
+	if s.revoked[jti] {
+		return false, nil
+	}
+	s.revoked[jti] = true
+	return true, nil
+}
+
 func (s *inMemoryStore) IsRevoked(ctx context.Context, jti string) (bool, error) {
 	return s.revoked[jti], nil
 }

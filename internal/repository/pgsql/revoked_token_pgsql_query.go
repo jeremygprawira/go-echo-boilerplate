@@ -1,8 +1,9 @@
 package pgsql
 
 var (
-	// QueryRevokeToken records a revoked JTI. A repeat revoke of the same JTI
-	// keeps the first row, whose expiry already covers the token's lifetime.
+	// QueryRevokeToken records a revoked JTI in one statement, so concurrent
+	// callers cannot both insert it: exactly one sees a row affected. A repeat
+	// revoke keeps the first row, whose expiry already covers the token.
 	QueryRevokeToken = `
 		INSERT INTO revoked_tokens (jti, expires_at) VALUES ($1, $2)
 		ON CONFLICT (jti) DO NOTHING

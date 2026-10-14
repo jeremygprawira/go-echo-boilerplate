@@ -217,30 +217,26 @@ func (us *userService) issueTokens(user *models.User) (*models.GetUserTokenRespo
 	}, nil
 }
 
-// RefreshTokens validates a refresh token, rejects it if already revoked,
-// rotates it (revoking the presented JTI), and issues a fresh access+refresh pair.
+// RefreshTokens validates a refresh token, claims its JTI (revoking it), and
+// issues a fresh access+refresh pair. The claim is atomic, so of several
+// concurrent requests with one token only the first mints a pair.
 func (us *userService) RefreshTokens(ctx context.Context, refreshToken string) (*models.GetUserTokenResponse, error) {
 	claims, err := validator.RefreshToken(refreshToken, us.d.JWTConfig)
 	if err != nil {
 		return nil, errorc.Unauthorized.New().Public(herr.Message("invalid refresh token")).Wrap(err)
 	}
 
-	revoked, err := us.d.TokenStore.IsRevoked(ctx, claims.ID)
+	claimed, err := us.d.TokenStore.Claim(ctx, claims.ID, us.d.JWTConfig.RefreshTokenDuration)
 	if err != nil {
-		return nil, errorc.Internal.New().Internal("failed to check token revocation").Wrap(err)
+		return nil, errorc.Internal.New().Internal("failed to revoke refresh token").Wrap(err)
 	}
-	if revoked {
+	if !claimed {
 		return nil, errorc.Unauthorized.New().Public(herr.Message("refresh token revoked"))
 	}
 
 	user, err := us.d.Repository.User.GetOneByID(ctx, claims.UserID)
 	if err != nil || user == nil {
 		return nil, errorc.Unauthorized.New().Public(herr.Message("invalid refresh token")).Wrap(err)
-	}
-
-	// Rotate: revoke the presented refresh token so it cannot be replayed.
-	if err := us.d.TokenStore.Revoke(ctx, claims.ID, us.d.JWTConfig.RefreshTokenDuration); err != nil {
-		return nil, errorc.Internal.New().Internal("failed to revoke refresh token").Wrap(err)
 	}
 
 	return us.issueTokens(user)

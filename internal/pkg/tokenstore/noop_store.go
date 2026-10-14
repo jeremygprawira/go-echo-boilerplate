@@ -12,4 +12,7 @@ type noopStore struct{}
 func NewNoopStore() TokenStore { return noopStore{} }
 
 func (noopStore) Revoke(ctx context.Context, jti string, ttl time.Duration) error { return nil }
-func (noopStore) IsRevoked(ctx context.Context, jti string) (bool, error)         { return false, nil }
+func (noopStore) Claim(ctx context.Context, jti string, ttl time.Duration) (bool, error) {
+	return true, nil
+}
+func (noopStore) IsRevoked(ctx context.Context, jti string) (bool, error) { return false, nil }

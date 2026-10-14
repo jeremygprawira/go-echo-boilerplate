@@ -13,7 +13,7 @@ type PostgreRepository struct {
 
 func New(db *gorm.DB) *PostgreRepository {
 	return &PostgreRepository{
-		Health: NewHealthRepository(db),
+		Health:       NewHealthRepository(db),
 		User:         NewUserRepository(db),
 		RevokedToken: NewRevokedTokenRepository(db),
 	}

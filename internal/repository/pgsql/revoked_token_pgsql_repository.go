@@ -8,7 +8,7 @@ import (
 )
 
 type RevokedTokenRepository interface {
-	Revoke(ctx context.Context, jti string, expiresAt time.Time) error
+	Revoke(ctx context.Context, jti string, expiresAt time.Time) (bool, error)
 	IsRevoked(ctx context.Context, jti string, now time.Time) (bool, error)
 	PurgeExpired(ctx context.Context, now time.Time) error
 }
@@ -21,8 +21,12 @@ func NewRevokedTokenRepository(db *gorm.DB) RevokedTokenRepository {
 	return &revokedTokenRepository{db: db}
 }
 
-func (r *revokedTokenRepository) Revoke(ctx context.Context, jti string, expiresAt time.Time) error {
-	return r.db.WithContext(ctx).Exec(QueryRevokeToken, jti, expiresAt).Error
+func (r *revokedTokenRepository) Revoke(ctx context.Context, jti string, expiresAt time.Time) (bool, error) {
+	result := r.db.WithContext(ctx).Exec(QueryRevokeToken, jti, expiresAt)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
 }
 
 func (r *revokedTokenRepository) IsRevoked(ctx context.Context, jti string, now time.Time) (bool, error) {

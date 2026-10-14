@@ -27,7 +27,32 @@ import (
 
 const testAPIKey = "test-api-key-0123456789abcdef0123456789"
 
-type fakeUsers struct{ user *models.User }
+type fakeUsers struct {
+	user *models.User
+	// gate, when set, holds each GetOneByID until every concurrent caller
+	// arrives (or a short timeout passes), to widen any check-then-act window.
+	gate *gate
+}
+
+type gate struct {
+	mu      sync.Mutex
+	waiting int
+	total   int
+	open    chan struct{}
+}
+
+func (g *gate) wait() {
+	g.mu.Lock()
+	g.waiting++
+	if g.waiting == g.total {
+		close(g.open)
+	}
+	g.mu.Unlock()
+	select {
+	case <-g.open:
+	case <-time.After(300 * time.Millisecond):
+	}
+}
 
 func (f *fakeUsers) Create(context.Context, *models.User) error { return nil }
 func (f *fakeUsers) CheckByEmailOrPhoneNumber(context.Context, string, string) (bool, error) {
@@ -39,20 +64,26 @@ func (f *fakeUsers) GetCredentialsByEmailOrPhoneNumber(context.Context, string, 
 func (f *fakeUsers) GetOneByAccountNumber(context.Context, string) (*models.User, error) {
 	return f.user, nil
 }
-func (f *fakeUsers) GetOneByID(context.Context, int) (*models.User, error) { return f.user, nil }
+func (f *fakeUsers) GetOneByID(context.Context, int) (*models.User, error) {
+	if f.gate != nil {
+		f.gate.wait()
+	}
+	return f.user, nil
+}
 
 type memRevoked struct {
 	mu   sync.Mutex
 	rows map[string]time.Time
 }
 
-func (m *memRevoked) Revoke(_ context.Context, jti string, expiresAt time.Time) error {
+func (m *memRevoked) Revoke(_ context.Context, jti string, expiresAt time.Time) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, ok := m.rows[jti]; !ok {
-		m.rows[jti] = expiresAt
+	if _, ok := m.rows[jti]; ok {
+		return false, nil
 	}
-	return nil
+	m.rows[jti] = expiresAt
+	return true, nil
 }
 
 func (m *memRevoked) IsRevoked(_ context.Context, jti string, now time.Time) (bool, error) {
@@ -66,6 +97,11 @@ func (m *memRevoked) PurgeExpired(context.Context, time.Time) error { return nil
 
 func revocationTestServer(t *testing.T) http.Handler {
 	t.Helper()
+	return revocationTestServerWithGate(t, nil)
+}
+
+func revocationTestServerWithGate(t *testing.T, g *gate) http.Handler {
+	t.Helper()
 	cfg := &config.Configuration{}
 	cfg.Application.Environment = "local"
 	cfg.Authorization.Access = config.TokenConfiguration{Secret: "access-secret-0123456789abcdef0123456789", Duration: "15m"}
@@ -76,7 +112,7 @@ func revocationTestServer(t *testing.T) http.Handler {
 	hash, err := generator.Hash("Passw0rd!")
 	require.NoError(t, err)
 	email := "user@example.test"
-	users := &fakeUsers{user: &models.User{ID: 7, AccountNumber: "100", Name: "U", Email: &email, Password: hash}}
+	users := &fakeUsers{user: &models.User{ID: 7, AccountNumber: "100", Name: "U", Email: &email, Password: hash}, gate: g}
 
 	store := tokenstore.NewDBStore(&memRevoked{rows: map[string]time.Time{}})
 	jwtConfig := jwtc.DefaultConfig(cfg)
@@ -147,4 +183,33 @@ func TestRevocation_LogoutAndRotationInvalidateTokens(t *testing.T) {
 
 	code, _ = call(t, h, http.MethodPost, "/api/v1/users/tokens/refresh", "", map[string]any{"refreshToken": r2})
 	assert.Equal(t, http.StatusUnauthorized, code, "refresh with a logged-out refresh token")
+}
+
+func TestRevocation_ConcurrentRefreshWithOneTokenMintsOnce(t *testing.T) {
+	const callers = 5
+	h := revocationTestServerWithGate(t, &gate{total: callers, open: make(chan struct{})})
+
+	code, resp := call(t, h, http.MethodPost, "/api/v1/users/tokens", "",
+		map[string]any{"email": "user@example.test", "password": "Passw0rd!"})
+	require.Equal(t, http.StatusOK, code, "login: %v", resp)
+	_, r1 := tokensOf(t, resp)
+
+	codes := make(chan int, callers)
+	var wg sync.WaitGroup
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			c, _ := call(t, h, http.MethodPost, "/api/v1/users/tokens/refresh", "", map[string]any{"refreshToken": r1})
+			codes <- c
+		}()
+	}
+	wg.Wait()
+	close(codes)
+
+	counts := map[int]int{}
+	for c := range codes {
+		counts[c]++
+	}
+	assert.Equal(t, map[int]int{http.StatusOK: 1, http.StatusUnauthorized: callers - 1}, counts)
 }

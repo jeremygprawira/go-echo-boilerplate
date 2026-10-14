@@ -85,3 +85,17 @@ func TestDBStore_StartPurgesUntilCancelled(t *testing.T) {
 		t.Fatal("Start did not return after its context was cancelled")
 	}
 }
+
+func TestDBStore_ClaimReportsWhetherThisCallerInserted(t *testing.T) {
+	for rows, want := range map[int64]bool{1: true, 0: false} {
+		store, mock := newMockStore(t)
+		mock.ExpectExec(regexp.QuoteMeta("ON CONFLICT (jti) DO NOTHING")).
+			WithArgs("jti-1", sqlmock.AnyArg()).
+			WillReturnResult(sqlmock.NewResult(0, rows))
+
+		got, err := store.Claim(context.Background(), "jti-1", time.Hour)
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+		require.NoError(t, mock.ExpectationsWereMet())
+	}
+}

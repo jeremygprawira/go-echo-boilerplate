@@ -27,6 +27,11 @@ func NewDBStore(repo repository.RevokedTokenRepository) *DBStore {
 // Revoke keeps jti revoked for ttl, which callers set to the token's full
 // lifetime, so the row outlives the token.
 func (s *DBStore) Revoke(ctx context.Context, jti string, ttl time.Duration) error {
+	_, err := s.Claim(ctx, jti, ttl)
+	return err
+}
+
+func (s *DBStore) Claim(ctx context.Context, jti string, ttl time.Duration) (bool, error) {
 	return s.repo.Revoke(ctx, jti, time.Now().Add(ttl))
 }
 
