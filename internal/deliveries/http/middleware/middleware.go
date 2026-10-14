@@ -10,13 +10,13 @@ import (
 type Middleware struct {
 	e      *echo.Echo
 	config *config.Configuration
-	wlog   *wlog.Logger
+	log    *wlog.Logger
 }
 
-func New(e *echo.Echo, cfg *config.Configuration, wl *wlog.Logger) Middleware {
+func New(e *echo.Echo, cfg *config.Configuration, log *wlog.Logger) Middleware {
 	return Middleware{
 		e:      e,
 		config: cfg,
-		wlog:   wl,
+		log:    log,
 	}
 }

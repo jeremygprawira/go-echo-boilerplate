@@ -11,7 +11,7 @@ const maxBodyCapture = 10 * 1024
 // LoggingMiddleware emits one wide event per request through the wlog logger. Handlers
 // and services enrich it with wlog.Set, wlog.SetGroup, and wlog.Error.
 func (m *Middleware) LoggingMiddleware() echo.MiddlewareFunc {
-	return wlogecho.Middleware(m.wlog,
+	return wlogecho.Middleware(m.log,
 		wlogecho.SkipPaths("/health", "/docs", "/swagger/**"),
 		wlogecho.CaptureAll(),
 		wlogecho.BodyContentTypes(echo.MIMEApplicationJSON),

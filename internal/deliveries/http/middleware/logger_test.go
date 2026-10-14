@@ -30,12 +30,12 @@ func newObservedServer(t *testing.T) (*echo.Echo, *observer.ObservedLogs) {
 	cfg.Application.Version = "1.2.3"
 	cfg.Application.Environment = "prod"
 	cfg.Application.MaxBodySize = "1M"
-	wl, err := logger.NewWlog(cfg, wlogzap.Drain(zap.New(core)))
+	log, err := logger.NewWlog(cfg, wlogzap.Drain(zap.New(core)))
 	require.NoError(t, err)
 
 	e := echo.New()
 	e.HTTPErrorHandler = httpdelivery.ErrorHandler
-	m := middleware.New(e, cfg, wl)
+	m := middleware.New(e, cfg, log)
 	m.Default(cfg)
 
 	e.GET("/ok", func(c echo.Context) error { return c.JSON(http.StatusOK, map[string]string{"status": "ok"}) })
@@ -183,11 +183,11 @@ func TestLogging_OversizedBodyStillLogged(t *testing.T) {
 	core, logs := observer.New(zapcore.DebugLevel)
 	cfg := &config.Configuration{}
 	cfg.Application.MaxBodySize = "10B"
-	wl, err := logger.NewWlog(cfg, wlogzap.Drain(zap.New(core)))
+	log, err := logger.NewWlog(cfg, wlogzap.Drain(zap.New(core)))
 	require.NoError(t, err)
 	e := echo.New()
 	e.HTTPErrorHandler = httpdelivery.ErrorHandler
-	m := middleware.New(e, cfg, wl)
+	m := middleware.New(e, cfg, log)
 	m.Default(cfg)
 	e.POST("/x", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
 

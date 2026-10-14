@@ -51,11 +51,11 @@ func Initialize(configuration *config.Configuration) (*wlog.Logger, error) {
 	// duplicate key. A caller would always point at the drain, so it is left off too.
 	eventConfig := zapConfig.EncoderConfig
 	eventConfig.TimeKey = zapcore.OmitKey
-	wl, err := NewWlog(configuration, wlogzap.Drain(zap.New(newCore(eventConfig))))
+	log, err := NewWlog(configuration, wlogzap.Drain(zap.New(newCore(eventConfig))))
 	if err != nil {
 		return nil, err
 	}
-	wlog.SetDefault(wl)
+	wlog.SetDefault(log)
 
 	encoding := "console"
 	if isProduction {
@@ -66,5 +66,5 @@ func Initialize(configuration *config.Configuration) (*wlog.Logger, error) {
 		zap.String("encoding", encoding),
 		zap.String("log_level", zapConfig.Level.String()),
 	)
-	return wl, nil
+	return log, nil
 }

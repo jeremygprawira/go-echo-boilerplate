@@ -129,10 +129,10 @@ func TestErrorHandler_GeneratesRequestIDWhenMissing(t *testing.T) {
 
 func TestErrorHandler_RecordsCoercedErrorOnEvent(t *testing.T) {
 	core, logs := observer.New(zapcore.DebugLevel)
-	wl, err := logger.NewWlog(&config.Configuration{}, wlogzap.Drain(zap.New(core)))
+	log, err := logger.NewWlog(&config.Configuration{}, wlogzap.Drain(zap.New(core)))
 	require.NoError(t, err)
 	ctx, _ := newErrCtx(t)
-	eventCtx, end := wlog.Start(wl.WithContext(ctx.Request().Context()), "GET /x")
+	eventCtx, end := wlog.Start(log.WithContext(ctx.Request().Context()), "GET /x")
 	ctx.SetRequest(ctx.Request().WithContext(eventCtx))
 
 	ErrorHandler(echo.NewHTTPError(nethttp.StatusNotFound, "Not Found"), ctx)

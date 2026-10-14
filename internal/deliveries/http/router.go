@@ -32,9 +32,9 @@ import (
 // @host localhost:8080
 // @BasePath /api
 // @schemes http https
-func New(eco *echo.Echo, service *service.Service, config *config.Configuration, jwtConfig *jwtc.Configuration, tokenStore tokenstore.TokenStore, wl *wlog.Logger) {
+func New(eco *echo.Echo, service *service.Service, config *config.Configuration, jwtConfig *jwtc.Configuration, tokenStore tokenstore.TokenStore, log *wlog.Logger) {
 	// Middleware for Recover and Logging
-	middleware := middleware.New(eco, config, wl)
+	middleware := middleware.New(eco, config, log)
 	middleware.Default(config)
 
 	eco.GET("/", func(ctx echo.Context) error {

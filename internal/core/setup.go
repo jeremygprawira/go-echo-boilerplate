@@ -21,11 +21,11 @@ type Dependencies struct {
 	Config     *config.Configuration
 	JWTConfig  *jwtc.Configuration
 	TokenStore tokenstore.TokenStore
-	Wlog       *wlog.Logger
+	Log        *wlog.Logger
 }
 
 func BuildDependencies(configuration *config.Configuration) (*Dependencies, error) {
-	wl, err := logger.Initialize(configuration)
+	log, err := logger.Initialize(configuration)
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +60,7 @@ func BuildDependencies(configuration *config.Configuration) (*Dependencies, erro
 		Config:     configuration,
 		JWTConfig:  jwtConfig,
 		TokenStore: store,
-		Wlog:       wl,
+		Log:        log,
 	}, nil
 }
 
@@ -70,7 +70,7 @@ func BuildHTTPServer(deps *Dependencies) *echo.Echo {
 	e.HidePort = true
 	e.HTTPErrorHandler = handler.ErrorHandler
 
-	handler.New(e, deps.Service, deps.Config, deps.JWTConfig, deps.TokenStore, deps.Wlog)
+	handler.New(e, deps.Service, deps.Config, deps.JWTConfig, deps.TokenStore, deps.Log)
 	return e
 }
 
