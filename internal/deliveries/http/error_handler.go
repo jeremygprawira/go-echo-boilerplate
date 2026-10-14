@@ -1,52 +1,100 @@
 package http
 
 import (
+	"encoding/json"
 	"errors"
+	"go-echo-boilerplate/internal/models"
 	"go-echo-boilerplate/internal/pkg/errorc"
-	"go-echo-boilerplate/internal/pkg/logger"
 	"go-echo-boilerplate/internal/pkg/stringc"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jeremygprawira/herr"
+	"github.com/jeremygprawira/wlog"
 	"github.com/labstack/echo/v4"
 )
 
+// wireBody mirrors herr's unexported wireError shape so its safe, allow-listed
+// fields can be read out of the `any` that Body() returns. herr guarantees
+// nothing beyond these fields ever reaches the wire, so this struct is the
+// complete set of data available to fold into models.Response.
+type wireBody struct {
+	Code       string                           `json:"code"`
+	Title      string                           `json:"title,omitempty"`
+	Message    string                           `json:"message,omitempty"`
+	Retryable  *bool                            `json:"retryable,omitempty"`
+	RetryAfter int                              `json:"retryAfter,omitempty"`
+	TraceID    string                           `json:"traceId,omitempty"`
+	Errors     []models.ErrorValidationResponse `json:"errors,omitempty"`
+}
+
+// decodeWireBody round-trips herr's safe wire body through JSON since its
+// concrete type is unexported — this is the only way to read it from outside
+// the herr package without losing the library's field allow-listing.
+func decodeWireBody(herrErr *herr.Error) wireBody {
+	var w wireBody
+	if b, err := json.Marshal(herrErr.Body("")); err == nil {
+		_ = json.Unmarshal(b, &w)
+	}
+	return w
+}
+
 // ErrorHandler is the single rendering point for every error returned by a
-// handler or middleware. Registered as e.HTTPErrorHandler in core.Setup.
-// It renders herr's safe wire body and enriches the wide-event log once.
+// handler or middleware. Registered as e.HTTPErrorHandler in core.Setup. It
+// records the error on the wide event once, then folds herr's safe wire body
+// into the same models.Response envelope success responses use, so Code is
+// always the HTTP status (int) regardless of outcome and the catalog error
+// identifier lives in ErrorCode instead.
 func ErrorHandler(err error, ctx echo.Context) {
+	herrErr := coerce(err)
+	wlog.Error(ctx.Request().Context(), herrErr)
 	if ctx.Response().Committed {
 		return
 	}
 
-	herrErr := coerce(err)
-
-	requestID, _ := ctx.Get("X-Request-ID").(string)
+	requestID := ctx.Response().Header().Get(echo.HeaderXRequestID)
 	if requestID == "" {
 		requestID = uuid.New().String()
 	}
-	herrErr = herrErr.WithPublic("requestId", requestID)
 
-	record := herr.LogRecord(herrErr)
-	errType := "AppError"
-	if record.HTTPStatus >= http.StatusInternalServerError {
-		errType = "InternalError"
-	}
-	logger.AddError(ctx.Request().Context(), &logger.ErrorContext{
-		Type:    errType,
-		Code:    record.Code,
-		Message: herrErr.Error(), // code + internal detail + cause; logs are trusted
-		Stack:   record.Stack,
-	})
+	body := decodeWireBody(herrErr)
 
-	if seconds := herrErr.RetryAfterSeconds(); seconds > 0 {
-		ctx.Response().Header().Set("Retry-After", strconv.Itoa(seconds))
+	if body.RetryAfter > 0 {
+		ctx.Response().Header().Set("Retry-After", strconv.Itoa(body.RetryAfter))
 	}
 
-	if writeErr := ctx.JSON(herrErr.HTTPStatus(), herrErr.Body("")); writeErr != nil && logger.Instance != nil {
-		logger.Instance.Error(ctx.Request().Context(), "failed to write error response", logger.Error(writeErr))
+	message := body.Message
+	if message == "" {
+		message = body.Title
+	}
+
+	// A nil []ErrorValidationResponse assigned directly into the Errors
+	// interface{} field would still marshal as "errors":null (a typed-nil
+	// interface is non-nil), so only assign when there's something to show.
+	var responseErrors interface{}
+	if len(body.Errors) > 0 {
+		responseErrors = body.Errors
+	}
+
+	resp := models.Response{
+		Code:      herrErr.HTTPStatus(),
+		Status:    "ERROR",
+		Message:   message,
+		ErrorCode: body.Code,
+		Errors:    responseErrors,
+		Metadata: models.Metadata{
+			RequestId:  requestID,
+			Timestamp:  time.Now().Format(time.RFC3339),
+			Retryable:  body.Retryable,
+			RetryAfter: body.RetryAfter,
+			TraceId:    body.TraceID,
+		},
+	}
+
+	if writeErr := ctx.JSON(herrErr.HTTPStatus(), resp); writeErr != nil {
+		wlog.Set(ctx.Request().Context(), "error_response_write_failed", writeErr.Error())
 	}
 }
 
@@ -97,6 +145,8 @@ func classForStatus(status int) *herr.Class {
 		return errorc.AlreadyExists
 	case http.StatusUnprocessableEntity:
 		return errorc.Validation
+	case http.StatusTooManyRequests:
+		return errorc.TooManyRequests
 	default:
 		return nil
 	}

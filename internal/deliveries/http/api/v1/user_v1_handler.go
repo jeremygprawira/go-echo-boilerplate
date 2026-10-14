@@ -2,6 +2,7 @@ package v1
 
 import (
 	"go-echo-boilerplate/internal/config"
+	"go-echo-boilerplate/internal/constant"
 	"go-echo-boilerplate/internal/deliveries/http/middleware"
 	"go-echo-boilerplate/internal/models"
 	"go-echo-boilerplate/internal/pkg/errorc"
@@ -35,10 +36,17 @@ func NewUserV1(v1 *echo.Group, service *service.Service, config *config.Configur
 		tokenStore: tokenStore,
 	}
 
+	// Config.Validate rejects a bad ttl at startup, so the parse cannot fail
+	// here. A nil config (handler tests) leaves the ttl at zero.
+	var idempotencyTTL time.Duration
+	if config != nil {
+		idempotencyTTL, _ = time.ParseDuration(config.Idempotency.TTL)
+	}
+
 	noBearerRoute := v1.Group("/users")
-	noBearerRoute.POST("", h.Create, middleware.RateLimiter(config))
+	noBearerRoute.POST("", h.Create, middleware.RateLimiter(config), middleware.Idempotency(idempotencyTTL))
 	noBearerRoute.POST("/tokens", h.GetTokens, middleware.RateLimiter(config))
-	noBearerRoute.POST("/tokens/refresh", h.RefreshTokens, middleware.RateLimiter(config))
+	noBearerRoute.POST("/tokens/refresh", h.RefreshTokens, middleware.RateLimiter(config), middleware.Idempotency(idempotencyTTL))
 
 	bearerRoute := v1.Group("/users")
 	bearerRoute.Use(middleware.BearerAuthMiddleware(h.jwtConfig, h.tokenStore))
@@ -48,16 +56,17 @@ func NewUserV1(v1 *echo.Group, service *service.Service, config *config.Configur
 
 // Create registers a new user
 // @Summary Create New User
-// @Description Register a new user with email, phone number, and password. Auto-generates account number.
+// @Description Register a new user with email, phone number, and password. Auto-generates account number. Optionally pass an Idempotency-Key header to make a retried request safe: a repeated request with the same key returns the original response instead of re-executing.
 // @Tags Users
 // @Accept json
 // @Produce json
+// @Param Idempotency-Key header string false "Optional key making a retried request safe to resend"
 // @Param request body models.CreateUserRequest true "User Registration Details"
 // @Success 201 {object} models.Response{data=models.CreateUserResponse} "User Created Successfully"
-// @Failure 400 {object} models.ErrorWireResponse "Invalid Input"
-// @Failure 422 {object} models.ErrorWireResponse "Validation Failed"
-// @Failure 409 {object} models.ErrorWireResponse "User Already Exists (Email or Phone)"
-// @Failure 500 {object} models.ErrorWireResponse "Internal Server Error"
+// @Failure 400 {object} models.Response "Invalid Input"
+// @Failure 422 {object} models.Response "Validation Failed"
+// @Failure 409 {object} models.Response "User Already Exists (Email or Phone)"
+// @Failure 500 {object} models.Response "Internal Server Error"
 // @Router /api/v1/users [post]
 func (h *userV1Handler) Create(ctx echo.Context) error {
 	var request models.CreateUserRequest
@@ -85,10 +94,10 @@ func (h *userV1Handler) Create(ctx echo.Context) error {
 // @Produce json
 // @Param request body models.GetUserTokenRequest true "User Token Request"
 // @Success 200 {object} models.Response{data=models.GetUserTokenResponse} "User Tokens Retrieved Successfully"
-// @Failure 400 {object} models.ErrorWireResponse "Invalid Input"
-// @Failure 422 {object} models.ErrorWireResponse "Validation Failed"
-// @Failure 404 {object} models.ErrorWireResponse "User Not Found"
-// @Failure 500 {object} models.ErrorWireResponse "Internal Server Error"
+// @Failure 400 {object} models.Response "Invalid Input"
+// @Failure 422 {object} models.Response "Validation Failed"
+// @Failure 404 {object} models.Response "User Not Found"
+// @Failure 500 {object} models.Response "Internal Server Error"
 // @Router /api/v1/users/tokens [post]
 func (h *userV1Handler) GetTokens(ctx echo.Context) error {
 	var request models.GetUserTokenRequest
@@ -108,7 +117,7 @@ func (h *userV1Handler) GetTokens(ctx echo.Context) error {
 	ExpiresAt := time.Now().Add(time.Second * time.Duration(user.Tokens[1].ExpiredIn))
 
 	ctx.SetCookie(&http.Cookie{
-		Name:     "refresh_token",
+		Name:     constant.RefreshTokenCookieName,
 		Value:    user.Tokens[1].Token,
 		Expires:  ExpiresAt,
 		HttpOnly: true,
@@ -120,17 +129,20 @@ func (h *userV1Handler) GetTokens(ctx echo.Context) error {
 	return response.Success(ctx, http.StatusOK, user)
 }
 
-// RefreshTokens rotates a refresh token for a fresh access+refresh pair
+// RefreshTokens rotates a refresh token for a fresh access+refresh pair. The
+// token is read from the request body if present, else from the
+// refresh_token cookie set at login — see jwtc.ResolveRefreshToken.
 // @Summary Refresh Tokens
-// @Description Exchange a valid, non-revoked refresh token for a new access+refresh pair
+// @Description Exchange a valid, non-revoked refresh token for a new access+refresh pair. The token may be supplied in the body or via the refresh_token cookie set at login; the body takes precedence. Since this rotates (revokes) the presented refresh token, pass an Idempotency-Key header so a retried request after a dropped response doesn't require a fresh login.
 // @Tags Users
 // @Accept json
 // @Produce json
-// @Param request body models.RefreshTokenRequest true "Refresh Token"
+// @Param Idempotency-Key header string false "Optional key making a retried request safe to resend"
+// @Param request body models.RefreshTokenRequest false "Refresh Token (optional if the refresh_token cookie is set)"
 // @Success 200 {object} models.Response{data=models.GetUserTokenResponse} "Tokens Refreshed Successfully"
-// @Failure 400 {object} models.ErrorWireResponse "Invalid Input"
-// @Failure 422 {object} models.ErrorWireResponse "Validation Failed"
-// @Failure 401 {object} models.ErrorWireResponse "Invalid or Revoked Refresh Token"
+// @Failure 400 {object} models.Response "Invalid Input"
+// @Failure 422 {object} models.Response "Validation Failed"
+// @Failure 401 {object} models.Response "Invalid or Revoked Refresh Token"
 // @Router /api/v1/users/tokens/refresh [post]
 func (h *userV1Handler) RefreshTokens(ctx echo.Context) error {
 	var request models.RefreshTokenRequest
@@ -138,11 +150,12 @@ func (h *userV1Handler) RefreshTokens(ctx echo.Context) error {
 		return err
 	}
 
-	if err := validator.Input(request); err != nil {
-		return errorc.FromValidation(err)
+	refreshToken := jwtc.ResolveRefreshToken(ctx.Request(), request.RefreshToken)
+	if refreshToken == "" {
+		return errorc.Validation.New().FieldError("refreshToken", "MISSING_FIELD", "refreshToken is required")
 	}
 
-	tokens, err := h.service.User.RefreshTokens(ctx.Request().Context(), request.RefreshToken)
+	tokens, err := h.service.User.RefreshTokens(ctx.Request().Context(), refreshToken)
 	if err != nil {
 		return err
 	}
@@ -150,31 +163,33 @@ func (h *userV1Handler) RefreshTokens(ctx echo.Context) error {
 	return response.Success(ctx, http.StatusOK, tokens)
 }
 
-// Logout revokes the caller's access token, and the refresh token carried in
-// the refresh_token cookie if present, so neither is accepted again before
-// their natural expiry.
+// Logout revokes the caller's access token, and the refresh token — read from
+// the request body if present, else the refresh_token cookie — so neither is
+// accepted again before their natural expiry. See jwtc.ResolveRefreshToken.
 // @Summary Logout
-// @Description Revoke the current access token and refresh token
+// @Description Revoke the current access token and refresh token. The refresh token may be supplied in the body or via the refresh_token cookie set at login; the body takes precedence.
 // @Tags Users
+// @Accept json
 // @Produce json
+// @Param request body models.LogoutRequest false "Refresh Token (optional if the refresh_token cookie is set)"
 // @Success 200 {object} models.Response "Logged Out Successfully"
-// @Failure 401 {object} models.ErrorWireResponse "Unauthorized"
+// @Failure 401 {object} models.Response "Unauthorized"
 // @Router /api/v1/users/logout [post]
 // @Security BearerAuth
 func (h *userV1Handler) Logout(ctx echo.Context) error {
 	jti, _ := ctx.Get("jti").(string)
 
-	var refreshToken string
-	if cookie, err := ctx.Cookie("refresh_token"); err == nil {
-		refreshToken = cookie.Value
-	}
+	var request models.LogoutRequest
+	_ = ctx.Bind(&request) // body is optional; the cookie fallback covers callers with none
+
+	refreshToken := jwtc.ResolveRefreshToken(ctx.Request(), request.RefreshToken)
 
 	if err := h.service.User.Logout(ctx.Request().Context(), jti, refreshToken); err != nil {
 		return err
 	}
 
 	ctx.SetCookie(&http.Cookie{
-		Name:     "refresh_token",
+		Name:     constant.RefreshTokenCookieName,
 		Value:    "",
 		MaxAge:   -1,
 		HttpOnly: true,
@@ -193,9 +208,9 @@ func (h *userV1Handler) Logout(ctx echo.Context) error {
 // @Accept json
 // @Produce json
 // @Success 200 {object} models.Response{data=models.GetUserByAccountNumberResponse} "User Information Retrieved Successfully"
-// @Failure 401 {object} models.ErrorWireResponse "Unauthorized"
-// @Failure 404 {object} models.ErrorWireResponse "User Not Found"
-// @Failure 500 {object} models.ErrorWireResponse "Internal Server Error"
+// @Failure 401 {object} models.Response "Unauthorized"
+// @Failure 404 {object} models.Response "User Not Found"
+// @Failure 500 {object} models.Response "Internal Server Error"
 // @Router /api/v1/users/me [get]
 // @Security BearerAuth
 func (h *userV1Handler) GetUserByAccessToken(ctx echo.Context) error {

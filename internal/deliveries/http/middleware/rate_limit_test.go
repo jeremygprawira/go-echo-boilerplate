@@ -66,6 +66,47 @@ func TestRateLimiter_InvalidExpiresInFallsBackToDefault(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 }
 
+func TestRateLimiter_ReportsRemainingQuotaHeaders(t *testing.T) {
+	e := echo.New()
+	cfg := &config.Configuration{}
+	cfg.RateLimit = config.RateLimit{Enabled: true, Rate: 1, Burst: 5, ExpiresIn: "3m"}
+	e.Use(RateLimiter(cfg))
+	e.POST("/login", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
+
+	req := httptest.NewRequest(http.MethodPost, "/login", nil)
+	req.RemoteAddr = "192.0.2.99:12345"
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "5", rec.Header().Get("X-RateLimit-Limit"))
+	require.Equal(t, "4", rec.Header().Get("X-RateLimit-Remaining"))
+}
+
+func TestRateLimiter_SetsRetryAfterWhenExceeded(t *testing.T) {
+	e := echo.New()
+	cfg := &config.Configuration{}
+	cfg.RateLimit = config.RateLimit{Enabled: true, Rate: 1, Burst: 1, ExpiresIn: "3m"}
+	e.Use(RateLimiter(cfg))
+	e.POST("/login", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
+
+	newReq := func() *http.Request {
+		req := httptest.NewRequest(http.MethodPost, "/login", nil)
+		req.RemoteAddr = "192.0.2.100:12345"
+		return req
+	}
+
+	rec1 := httptest.NewRecorder()
+	e.ServeHTTP(rec1, newReq())
+	require.Equal(t, http.StatusOK, rec1.Code)
+
+	rec2 := httptest.NewRecorder()
+	e.ServeHTTP(rec2, newReq())
+	require.Equal(t, http.StatusTooManyRequests, rec2.Code)
+	require.Equal(t, "0", rec2.Header().Get("X-RateLimit-Remaining"))
+	require.NotEmpty(t, rec2.Header().Get("Retry-After"))
+}
+
 func TestRateLimiter_DisabledPassesThrough(t *testing.T) {
 	e := echo.New()
 	cfg := &config.Configuration{}

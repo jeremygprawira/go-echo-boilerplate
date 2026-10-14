@@ -11,6 +11,7 @@ import (
 	"go-echo-boilerplate/internal/repository"
 	"go-echo-boilerplate/internal/service"
 
+	"github.com/jeremygprawira/wlog"
 	"github.com/labstack/echo/v4"
 )
 
@@ -20,10 +21,14 @@ type Dependencies struct {
 	Config     *config.Configuration
 	JWTConfig  *jwtc.Configuration
 	TokenStore tokenstore.TokenStore
+	Log        *wlog.Logger
 }
 
 func BuildDependencies(configuration *config.Configuration) (*Dependencies, error) {
-	logger.Initialize(configuration)
+	log, err := logger.Initialize(configuration)
+	if err != nil {
+		return nil, err
+	}
 
 	db, err := database.Connect(configuration)
 	if err != nil {
@@ -55,6 +60,7 @@ func BuildDependencies(configuration *config.Configuration) (*Dependencies, erro
 		Config:     configuration,
 		JWTConfig:  jwtConfig,
 		TokenStore: store,
+		Log:        log,
 	}, nil
 }
 
@@ -64,7 +70,7 @@ func BuildHTTPServer(deps *Dependencies) *echo.Echo {
 	e.HidePort = true
 	e.HTTPErrorHandler = handler.ErrorHandler
 
-	handler.New(e, deps.Service, deps.Config, deps.JWTConfig, deps.TokenStore)
+	handler.New(e, deps.Service, deps.Config, deps.JWTConfig, deps.TokenStore, deps.Log)
 	return e
 }
 

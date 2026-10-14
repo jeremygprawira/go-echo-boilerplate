@@ -12,6 +12,7 @@ func validCfg() *Configuration {
 	c.Authorization.Refresh = TokenConfiguration{Secret: "refresh-secret", Duration: "168h"}
 	c.Authorization.APIKey = "an-api-key"
 	c.RateLimit = RateLimit{Enabled: true, Rate: 5, Burst: 10, ExpiresIn: "3m"}
+	c.Idempotency = Idempotency{TTL: "10m"}
 	return c
 }
 
@@ -47,6 +48,14 @@ func TestValidate_BadRateLimitExpiresIn(t *testing.T) {
 	c := validCfg()
 	c.RateLimit.ExpiresIn = "not-a-duration"
 	require.Error(t, c.Validate())
+}
+
+func TestValidate_BadIdempotencyTTL(t *testing.T) {
+	for _, ttl := range []string{"not-a-duration", "", "0s", "-1m"} {
+		c := validCfg()
+		c.Idempotency.TTL = ttl
+		require.Error(t, c.Validate(), ttl)
+	}
 }
 
 func TestValidate_NonPositiveRateLimitRate(t *testing.T) {

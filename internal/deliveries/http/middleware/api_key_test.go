@@ -20,7 +20,7 @@ func setupAPIKeyServer(t *testing.T) *echo.Echo {
 
 	e := echo.New()
 	e.HTTPErrorHandler = httpdelivery.ErrorHandler
-	m := middleware.New(e, cfg)
+	m := middleware.New(e, cfg, nil)
 	g := e.Group("/api", m.ApiKeyMiddleware(cfg))
 	g.GET("/ping", func(c echo.Context) error {
 		return c.String(http.StatusOK, "pong")
@@ -36,7 +36,7 @@ func TestApiKeyMiddleware(t *testing.T) {
 		e.ServeHTTP(rec, req)
 
 		assert.Equal(t, http.StatusUnauthorized, rec.Code)
-		assert.Contains(t, rec.Body.String(), `"code":"UNAUTHORIZED"`)
+		assert.Contains(t, rec.Body.String(), `"errorCode":"UNAUTHORIZED"`)
 		assert.NotContains(t, rec.Body.String(), "X-API-Key") // internal detail stays internal
 	})
 

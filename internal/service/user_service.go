@@ -7,11 +7,11 @@ import (
 	"go-echo-boilerplate/internal/pkg/errorc"
 	"go-echo-boilerplate/internal/pkg/formatter"
 	"go-echo-boilerplate/internal/pkg/generator"
-	"go-echo-boilerplate/internal/pkg/logger"
 	"go-echo-boilerplate/internal/pkg/validator"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jeremygprawira/herr"
+	"github.com/jeremygprawira/wlog"
 )
 
 // pgUniqueViolation is the PostgreSQL error code for a UNIQUE constraint violation.
@@ -43,7 +43,7 @@ func NewUserService(d *Dependencies) UserService {
 
 func (us *userService) Create(ctx context.Context, request *models.CreateUserRequest) (*models.User, error) {
 	// Enrich wide event with all known request fields upfront in a single grouped call.
-	logger.AddToKey(ctx, "user", map[string]any{
+	wlog.SetGroup(ctx, "user", map[string]any{
 		"operation":          "user.create",
 		"raw_phone_number":   request.PhoneNumber.Number,
 		"phone_country_code": request.PhoneNumber.CountryCode,
@@ -69,7 +69,7 @@ func (us *userService) Create(ctx context.Context, request *models.CreateUserReq
 		phoneNumber = *formattedPhoneNumber
 	}
 
-	logger.AddToKey(ctx, "user", "formatted_phone_number", phoneNumber)
+	wlog.SetGroup(ctx, "user", "formatted_phone_number", phoneNumber)
 
 	// Generate unique account number
 	accountNumber, err := generator.AccountNumber()
@@ -108,14 +108,14 @@ func (us *userService) Create(ctx context.Context, request *models.CreateUserReq
 		// CreatedAt and UpdatedAt will be set by database defaults
 	}
 
-	logger.AddToKey(ctx, "user", map[string]any{
+	wlog.SetGroup(ctx, "user", map[string]any{
 		"account_number": accountNumber,
 	})
 
 	// Persist user to database
 	err = us.d.Repository.User.Create(ctx, user)
 	if err != nil {
-		logger.AddToKey(ctx, "user", "is_inserted_to_db", false)
+		wlog.SetGroup(ctx, "user", "is_inserted_to_db", false)
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation {
 			return nil, errorc.AlreadyExists.New().Public(herr.Message("User already exists with that email or phone number")).Wrap(err)
@@ -127,7 +127,7 @@ func (us *userService) Create(ctx context.Context, request *models.CreateUserReq
 }
 
 func (us *userService) GetTokens(ctx context.Context, request *models.GetUserTokenRequest) (*models.GetUserTokenResponse, error) {
-	logger.AddToKey(ctx, "user", map[string]any{
+	wlog.SetGroup(ctx, "user", map[string]any{
 		"operation": "user.get_tokens",
 		"email":     request.Email,
 		"phone":     request.PhoneNumber.Number,
@@ -142,7 +142,7 @@ func (us *userService) GetTokens(ctx context.Context, request *models.GetUserTok
 			return nil, errorc.InvalidInput.New().Public(herr.Message("Invalid phone number format")).Wrap(err)
 		}
 		request.PhoneNumber.Number = *formattedPhoneNumber
-		logger.AddToKey(ctx, "user", "formatted_phone", request.PhoneNumber.Number)
+		wlog.SetGroup(ctx, "user", "formatted_phone", request.PhoneNumber.Number)
 	}
 
 	user, err := us.d.Repository.User.GetCredentialsByEmailOrPhoneNumber(ctx, request.Email, request.PhoneNumber.Number)
@@ -270,7 +270,7 @@ func (us *userService) Logout(ctx context.Context, accessJTI string, refreshToke
 }
 
 func (us *userService) GetByAccountNumber(ctx context.Context, accountNumber string) (*models.User, error) {
-	logger.AddToKey(ctx, "user", map[string]any{
+	wlog.SetGroup(ctx, "user", map[string]any{
 		"operation":      "user.get_by_account_number",
 		"account_number": accountNumber,
 	})

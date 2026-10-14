@@ -17,7 +17,7 @@ func TestRequestTimeout_SlowHandlerCutOff(t *testing.T) {
 	cfg := &config.Configuration{}
 	cfg.Application.Timeout = 1 // 1 second
 	cfg.Application.MaxBodySize = "1M"
-	m := New(e, cfg)
+	m := New(e, cfg, nil)
 	m.Default(cfg)
 
 	e.GET("/slow", func(c echo.Context) error {

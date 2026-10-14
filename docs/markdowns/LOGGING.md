@@ -1,19 +1,19 @@
 # Wide Event Logging Guidelines
 
-This document serves as the **single source of truth** for logging in our Go Echo application. It consolidates concepts, usage patterns, security guidelines, and examples.
+This document is the single source of truth for logging in this Go Echo application. It covers the model, the API you call, redaction, errors, and what a log line looks like.
 
 ## 1. Philosophy: Wide Events
 
 We follow the "Wide Events" pattern (popularized by [loggingsucks.com](https://loggingsucks.com/)).
 
-- **Traditional Logging**: Emits multiple log lines per request (e.g., "Request started", "Querying DB", "Payment failed"). This is hard to query and debug because context is scattered.
-- **Wide Events**: Emits **one canonical log line per request** at the end of the lifecycle. This line contains _all_ relevant context enriched throughout the request (input, output, errors, latency, user info, business metrics).
+- **Traditional logging** emits many lines per request ("Request started", "Querying DB", "Payment failed"). The context is scattered, so it is hard to query and debug.
+- **Wide events** emit one canonical line per request, at the end of the request. That line holds all the context added along the way: input, output, errors, latency, user, and business data.
 
 ### Why?
 
-- **Querying**: You can ask complex questions like `latency > 500ms AND user_tier = 'premium' AND error_code != null`.
-- **Context**: You always have the full story. No need to grep multiple lines or join by request ID manually.
-- **Cleanliness**: Keeps logs distinct and meaningful.
+- **Querying.** You can ask questions like `duration_ms > 500 AND user.tier = 'premium' AND error.code != null`.
+- **Context.** Each line tells the full story. There is no grepping across lines or joining by request id.
+- **Cleanliness.** Each line is distinct and meaningful.
 
 ---
 
@@ -21,29 +21,43 @@ We follow the "Wide Events" pattern (popularized by [loggingsucks.com](https://l
 
 ### The Mechanism
 
-The logging system uses `context.Context` to carry a "Wide Event" object throughout the request lifecycle.
+The wide event is built by [wlog](https://github.com/jeremygprawira/wlog) and carried on the request's `context.Context`.
 
-1.  **Middleware** initializes the Wide Event at the start of a request.
-2.  **Handlers/Services** enrich this event using `logger` functions.
-3.  **Middleware** writes the final JSON log line when the request finishes.
+1. **`LoggingMiddleware`** (`wlogecho.Middleware`) starts one event per request.
+2. **Handlers and services** add fields to it with `wlog.Set` and `wlog.SetGroup`.
+3. **`ErrorHandler`** records the returned error on it with `wlog.Error`.
+4. **`LoggingMiddleware`** ends it. wlog redacts the event and hands it to the zap drain, which writes one zap entry.
+
+The event in the context is the only per-request log state. There is no second store.
 
 ### Key Components
 
-- **`internal/pkg/logger`**: The core package you will import.
-- **`Enrichment`**: adding key-value pairs to the event.
-- **`Masking`**: Automatically hiding sensitive data (passwords, tokens).
+- **`github.com/jeremygprawira/wlog`**: the package you import to enrich the event.
+- **`internal/pkg/logger`**: builds the wlog logger (`NewWlog`) and the zap backend (`Initialize`). It is the only place that knows about zap.
+- **`internal/deliveries/http/middleware`**: `LoggingMiddleware` and `RecoverMiddleware`.
+- **`internal/deliveries/http/error_handler.go`**: renders errors and records them on the event.
+
+### Middleware Order
+
+`Default` registers, from outermost to innermost:
+
+1. `RequestID`. It also copies the id onto the request header, so wlog reuses it.
+2. `LoggingMiddleware`. It skips `/health`, `/docs`, and `/swagger/**`.
+3. `RecoverMiddleware`. It turns a panic into an error and passes every error to `ErrorHandler`.
+4. `BodyLimit`, CORS, `Secure`, and the request timeout.
+
+Because `LoggingMiddleware` sits outside `BodyLimit`, a rejected oversized request still gets its event.
 
 ---
 
 ## 3. Quick Start
 
-### Basic Usage (Handlers)
+### Basic Usage (Handlers and Services)
 
-Import `go-echo-boilerplate/internal/pkg/logger`.
+Import `github.com/jeremygprawira/wlog`.
 
 ```go
 func (h *Handler) CreateOrder(c echo.Context) error {
-    // 1. Get context
     ctx := c.Request().Context()
 
     var req OrderRequest
@@ -51,212 +65,200 @@ func (h *Handler) CreateOrder(c echo.Context) error {
         return err
     }
 
-    // 2. Enrich with request data
-    // Use EnrichContextMap for multiple fields
-    logger.EnrichContextMap(ctx, map[string]any{
-        "order_type":      req.Type,
+    wlog.SetGroup(ctx, "order", map[string]any{
+        "type":            req.Type,
         "items_count":     len(req.Items),
         "shipping_method": req.ShippingMethod,
     })
 
-    // 3. Call Service
     order, err := h.service.Process(ctx, req)
     if err != nil {
-        // 4. Handle Errors
-        // SetErrorContext adds detailed error info to the log
-        logger.SetErrorContext(ctx, &logger.ErrorContext{
-             Type:      "OrderProcessingError",
-             Code:      "PROCESSING_FAILED",
-             Message:   err.Error(),
-             Retriable: false,
-        })
         return err
     }
 
-    // 5. Enrich with success data
-    logger.EnrichContext(ctx, "order_id", order.ID)
-
+    wlog.SetGroup(ctx, "order", "id", order.ID)
     return c.JSON(201, order)
 }
 ```
+
+Return errors as they are. `ErrorHandler` records them on the event and renders the response.
 
 ---
 
 ## 4. Enrichment API
 
-The `logger` package provides flexible methods to add data to your logs.
+| Function                             | Description                                                    | Example                                                  |
+| :----------------------------------- | :------------------------------------------------------------- | :------------------------------------------------------- |
+| `wlog.Set(ctx, key, val)`            | Set one top-level field. A later call replaces the value.      | `wlog.Set(ctx, "tenant_id", "t-42")`                     |
+| `wlog.SetGroup(ctx, group, kv...)`   | Merge fields into a named group. Takes a map or `k, v` pairs.  | `wlog.SetGroup(ctx, "user", "id", "u-1", "tier", "pro")` |
+| `wlog.Append(ctx, key, val)`         | Append a value to an array field.                              | `wlog.Append(ctx, "steps", "charged")`                   |
+| `wlog.Error(ctx, err)`               | Record an error. The previous one moves to `errors`.           | `wlog.Error(ctx, err)`                                   |
 
-### Basic Methods
+### Rules
 
-| Method                            | Description                                                   | Example                                             |
-| :-------------------------------- | :------------------------------------------------------------ | :-------------------------------------------------- |
-| `EnrichContext(ctx, key, val)`    | Add a single field.                                           | `logger.EnrichContext(ctx, "user_id", "123")`       |
-| `EnrichContextMap(ctx, map)`      | Add multiple fields via a map. **Recommended** for bulk data. | `logger.EnrichContextMap(ctx, dataMap)`             |
-| `EnrichContextMany(ctx, k, v...)` | Add multiple fields via variadic arguments.                   | `logger.EnrichContextMany(ctx, "k1", v1, "k2", v2)` |
-| `EnrichContextWith(ctx, ...)`     | The most flexible; accepts maps, keys, values mixed.          | `logger.EnrichContextWith(ctx, "id", 1, mapData)`   |
+- Prefer `SetGroup` for related fields. A second call merges into the same group.
+- Use `snake_case` keys.
+- A user key stays at the top level. Do not reuse a reserved key (`http`, `trace`, `service`, `error`, `operation`, `level`, `outcome`, `duration_ms`).
+- With no event on the context (a unit test, or a skipped path), a write does nothing. wlog prints one `WLOG_NO_EVENT` problem line to stderr per minute.
+
+### Caps
+
+| Field                 | Cap |
+| :-------------------- | :-- |
+| top-level keys        | 200 |
+| fields in one group   | 50  |
+| elements in one array | 200 |
+| `errors[]`            | 10  |
+
+A write past a cap is dropped and counted in `wlog.dropped_fields`.
 
 ### Thread Safety
 
-All enrichment methods are **thread-safe**. You can call them from concurrent goroutines safely.
+Every wlog write is safe from concurrent goroutines that share the request context.
 
 ```go
 go func() {
-    logger.EnrichContext(ctx, "async_task_status", "completed") // Safe!
+    wlog.Set(ctx, "async_task_status", "completed")
 }()
 ```
 
+A write after the request ends is dropped and counted in `wlog.late_writes`.
+
 ---
 
-## 5. Security: Credential Masking
+## 5. Security: Redaction
 
-**NEVER log sensitive data in plain text.**
-Our logger has built-in masking capabilities.
-
-### Safe Enrichment Methods (Recommended)
-
-Use these methods to automatically mask sensitive fields.
-
-| Method                               | Description                              |
-| :----------------------------------- | :--------------------------------------- |
-| `EnrichContextSafe(ctx, key, val)`   | Masks value if key is sensitive.         |
-| `EnrichContextMapSafe(ctx, map)`     | Recursively masks all values in the map. |
-| `EnrichContextHeaders(ctx, headers)` | Specifically for masking HTTP headers.   |
+Never log sensitive data in plain text. The redactor runs on every event before the drain writes it, so you do not call a special "safe" variant.
 
 ### What gets masked?
 
-The system automatically detects keys like:
+`logger.NewWlog` starts from wlog's default denylist and adds every key from the old masking list:
 
 - `password`, `passwd`, `pwd`
 - `secret`, `token`, `auth`, `authorization`, `bearer`
-- `api_key`, `apikey`, `access_token`, `session_id`
-- `credit_card`, `cvv`, `ssn`
-- `db_password`, `connection_string`
+- `api_key`, `apikey`, `api-key`, `access_token`, `refresh_token`, `id_token`
+- `session`, `session_id`, `sessionid`, `cookie`
+- `credential`, `credentials`, `private_key`, `public_key`, `cert`, `certificate`
+- `credit_card`, `card_number`, `cvv`, `cvc`, `ssn`, `social_security`
+- `aws_secret_access_key`, `aws_access_key_id`, `aws_session_token`
+- `db_password`, `database_password`, `connection_string`
+- `x-api-key`, `x-auth-token`, `x-access-token`, `x-session-id`
 
-### Example: Safe Logging
+Matching works on key tokens. `user_password` and `X-API-Key` contain an entry's tokens, so they are masked too. The value becomes `[REDACTED]`.
+
+wlog also masks values by pattern, whatever the key. An email becomes `j***@***.com`, and a JWT-shaped string is masked.
+
+### Example
 
 ```go
-// Even though "password" is in the map, it will be masked in the logs!
-logger.EnrichContextMapSafe(ctx, map[string]any{
+wlog.SetGroup(ctx, "login", map[string]any{
     "username": "john_doe",
-    "password": "superSecretPassword123", // -> "***MASKED***"
-    "api_key":  "sk_live_123456",         // -> "***MASKED***"
+    "password": "superSecretPassword123", // -> "[REDACTED]"
+    "api_key":  "sk_live_123456",         // -> "[REDACTED]"
 })
 ```
+
+To add a key, extend `sensitiveKeys` in `internal/pkg/logger/wlog.go`.
 
 ---
 
 ## 6. Error Handling
 
-Don't just return errors; log them with context using `SetErrorContext`.
-
-```go
-if err != nil {
-    logger.SetErrorContext(ctx, &logger.ErrorContext{
-        Type:      "PaymentGatewayError",  // Broad category
-        Code:      "INSUFFICIENT_FUNDS",   // Specific machine-readable code
-        Message:   err.Error(),            // Human readable message
-        Retriable: false,                  // Can we retry this?
-    })
-    return err
-}
-```
-
-This ensures your logs have a standardized `error` object:
+Return herr errors from the `errorc` catalog. `ErrorHandler` coerces any error to herr, records it with `wlog.Error`, and renders it. The herr extractor fills the event's `error` group:
 
 ```json
 "error": {
-  "type": "PaymentGatewayError",
-  "code": "INSUFFICIENT_FUNDS",
-  "message": "upstream connection failed",
-  "retriable": false
+  "code": "DATA_NOT_FOUND",
+  "kind": "not_found",
+  "status": 404,
+  "message": "user 42 not in table",
+  "cause": "record not found"
 }
+```
+
+- `message` is herr's internal detail (`.Internal(...)`), never the public text.
+- `cause` is the wrapped error (`.Wrap(err)`).
+- `stack` is present for errors built with `.WithStack()`. A recovered panic always has one.
+
+The level follows the status. A 4xx is `warn`, a 5xx or a panic is `error`, and anything else is `info`.
+
+To keep extra context next to an error, set it as a field before you return:
+
+```go
+wlog.SetGroup(ctx, "transaction", "error_code", "DATABASE_TRANSACTION_COMMIT")
+wlog.Error(ctx, err)
 ```
 
 ---
 
-## 7. Advanced: Service Layer Pattern
+## 7. Request Capture
 
-Ideally, your handlers should be thin. Business logic—and the logging of business data—should live in the Service layer.
+`LoggingMiddleware` captures under the `http` group:
 
-### Approach 1: Pass `context.Context` (Standard)
+- method, route, path, status, `bytes_in`, `bytes_out`, client ip, user agent, scheme, host
+- every request and response header (sensitive ones redacted)
+- query values and cookies (cookie values masked)
+- request bodies with `Content-Type: application/json`, and response bodies, up to 10 KiB each
 
-Simply pass the context to your service methods.
+`user.id` comes from the `X-User-ID` header. Change `extractUserID` in `internal/deliveries/http/middleware/logger.go` to read it from your auth setup.
 
-```go
-// Service
-func (s *Service) Charge(ctx context.Context, amount int) error {
-    // Enrich deep inside business logic
-    logger.EnrichContext(ctx, "charge_amount", amount)
-    // ...
-}
-```
+### Request ID
 
-### Approach 2: WideEventContext Wrapper (Type-Safe)
-
-If you prefer a more explicit contract, use `middleware.WideEventContext`.
-
-```go
-// Handler
-func Handler(c echo.Context) error {
-    // Get wrapper (injected by middleware)
-    wCtx := middleware.GetWideEventCtx(c)
-    return service.DoWork(wCtx)
-}
-
-// Service
-func (s *Service) DoWork(ctx *middleware.WideEventContext) error {
-    ctx.Enrich("status", "working")
-    // ...
-}
-```
+`RequestID` reads an incoming `X-Request-ID` or generates one, and copies it onto the request header. A valid id has at most 128 characters from `[A-Za-z0-9._:-]`, and wlog reuses it. For an invalid id, wlog uses the trace id and writes it on the `X-Request-ID` response header. Either way, the response header, the response body's `metadata.requestId`, and the event's `trace.request_id` hold the same value.
 
 ---
 
 ## 8. Best Practices
 
-### ✅ DO
+### Do
 
-- **Enrich as you go**: Add data as soon as you have it (parsed request, DB result, etc.).
-- **Use Maps**: Group related fields (e.g., `user_data`, `payment_info`). It's cleaner.
-- **Use Snake Case**: Use `snake_case` for log keys (e.g., `user_id`, not `userId`).
-- **Log Metrics**: Log data useful for analytics (e.g., `cart_items_count`, `processing_time_ms`).
+- **Enrich as you go.** Add data as soon as you have it.
+- **Group related fields.** For example `user`, `payment`, `order`.
+- **Use snake case.** `user_id`, not `userId`.
+- **Log metrics.** `cart_items_count`, `retry_count`.
 
-### ❌ DON'T
+### Do Not
 
-- **Don't Log Raw Credentials**: Always use `*Safe` methods.
-- **Don't Log Massive Blobs**: Avoid logging entire huge JSON bodies unless necessary for debugging.
-- **Don't Use Generic Keys**: Avoid keys like `data` or `info`. Be specific: `payment_response_data`.
+- **Do not log per step.** No `logger.Instance` calls inside a request.
+- **Do not log massive blobs.** Body capture is already capped.
+- **Do not use generic keys.** Prefer `payment_response` over `data`.
 
 ---
 
 ## 9. Example Log Output
 
-What does a final log line look like?
+One request, one zap entry. The message is the operation (`METHOD /route`), and the fields are the wlog event. In production (JSON):
 
 ```json
 {
-  "level": "info",
-  "timestamp": "2026-02-02T12:00:00Z",
-  "message": "Request completed",
-  "request_id": "req-12345",
-  "trace_id": "trace-9876",
-  "method": "POST",
-  "path": "/api/orders",
-  "status_code": 201,
-  "duration_ms": 150,
-  "remote_ip": "10.0.0.1",
-  "user_agent": "Mozilla/5.0...",
-  "user": {
-    "id": "u-456",
-    "email": "alex@example.com"
+  "level": "warn",
+  "message": "POST /api/v1/users",
+  "timestamp": "2026-10-14T07:41:51.023066Z",
+  "kind": "request",
+  "outcome": "success",
+  "duration_ms": 0.298,
+  "event_id": "01a1395c-462f-7d23-8b96-79bf83abd5fc",
+  "summary": "POST /api/v1/users 422 in 0.30ms: VALIDATION_FAILED",
+  "service": {"env": "prod", "name": "go-echo-boilerplate", "version": "1.0.0"},
+  "trace": {
+    "request_id": "zCoifOTRBBBeiSuOGbZcYAAtWsOPQFeA",
+    "trace_id": "db3ee8baf719d1a19a7b19130d69e49a",
+    "span_id": "53e2574b78b7fd08"
   },
-  "business_data": {
-    "order_type": "subscription",
-    "items_count": 3,
-    "order_id": "order-789",
-    "payment_provider": "stripe"
+  "http": {
+    "method": "POST",
+    "route": "/api/v1/users",
+    "path": "/api/v1/users",
+    "status": 422,
+    "bytes_in": 67,
+    "bytes_out": 330,
+    "client_ip": "127.0.0.1",
+    "request_body": {"email": "not-an-email", "name": "", "password": "[REDACTED]"},
+    "request_headers": {"authorization": "[REDACTED]", "x-api-key": "[REDACTED]", "content-type": "application/json"}
   },
-  "service": "order-service",
-  "env": "production"
+  "error": {"code": "VALIDATION_FAILED", "kind": "unprocessable", "status": 422},
+  "wlog": {"redact_fingerprint": "8f69f59e1497bbdb", "schema_version": 2}
 }
 ```
+
+In development the zap console encoder prints the level and the operation as columns, then the same fields as JSON. See [wlog's event shape](https://github.com/jeremygprawira/wlog/blob/main/docs/event-shape.md) for every reserved key.

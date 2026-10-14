@@ -13,7 +13,7 @@ import (
 )
 
 func Success(ctx echo.Context, code int, data interface{}, message ...string) error {
-	requestID, _ := ctx.Get("X-Request-ID").(string)
+	requestID := ctx.Response().Header().Get(echo.HeaderXRequestID)
 	if requestID == "" {
 		requestID = uuid.New().String()
 	}
@@ -46,7 +46,7 @@ func Success(ctx echo.Context, code int, data interface{}, message ...string) er
 }
 
 func SuccessList(ctx echo.Context, code int, message string, data interface{}) error {
-	requestID, _ := ctx.Get("X-Request-ID").(string)
+	requestID := ctx.Response().Header().Get(echo.HeaderXRequestID)
 	if requestID == "" {
 		requestID = uuid.New().String()
 	}
@@ -94,7 +94,7 @@ func SuccessList(ctx echo.Context, code int, message string, data interface{}) e
 // covers the Phase 4 pagination response requirement (status code, message,
 // data, and models.PaginationOutput in a single envelope).
 func SuccessPagination(ctx echo.Context, code int, message string, pagination models.PaginationOutput, data interface{}) error {
-	requestID, _ := ctx.Get("X-Request-ID").(string)
+	requestID := ctx.Response().Header().Get(echo.HeaderXRequestID)
 	if requestID == "" {
 		requestID = uuid.New().String()
 	}
