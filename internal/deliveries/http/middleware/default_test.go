@@ -24,7 +24,7 @@ func TestBodyLimit_RejectsOversized(t *testing.T) {
 	e := echo.New()
 	cfg := &config.Configuration{}
 	cfg.Application.MaxBodySize = "10B"
-	m := New(e, cfg)
+	m := New(e, cfg, nil)
 	m.Default(cfg)
 
 	e.POST("/x", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
@@ -40,7 +40,7 @@ func TestRequestID_HeaderPresent(t *testing.T) {
 	e := echo.New()
 	cfg := &config.Configuration{}
 	cfg.Application.MaxBodySize = "1M"
-	m := New(e, cfg)
+	m := New(e, cfg, nil)
 	m.Default(cfg)
 
 	e.GET("/y", func(c echo.Context) error { return c.NoContent(http.StatusOK) })

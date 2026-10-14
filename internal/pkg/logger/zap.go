@@ -1,19 +1,6 @@
-// Package logger provides structured logging initialization with Zap.
-//
-// This file contains the logger initialization logic that configures Zap
-// based on the application environment (development vs production).
-//
-// Production Configuration:
-// - JSON encoding for machine parsing
-// - Info level and above
-// - Stack traces on errors
-// - Caller information included
-//
-// Development Configuration:
-// - Console encoding with colors
-// - Debug level and above
-// - Stack traces on errors
-// - Caller information included
+// Package logger owns the zap backend. Dev uses colored console encoding at debug level,
+// prod uses JSON at info level. Request wide events are built by wlog and written
+// through the same zap core.
 package logger
 
 import (
@@ -21,50 +8,26 @@ import (
 
 	"go-echo-boilerplate/internal/config"
 
+	"github.com/jeremygprawira/wlog"
+	wlogzap "github.com/jeremygprawira/wlog/log/zap"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
-// Log is the raw zap.Logger instance.
-// Use logger.Instance (Logger interface) instead for better abstraction.
-var Log *zap.Logger
+// Initialize builds the zap backend, sets Instance for plain startup and shutdown lines,
+// and returns the wlog logger for request events, also set as wlog's default.
+func Initialize(configuration *config.Configuration) (*wlog.Logger, error) {
+	isProduction := configuration.IsProduction()
 
-// Initialize configures and initializes the global logger based on environment.
-// This should be called once at application startup.
-//
-// Environment-specific behavior:
-//   - Production: JSON encoding, Info level, optimized for log aggregation
-//   - Development: Console encoding with colors, Debug level, human-readable
-//
-// The initialized logger is available via:
-//   - logger.Instance (recommended - uses Logger interface)
-//   - logger.Log (raw zap.Logger - for advanced use cases)
-func Initialize(configuration *config.Configuration) {
 	var zapConfig zap.Config
-	var encoder zapcore.Encoder
-
-	// Configure based on environment
-	isProduction := configuration.Application.Environment == "prod" ||
-		configuration.Application.Environment == "production"
-
 	if isProduction {
-		// Production: JSON encoding for log aggregation systems
 		zapConfig = zap.NewProductionConfig()
-		zapConfig.Encoding = "json"
 		zapConfig.Level = zap.NewAtomicLevelAt(zapcore.InfoLevel)
-
-		encoder = zapcore.NewJSONEncoder(zapConfig.EncoderConfig)
 	} else {
-		// Development: Console encoding with colors for readability
 		zapConfig = zap.NewDevelopmentConfig()
-		zapConfig.Encoding = "console"
 		zapConfig.Level = zap.NewAtomicLevelAt(zapcore.DebugLevel)
 		zapConfig.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
-
-		encoder = zapcore.NewConsoleEncoder(zapConfig.EncoderConfig)
 	}
-
-	// Common configuration for all environments
 	zapConfig.EncoderConfig.TimeKey = "timestamp"
 	zapConfig.EncoderConfig.EncodeTime = zapcore.RFC3339NanoTimeEncoder
 	zapConfig.EncoderConfig.MessageKey = "message"
@@ -72,42 +35,36 @@ func Initialize(configuration *config.Configuration) {
 	zapConfig.EncoderConfig.CallerKey = "caller"
 	zapConfig.EncoderConfig.StacktraceKey = "stacktrace"
 
-	// Create core with configured encoder
-	core := zapcore.NewCore(
-		encoder,
-		zapcore.AddSync(os.Stdout),
-		zapConfig.Level,
-	)
-
-	// Build logger with options
-	Log = zap.New(
-		core,
-		zap.AddCaller(),      // Include caller information
-		zap.AddCallerSkip(1), // Skip ZapLogger wrapper → points to true call site
-		// zap.AddStacktrace is intentionally disabled: it captures the stack at
-		// log-emit time (inside emitWideEvent), not at the error/panic origin.
-		// The real panic stack is captured in ErrorContext.Stack via debug.Stack()
-		// inside the recover() block and emitted in the wide event under error.stack.
-	)
-
-	// Replace global zap logger (for libraries using zap.L())
-	zap.ReplaceGlobals(Log)
-
-	// Initialize the global Logger interface instance
-	Instance = NewZapLogger(Log)
-
-	// Log initialization message
-	if isProduction {
-		Log.Info("Logger initialized in production mode",
-			zap.String("environment", configuration.Application.Environment),
-			zap.String("encoding", "json"),
-			zap.String("level", "info"),
-		)
-	} else {
-		Log.Info("Logger initialized in development mode",
-			zap.String("environment", configuration.Application.Environment),
-			zap.String("encoding", "console"),
-			zap.String("level", "debug"),
-		)
+	newCore := func(encoderConfig zapcore.EncoderConfig) zapcore.Core {
+		encoder := zapcore.NewConsoleEncoder(encoderConfig)
+		if isProduction {
+			encoder = zapcore.NewJSONEncoder(encoderConfig)
+		}
+		return zapcore.NewCore(encoder, zapcore.AddSync(os.Stdout), zapConfig.Level)
 	}
+
+	base := zap.New(newCore(zapConfig.EncoderConfig), zap.AddCaller())
+	zap.ReplaceGlobals(base)
+	Instance = NewZapLogger(base.WithOptions(zap.AddCallerSkip(1)))
+
+	// A wide event carries its own timestamp, so the drain core omits zap's to avoid a
+	// duplicate key. A caller would always point at the drain, so it is left off too.
+	eventConfig := zapConfig.EncoderConfig
+	eventConfig.TimeKey = zapcore.OmitKey
+	wl, err := NewWlog(configuration, wlogzap.Drain(zap.New(newCore(eventConfig))))
+	if err != nil {
+		return nil, err
+	}
+	wlog.SetDefault(wl)
+
+	encoding := "console"
+	if isProduction {
+		encoding = "json"
+	}
+	base.Info("Logger initialized",
+		zap.String("environment", configuration.Application.Environment),
+		zap.String("encoding", encoding),
+		zap.String("log_level", zapConfig.Level.String()),
+	)
+	return wl, nil
 }

@@ -40,7 +40,7 @@ func TestRequestIDAvailableToLogger(t *testing.T) {
 // set on the response, not a separately generated one.
 func TestLoggingMiddleware_UsesRequestIDFromEchoMiddleware(t *testing.T) {
 	e := echo.New()
-	m := New(e, &config.Configuration{})
+	m := New(e, &config.Configuration{}, nil)
 	e.Use(echoMiddleware.RequestID())
 
 	var idAfterRequestIDMiddleware string

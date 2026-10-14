@@ -12,6 +12,7 @@ import (
 
 	_ "go-echo-boilerplate/docs"
 
+	"github.com/jeremygprawira/wlog"
 	"github.com/labstack/echo/v4"
 	echoSwagger "github.com/swaggo/echo-swagger"
 )
@@ -31,9 +32,9 @@ import (
 // @host localhost:8080
 // @BasePath /api
 // @schemes http https
-func New(eco *echo.Echo, service *service.Service, config *config.Configuration, jwtConfig *jwtc.Configuration, tokenStore tokenstore.TokenStore) {
+func New(eco *echo.Echo, service *service.Service, config *config.Configuration, jwtConfig *jwtc.Configuration, tokenStore tokenstore.TokenStore, wl *wlog.Logger) {
 	// Middleware for Recover and Logging
-	middleware := middleware.New(eco, config)
+	middleware := middleware.New(eco, config, wl)
 	middleware.Default(config)
 
 	eco.GET("/", func(ctx echo.Context) error {
