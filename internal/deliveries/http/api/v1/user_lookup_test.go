@@ -13,7 +13,6 @@ import (
 	"go-echo-boilerplate/internal/models"
 	"go-echo-boilerplate/internal/pkg/generator"
 	"go-echo-boilerplate/internal/pkg/jwtc"
-	"go-echo-boilerplate/internal/pkg/tokenstore"
 	"go-echo-boilerplate/internal/repository"
 	"go-echo-boilerplate/internal/repository/pgsql"
 	"go-echo-boilerplate/internal/service"
@@ -47,7 +46,7 @@ func newRealRepoServer(t *testing.T) (*echo.Echo, sqlmock.Sqlmock, *jwtc.Configu
 		JWTConfig:  jwtConfig,
 	})
 	e := newEcho()
-	v1.NewUserV1(e.Group("/v1"), svc, nil, jwtConfig, tokenstore.NewNoopStore())
+	v1.NewUserV1(e.Group("/v1"), svc, nil, jwtConfig, notRevoked{})
 	return e, mock, jwtConfig
 }
 
