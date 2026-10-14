@@ -8,6 +8,9 @@ application:
   timeout:
   timezone: "Asia/Jakarta"
   max_body_size: 1M
+  # CIDRs of reverse proxies whose X-Forwarded-For is trusted, e.g. ["10.0.0.0/8"].
+  # Leave empty when clients connect directly.
+  trusted_proxies: []
 postgresql:
   name:
   user:

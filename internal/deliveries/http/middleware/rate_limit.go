@@ -86,17 +86,9 @@ func (s *rateLimiterStore) evictLoop() {
 // well-behaved client can back off before being rejected, and a 429 carries
 // Retry-After computed from the token bucket's actual refill delay.
 //
-// Security assumption: this relies on Echo's default identifier extractor,
-// which keys off c.RealIP() and, absent a configured echo.IPExtractor, trusts
-// client-supplied X-Forwarded-For / X-Real-IP headers. That means the limiter
-// is only effective when the app runs behind a proxy/load balancer that
-// terminates client connections and sets X-Forwarded-For / X-Real-IP itself,
-// stripping any value the client tried to supply. Deployed directly
-// internet-facing (no trusted proxy in front), a client can rotate these
-// headers per request to obtain a fresh rate-limit bucket each time,
-// defeating this protection. If that's the deployment topology, configure a
-// trusted-proxy echo.IPExtractor (e.g. echo.ExtractIPFromXFFHeader with an
-// explicit trusted CIDR list) before relying on this limiter.
+// The client identity is c.RealIP(). core.BuildHTTPServer sets e.IPExtractor
+// from application.trusted_proxies, so a client cannot pick its own bucket by
+// sending X-Forwarded-For or X-Real-IP.
 func RateLimiter(cfg *appconfig.Configuration) echo.MiddlewareFunc {
 	if cfg == nil || !cfg.RateLimit.Enabled {
 		return func(next echo.HandlerFunc) echo.HandlerFunc {

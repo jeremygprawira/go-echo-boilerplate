@@ -69,3 +69,12 @@ func TestValidate_NonPositiveRateLimitBurst(t *testing.T) {
 	c.RateLimit.Burst = 0
 	require.Error(t, c.Validate())
 }
+
+func TestValidate_TrustedProxies(t *testing.T) {
+	c := validCfg()
+	c.Application.TrustedProxies = []string{"10.0.0.0/8", "2001:db8::/32"}
+	require.NoError(t, c.Validate())
+
+	c.Application.TrustedProxies = []string{"10.0.0.1"}
+	require.Error(t, c.Validate())
+}

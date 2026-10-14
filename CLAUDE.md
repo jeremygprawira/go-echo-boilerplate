@@ -28,6 +28,7 @@ Notes:
 - The `ENV` env var selects the config file: `config/config.<env>.yaml`, loaded via Viper (`internal/config/config.go`). `make run` fails if the file is missing.
 - Swagger docs are a generated Go package (`docs/docs.go`) imported by the router (`_ "go-echo-boilerplate/docs"`). After changing handler `@` annotations, run `make docs` or the build serves stale docs.
 - Migrations use goose against `migration/db/postgre`; the Makefile exports `.env` before running.
+- `application.trusted_proxies` (list of CIDRs, default empty) sets `e.IPExtractor` in `core.BuildHTTPServer`. Empty means `c.RealIP()` is the TCP peer. Otherwise it is the rightmost `X-Forwarded-For` entry not inside a listed proxy range. The rate limiter keys on it.
 
 ## Architecture
 

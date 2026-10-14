@@ -21,6 +21,10 @@ type (
 		Timeout     int    `mapstructure:"timeout"`
 		Timezone    string `mapstructure:"timezone"`
 		MaxBodySize string `mapstructure:"max_body_size"`
+		// TrustedProxies lists the CIDRs of reverse proxies whose
+		// X-Forwarded-For entries are believed. Empty means clients connect
+		// directly and the TCP peer address identifies them.
+		TrustedProxies []string `mapstructure:"trusted_proxies"`
 	}
 
 	CORS struct {

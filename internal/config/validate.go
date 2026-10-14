@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"time"
 )
 
@@ -44,6 +45,12 @@ func (c *Configuration) Validate() error {
 	}
 	if c.RateLimit.Burst <= 0 {
 		errs = append(errs, errors.New("rate_limit.burst must be greater than 0"))
+	}
+
+	for _, cidr := range c.Application.TrustedProxies {
+		if _, _, err := net.ParseCIDR(cidr); err != nil {
+			errs = append(errs, fmt.Errorf("application.trusted_proxies entry %q is not a CIDR: %w", cidr, err))
+		}
 	}
 
 	return errors.Join(errs...)
