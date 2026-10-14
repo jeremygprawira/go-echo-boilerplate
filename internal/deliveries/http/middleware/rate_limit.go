@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"container/list"
 	"net"
 	"net/http"
 	"strconv"
@@ -14,13 +15,14 @@ import (
 )
 
 // rateLimiterMaxVisitors caps the store. When it is full, the least recently
-// seen identifier is evicted to make room, so a flood of new clients costs
-// fixed memory instead of growing without bound.
+// seen identifier is evicted and the new one admitted, so a flood of new
+// clients costs fixed memory and never locks out a legitimate client.
 const rateLimiterMaxVisitors = 10_000
 
 // rateLimiterVisitor pairs a per-identifier token-bucket limiter with the
 // last time it was touched, so idle identifiers can be evicted.
 type rateLimiterVisitor struct {
+	id       string
 	limiter  *rate.Limiter
 	lastSeen time.Time
 }
@@ -30,9 +32,14 @@ type rateLimiterVisitor struct {
 // because that store doesn't expose the underlying limiter, and reporting
 // X-RateLimit-Remaining requires reading it. Swap this for a distributed
 // store when running multiple instances.
+//
+// lru orders visitors by lastSeen, most recent at the front, so both the
+// cap eviction and the idle sweep take the oldest entries from the back
+// without scanning the map.
 type rateLimiterStore struct {
 	mu        sync.Mutex
-	visitors  map[string]*rateLimiterVisitor
+	visitors  map[string]*list.Element
+	lru       *list.List
 	rateLimit rate.Limit
 	burst     int
 	expiresIn time.Duration
@@ -41,7 +48,8 @@ type rateLimiterStore struct {
 
 func newRateLimiterStore(r rate.Limit, burst int, expiresIn time.Duration) *rateLimiterStore {
 	s := &rateLimiterStore{
-		visitors:  make(map[string]*rateLimiterVisitor),
+		visitors:  make(map[string]*list.Element),
+		lru:       list.New(),
 		rateLimit: r,
 		burst:     burst,
 		expiresIn: expiresIn,
@@ -55,30 +63,24 @@ func (s *rateLimiterStore) getLimiter(identifier string) *rate.Limiter {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	v, ok := s.visitors[identifier]
-	if !ok {
-		if len(s.visitors) >= s.max {
-			s.evictOldestLocked()
-		}
-		v = &rateLimiterVisitor{limiter: rate.NewLimiter(s.rateLimit, s.burst)}
-		s.visitors[identifier] = v
+	if el, ok := s.visitors[identifier]; ok {
+		v := el.Value.(*rateLimiterVisitor)
+		v.lastSeen = time.Now()
+		s.lru.MoveToFront(el)
+		return v.limiter
 	}
-	v.lastSeen = time.Now()
+
+	if s.lru.Len() >= s.max {
+		s.removeLocked(s.lru.Back())
+	}
+	v := &rateLimiterVisitor{id: identifier, limiter: rate.NewLimiter(s.rateLimit, s.burst), lastSeen: time.Now()}
+	s.visitors[identifier] = s.lru.PushFront(v)
 	return v.limiter
 }
 
-// evictOldestLocked drops the least recently seen identifier. Caller holds mu.
-// ponytail: linear scan, only when the store is full; use an LRU list if
-// floods at the cap ever show up in profiles.
-func (s *rateLimiterStore) evictOldestLocked() {
-	var oldestID string
-	var oldest time.Time
-	for id, v := range s.visitors {
-		if oldestID == "" || v.lastSeen.Before(oldest) {
-			oldestID, oldest = id, v.lastSeen
-		}
-	}
-	delete(s.visitors, oldestID)
+func (s *rateLimiterStore) removeLocked(el *list.Element) {
+	delete(s.visitors, el.Value.(*rateLimiterVisitor).id)
+	s.lru.Remove(el)
 }
 
 // clientIP returns c.RealIP() when it is an IP address. Anything else, such as
@@ -103,10 +105,8 @@ func (s *rateLimiterStore) evictLoop() {
 	for range ticker.C {
 		cutoff := time.Now().Add(-s.expiresIn)
 		s.mu.Lock()
-		for id, v := range s.visitors {
-			if v.lastSeen.Before(cutoff) {
-				delete(s.visitors, id)
-			}
+		for el := s.lru.Back(); el != nil && el.Value.(*rateLimiterVisitor).lastSeen.Before(cutoff); el = s.lru.Back() {
+			s.removeLocked(el)
 		}
 		s.mu.Unlock()
 	}

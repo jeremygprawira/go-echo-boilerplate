@@ -58,3 +58,40 @@ func TestRateLimiterStore_EvictsLeastRecentlySeen(t *testing.T) {
 	require.NotContains(t, store.visitors, "192.0.2.2")
 	require.Contains(t, store.visitors, "192.0.2.1")
 }
+
+func TestRateLimiterStore_FullStoreAdmitsNewIdentifier(t *testing.T) {
+	store := newRateLimiterStore(1, 1, time.Minute)
+	store.max = 2
+	store.getLimiter("192.0.2.1")
+	store.getLimiter("192.0.2.2")
+
+	require.True(t, store.getLimiter("192.0.2.3").Allow(), "a new client is admitted, not refused, when the store is full")
+	require.Len(t, store.visitors, 2)
+	require.Contains(t, store.visitors, "192.0.2.3")
+}
+
+func TestRateLimiterStore_EvictedIdentifierStartsFresh(t *testing.T) {
+	store := newRateLimiterStore(0.001, 1, time.Minute)
+	store.max = 1
+	require.True(t, store.getLimiter("192.0.2.1").Allow())
+	require.False(t, store.getLimiter("192.0.2.1").Allow(), "bucket spent")
+
+	store.getLimiter("192.0.2.2")
+	require.True(t, store.getLimiter("192.0.2.1").Allow(), "an evicted client gets a fresh bucket")
+}
+
+// At the cap every new identifier evicts one. With a full-map scan per
+// eviction this loop does about 10^9 comparisons under the lock; with an
+// O(1) eviction it finishes in milliseconds.
+func TestRateLimiterStore_EvictionAtCapIsConstantTime(t *testing.T) {
+	store := newRateLimiterStore(1, 1, time.Minute)
+	for i := 0; i < rateLimiterMaxVisitors; i++ {
+		store.getLimiter(fmt.Sprintf("10.0.%d.%d", i>>8, i&0xff))
+	}
+	start := time.Now()
+	for i := 0; i < 100_000; i++ {
+		store.getLimiter(fmt.Sprintf("10.1.%d.%d", i>>8, i&0xff))
+	}
+	require.Less(t, time.Since(start), 3*time.Second)
+	require.Len(t, store.visitors, rateLimiterMaxVisitors)
+}
