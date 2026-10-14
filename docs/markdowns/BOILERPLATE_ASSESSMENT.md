@@ -16,6 +16,7 @@ The following were flagged in earlier reviews and are now fixed in the codebase:
 - **Weak or placeholder secrets.** `Config.Validate` rejects an access secret, refresh secret or API key shorter than 32 bytes or containing `replace-with-`, so the example config cannot start unchanged.
 - **Missing baseline protections.** Rate limiting (`middleware.RateLimiter`), body size limit, `middleware.Secure()`, per-request context timeout, and Swagger gated off in prod are all in place (`internal/deliveries/http/middleware/default.go`, `router.go`).
 - **SQL with bound values in logs.** The GORM logger is silent when `config.IsProduction()` holds, and elsewhere logs statements with placeholders only (`ParameterizedQueries`), so password hashes and PII stay out of stdout (`internal/pkg/database/postgre_database.go`).
+- **Health check disclosure.** `GET /health` is anonymous. When PostgreSQL is down it now answers 503 with a generic "PostgreSQL is unreachable" instead of 200 with the raw driver error (role, database, host).
 - **bcrypt truncation.** Passwords are rejected above bcrypt's 72-byte limit (`internal/pkg/validator/password_length.go`, `internal/pkg/generator/hash.go`).
 - **No Dockerfile/CI.** Both exist (`Dockerfile`, `builds/Dockerfile`, `.github/workflows/ci.yml`).
 - **Repository ports coupling.** Services depend on `repository.UserRepository`/`HealthRepository` interfaces, not a concrete `Postgre.User` field; `pgsql` is the sole adapter today.

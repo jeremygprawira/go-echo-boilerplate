@@ -405,10 +405,17 @@ paths:
                     $ref: '#/definitions/models.HealthDetailResponse'
                   type: array
               type: object
-        "500":
-          description: Internal Server Error
+        "503":
+          description: A dependency is unreachable
           schema:
-            $ref: '#/definitions/models.Response'
+            allOf:
+            - $ref: '#/definitions/models.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/models.HealthDetailResponse'
+                  type: array
+              type: object
       summary: Check health status
       tags:
       - Health

@@ -73,9 +73,13 @@ func SuccessList(ctx echo.Context, code int, message string, data interface{}) e
 		})
 	}
 
-	return ctx.JSON(http.StatusOK, models.Response{
+	status := "OK"
+	if code >= http.StatusBadRequest {
+		status = "ERROR"
+	}
+	return ctx.JSON(code, models.Response{
 		Code:    code,
-		Status:  "OK",
+		Status:  status,
 		Message: message,
 		Data:    data,
 		Metadata: models.Metadata{

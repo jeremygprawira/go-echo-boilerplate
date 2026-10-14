@@ -28,7 +28,7 @@ func New(api *echo.Group, service *service.Service) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} models.Response{data=[]models.HealthDetailResponse}
-// @Failure 500 {object} models.Response
+// @Failure 503 {object} models.Response{data=[]models.HealthDetailResponse} "A dependency is unreachable"
 // @Router /health [get]
 func (h *healthHandler) Check(ctx echo.Context) error {
 	health, err := h.service.Health.Check(ctx.Request().Context())
@@ -36,5 +36,9 @@ func (h *healthHandler) Check(ctx echo.Context) error {
 		return err
 	}
 
-	return response.SuccessList(ctx, http.StatusOK, health.Description, health.Dependencies)
+	code := http.StatusOK
+	if !health.Healthy {
+		code = http.StatusServiceUnavailable
+	}
+	return response.SuccessList(ctx, code, health.Description, health.Dependencies)
 }

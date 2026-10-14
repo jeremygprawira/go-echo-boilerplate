@@ -38,6 +38,7 @@ func TestHealthService_Check(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.Equal(t, "Service is healthy", resp.Description)
+		assert.True(t, resp.Healthy)
 		assert.Len(t, resp.Dependencies, 1) // Expecting Postgre result
 		assert.Equal(t, "OK", resp.Dependencies[0].Status)
 
@@ -58,11 +59,11 @@ func TestHealthService_Check(t *testing.T) {
 		resp, err := svc.Check(context.Background())
 
 		assert.NoError(t, err)
-		assert.Equal(t, "Service is healthy", resp.Description) // Service itself is "healthy" in that it responded, but deps might be down? Actually code says "Service is healthy" always.
-		// Let's check dependencies
+		assert.Equal(t, "Service is unhealthy", resp.Description)
+		assert.False(t, resp.Healthy)
 		assert.Len(t, resp.Dependencies, 1)
 		assert.Equal(t, "ERROR", resp.Dependencies[0].Status)
-		assert.Contains(t, resp.Dependencies[0].Description, "connection refused")
+		assert.Equal(t, "PostgreSQL is unreachable", resp.Dependencies[0].Description)
 
 		mockRepo.AssertExpectations(t)
 	})
