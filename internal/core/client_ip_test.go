@@ -8,6 +8,7 @@ import (
 	"go-echo-boilerplate/internal/config"
 	"go-echo-boilerplate/internal/deliveries/http/middleware"
 	"go-echo-boilerplate/internal/pkg/logger"
+	"go-echo-boilerplate/internal/service"
 
 	wlogzap "github.com/jeremygprawira/wlog/log/zap"
 	"github.com/labstack/echo/v4"
@@ -25,7 +26,7 @@ func limitedServer(t *testing.T, mutate func(*config.Configuration)) *echo.Echo 
 	}
 	log, err := logger.NewWlog(cfg, wlogzap.Drain(zap.NewNop()))
 	require.NoError(t, err)
-	e := BuildHTTPServer(&Dependencies{Config: cfg, Log: log})
+	e := BuildHTTPServer(&Dependencies{Service: &service.Service{}, Config: cfg, Log: log})
 	e.POST("/probe", func(c echo.Context) error { return c.NoContent(http.StatusOK) }, middleware.RateLimiter(cfg))
 	return e
 }

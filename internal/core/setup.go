@@ -8,7 +8,6 @@ import (
 	"go-echo-boilerplate/internal/pkg/graceful"
 	"go-echo-boilerplate/internal/pkg/jwtc"
 	"go-echo-boilerplate/internal/pkg/logger"
-	"go-echo-boilerplate/internal/pkg/tokenstore"
 	"go-echo-boilerplate/internal/repository"
 	"go-echo-boilerplate/internal/service"
 	"net"
@@ -19,11 +18,10 @@ import (
 )
 
 type Dependencies struct {
-	DB         *database.Database
-	Service    *service.Service
-	Config     *config.Configuration
-	JWTConfig  *jwtc.Configuration
-	TokenStore tokenstore.TokenStore
+	DB        *database.Database
+	Service   *service.Service
+	Config    *config.Configuration
+	JWTConfig *jwtc.Configuration
 	// TokenPurge purges expired revocations until graceful shutdown.
 	TokenPurge graceful.Process
 	Log        *wlog.Logger
@@ -44,12 +42,10 @@ func BuildDependencies(configuration *config.Configuration) (*Dependencies, erro
 	jwtConfig := jwtc.DefaultConfig(configuration)
 
 	repo := repository.New(db)
-	store := tokenstore.NewDBStore(repo.RevokedToken)
 	svc := service.New(service.Dependencies{
 		Repository: *repo,
 		Config:     configuration,
 		JWTConfig:  jwtConfig,
-		TokenStore: store,
 	})
 
 	sqlDB, err := db.PostgreDatabase.DB()
@@ -63,8 +59,7 @@ func BuildDependencies(configuration *config.Configuration) (*Dependencies, erro
 		Service:    svc,
 		Config:     configuration,
 		JWTConfig:  jwtConfig,
-		TokenStore: store,
-		TokenPurge: store,
+		TokenPurge: svc.Token,
 		Log:        log,
 	}, nil
 }
@@ -84,7 +79,7 @@ func BuildHTTPServer(deps *Dependencies) *echo.Echo {
 	e.Server.WriteTimeout, _ = time.ParseDuration(app.WriteTimeout)
 	e.Server.IdleTimeout, _ = time.ParseDuration(app.IdleTimeout)
 
-	handler.New(e, deps.Service, deps.Config, deps.JWTConfig, deps.TokenStore, deps.Log)
+	handler.New(e, deps.Service, deps.Config, deps.JWTConfig, deps.Service.Token, deps.Log)
 	return e
 }
 

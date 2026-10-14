@@ -226,7 +226,7 @@ func (us *userService) RefreshTokens(ctx context.Context, refreshToken string) (
 		return nil, errorc.Unauthorized.New().Public(herr.Message("invalid refresh token")).Wrap(err)
 	}
 
-	claimed, err := us.d.TokenStore.Claim(ctx, claims.ID, us.d.JWTConfig.RefreshTokenDuration)
+	claimed, err := revoke(ctx, us.d, claims.ID, us.d.JWTConfig.RefreshTokenDuration)
 	if err != nil {
 		return nil, errorc.Internal.New().Internal("failed to revoke refresh token").Wrap(err)
 	}
@@ -249,14 +249,14 @@ func (us *userService) RefreshTokens(ctx context.Context, refreshToken string) (
 // ignored: it cannot be used anyway, and logout must stay idempotent.
 func (us *userService) Logout(ctx context.Context, accessJTI string, refreshToken string) error {
 	if accessJTI != "" {
-		if err := us.d.TokenStore.Revoke(ctx, accessJTI, us.d.JWTConfig.AccessTokenDuration); err != nil {
+		if _, err := revoke(ctx, us.d, accessJTI, us.d.JWTConfig.AccessTokenDuration); err != nil {
 			return errorc.Internal.New().Internal("failed to revoke access token").Wrap(err)
 		}
 	}
 
 	if refreshToken != "" {
 		if claims, err := validator.RefreshToken(refreshToken, us.d.JWTConfig); err == nil {
-			if err := us.d.TokenStore.Revoke(ctx, claims.ID, us.d.JWTConfig.RefreshTokenDuration); err != nil {
+			if _, err := revoke(ctx, us.d, claims.ID, us.d.JWTConfig.RefreshTokenDuration); err != nil {
 				return errorc.Internal.New().Internal("failed to revoke refresh token").Wrap(err)
 			}
 		}

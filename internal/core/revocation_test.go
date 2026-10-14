@@ -15,7 +15,6 @@ import (
 	"go-echo-boilerplate/internal/pkg/generator"
 	"go-echo-boilerplate/internal/pkg/jwtc"
 	"go-echo-boilerplate/internal/pkg/logger"
-	"go-echo-boilerplate/internal/pkg/tokenstore"
 	"go-echo-boilerplate/internal/repository"
 	"go-echo-boilerplate/internal/service"
 
@@ -114,18 +113,16 @@ func revocationTestServerWithGate(t *testing.T, g *gate) http.Handler {
 	email := "user@example.test"
 	users := &fakeUsers{user: &models.User{ID: 7, AccountNumber: "100", Name: "U", Email: &email, Password: hash}, gate: g}
 
-	store := tokenstore.NewDBStore(&memRevoked{rows: map[string]time.Time{}})
 	jwtConfig := jwtc.DefaultConfig(cfg)
 	svc := service.New(service.Dependencies{
-		Repository: repository.Repository{User: users},
+		Repository: repository.Repository{User: users, RevokedToken: &memRevoked{rows: map[string]time.Time{}}},
 		Config:     cfg,
 		JWTConfig:  jwtConfig,
-		TokenStore: store,
 	})
 	log, err := logger.NewWlog(cfg, wlogzap.Drain(zap.NewNop()))
 	require.NoError(t, err)
 
-	return BuildHTTPServer(&Dependencies{Service: svc, Config: cfg, JWTConfig: jwtConfig, TokenStore: store, Log: log})
+	return BuildHTTPServer(&Dependencies{Service: svc, Config: cfg, JWTConfig: jwtConfig, Log: log})
 }
 
 func call(t *testing.T, h http.Handler, method, path, bearer string, body any, headers ...string) (int, map[string]any) {

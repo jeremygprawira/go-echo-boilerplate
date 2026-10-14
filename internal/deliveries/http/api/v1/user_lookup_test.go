@@ -45,7 +45,6 @@ func newRealRepoServer(t *testing.T) (*echo.Echo, sqlmock.Sqlmock, *jwtc.Configu
 	svc := service.New(service.Dependencies{
 		Repository: repository.Repository{User: pgsql.NewUserRepository(gdb)},
 		JWTConfig:  jwtConfig,
-		TokenStore: tokenstore.NewNoopStore(),
 	})
 	e := newEcho()
 	v1.NewUserV1(e.Group("/v1"), svc, nil, jwtConfig, tokenstore.NewNoopStore())
