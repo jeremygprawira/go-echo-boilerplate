@@ -9,6 +9,7 @@ import (
 
 func validCfg() *Configuration {
 	c := &Configuration{}
+	c.Application.Environment = "local"
 	c.Authorization.Access = TokenConfiguration{Secret: "access-secret-0123456789abcdef0123456789", Duration: "15m"}
 	c.Authorization.Refresh = TokenConfiguration{Secret: "refresh-secret-0123456789abcdef012345678", Duration: "168h"}
 	c.Authorization.APIKey = "api-key-0123456789abcdef0123456789abcdef"

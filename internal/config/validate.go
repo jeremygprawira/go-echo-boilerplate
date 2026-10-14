@@ -21,6 +21,10 @@ const placeholderMarker = "replace-with-"
 func (c *Configuration) Validate() error {
 	var errs []error
 
+	if !environments[c.environment()] {
+		errs = append(errs, fmt.Errorf("application.environment %q must be one of local, dev, uat, staging, prod, production", c.Application.Environment))
+	}
+
 	if c.Authorization.Access.Secret == "" {
 		errs = append(errs, errors.New("authorization.access.secret must not be empty"))
 	}

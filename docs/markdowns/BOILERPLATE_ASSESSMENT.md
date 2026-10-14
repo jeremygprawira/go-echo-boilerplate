@@ -18,6 +18,7 @@ The following were flagged in earlier reviews and are now fixed in the codebase:
 - **SQL with bound values in logs.** The GORM logger is silent when `config.IsProduction()` holds, and elsewhere logs statements with placeholders only (`ParameterizedQueries`), so password hashes and PII stay out of stdout (`internal/pkg/database/postgre_database.go`).
 - **Health check disclosure.** `GET /health` is anonymous. When PostgreSQL is down it now answers 503 with a generic "PostgreSQL is unreachable" instead of 200 with the raw driver error (role, database, host).
 - **No HTTP server timeouts.** `core.BuildHTTPServer` sets `ReadHeaderTimeout`, `ReadTimeout`, `WriteTimeout` and `IdleTimeout` from `application.*_timeout` (defaults 5s/15s/30s/60s), so a slow or idle client cannot hold a connection open before any auth runs.
+- **Production gating fails open.** `IsProduction()` normalizes case and space, and `Validate` rejects an empty or unknown `application.environment`, so a typo cannot leave `/docs` and debug logging on in production.
 - **bcrypt truncation.** Passwords are rejected above bcrypt's 72-byte limit (`internal/pkg/validator/password_length.go`, `internal/pkg/generator/hash.go`).
 - **No Dockerfile/CI.** Both exist (`Dockerfile`, `builds/Dockerfile`, `.github/workflows/ci.yml`).
 - **Repository ports coupling.** Services depend on `repository.UserRepository`/`HealthRepository` interfaces, not a concrete `Postgre.User` field; `pgsql` is the sole adapter today.

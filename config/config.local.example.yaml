@@ -3,7 +3,7 @@ application:
   name:
   port:
   version: 
-  environment: 
+  environment: local # one of local, dev, uat, staging, prod, production
   host: 
   timeout:
   timezone: "Asia/Jakarta"
