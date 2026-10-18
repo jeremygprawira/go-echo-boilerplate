@@ -286,6 +286,26 @@ func TestMe_ReturnsTheCreatedAtThatRegisterReturned(t *testing.T) {
 		"/me returns the instant that register returned, with application.timezone Asia/Jakarta")
 }
 
+func TestSoftDeletedUser_CannotLogInReadMeOrRefresh(t *testing.T) {
+	mail := email(t)
+	register(t, mail)
+	access, refresh := login(t, mail)
+
+	_, err := db.Exec("UPDATE users SET deleted_at = now() WHERE email = $1", mail)
+	require.NoError(t, err)
+
+	unknownCode, unknown := post(t, "/api/v1/users/tokens", "", map[string]any{"email": email(t), "password": password})
+	code, out := post(t, "/api/v1/users/tokens", "", map[string]any{"email": mail, "password": password})
+	assert.Equal(t, http.StatusUnauthorized, code, "login for a soft-deleted user")
+	assert.Equal(t, unknownCode, code, "a soft-deleted user logs in like an unknown account")
+	assert.Equal(t, unknown.ErrorCode, out.ErrorCode, "a soft-deleted user has the unknown-account error code")
+
+	code, _ = do(t, http.MethodGet, "/api/v1/users/me", access, nil)
+	assert.Equal(t, http.StatusNotFound, code, "/me with a token issued before the soft delete")
+	code, _ = post(t, "/api/v1/users/tokens/refresh", "", map[string]any{"refreshToken": refresh})
+	assert.Equal(t, http.StatusUnauthorized, code, "refresh for a soft-deleted user")
+}
+
 // TestSetup_RefusesDatabasesNotNamedTest points the setup at a database with
 // a marker table through each DSN form that names it, then checks the marker
 // survived.
