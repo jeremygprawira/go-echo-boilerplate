@@ -14,14 +14,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// Setup is the composition root. It builds one Store, every service on it, and
-// the HTTP server over those services. It returns the server and the token
-// purge loop for graceful to run.
-//
-// A feature is wired by one argument to NewServer. A store or service method
-// that a consumer's interface asks for and nobody provides fails to compile
-// here.
-func Setup(cfg *config.Configuration) (*echo.Echo, graceful.Process, error) {
+func Setup(cfg *config.Configuration) (server *echo.Echo, tokenPurge graceful.Process, err error) {
 	log, err := logger.Initialize(cfg)
 	if err != nil {
 		return nil, nil, err

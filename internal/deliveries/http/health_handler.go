@@ -9,7 +9,6 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// healthService is what GET /health needs. *service.HealthService satisfies it.
 type healthService interface {
 	Check(ctx context.Context) (*models.HealthResponse, error)
 }

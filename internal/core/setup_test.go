@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Setup must fail cleanly (not panic) when the DB cannot be reached.
 func TestSetup_BadDBReturnsError(t *testing.T) {
 	cfg := &config.Configuration{}
 	cfg.PostgreSQL.Host = "127.0.0.1"

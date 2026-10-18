@@ -7,7 +7,6 @@ import (
 
 const tokenPurgeInterval = time.Hour
 
-// tokenStore is the storage TokenService needs. *repository.Store satisfies it.
 type tokenStore interface {
 	IsTokenRevoked(ctx context.Context, jti string, now time.Time) (bool, error)
 	PurgeExpiredTokens(ctx context.Context, now time.Time) error

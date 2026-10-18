@@ -9,7 +9,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// SignAccessToken signs a short-lived access token for user.
 func SignAccessToken(user *models.User, config *Configuration) (*models.Token, error) {
 	if config == nil {
 		return nil, fmt.Errorf("jwt configuration is required")
@@ -54,8 +53,6 @@ func SignAccessToken(user *models.User, config *Configuration) (*models.Token, e
 	}, nil
 }
 
-// SignRefreshToken signs a long-lived refresh token for user. It is used only
-// to get a new access token.
 func SignRefreshToken(user *models.User, config *Configuration) (*models.Token, error) {
 	if config == nil {
 		return nil, fmt.Errorf("jwt configuration is required")

@@ -14,7 +14,6 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// userService is what the user routes need. *service.UserService satisfies it.
 type userService interface {
 	Create(ctx context.Context, request *models.CreateUserRequest) (*models.User, error)
 	GetTokens(ctx context.Context, request *models.GetUserTokenRequest) (*models.GetUserTokenResponse, error)
@@ -32,8 +31,6 @@ func userRoutes(users userService) []route {
 	return []route{
 		{method: http.MethodPost, path: "/v1/users", public: h.Create, rateLimited: true, idempotent: true},
 		{method: http.MethodPost, path: "/v1/users/tokens", public: h.GetTokens, rateLimited: true},
-		// Not idempotent: a cached replay would skip the revocation check and
-		// hand out the tokens from an already rotated refresh token.
 		{method: http.MethodPost, path: "/v1/users/tokens/refresh", public: h.RefreshTokens, rateLimited: true},
 		{method: http.MethodGet, path: "/v1/users/me", bearer: h.GetUserByAccessToken},
 		{method: http.MethodPost, path: "/v1/users/logout", bearer: h.Logout},

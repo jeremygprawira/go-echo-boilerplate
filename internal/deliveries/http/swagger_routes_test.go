@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// undocumentedRoutes are served but kept out of the API docs on purpose.
 var undocumentedRoutes = map[string]bool{
 	"GET /":          true,
 	"GET /docs":      true,

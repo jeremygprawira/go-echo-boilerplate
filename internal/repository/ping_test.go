@@ -37,7 +37,6 @@ func TestHealthCheck(t *testing.T) {
 		repo, mock, teardown := setup(t)
 		defer teardown()
 
-		// Expect the Ping from repo.Ping
 		mock.ExpectPing()
 
 		err := repo.Ping(context.Background())
@@ -50,7 +49,6 @@ func TestHealthCheck(t *testing.T) {
 		repo, mock, teardown := setup(t)
 		defer teardown()
 
-		// Expect the Ping from repo.Ping to fail
 		mock.ExpectPing().WillReturnError(errors.New("db down"))
 
 		err := repo.Ping(context.Background())

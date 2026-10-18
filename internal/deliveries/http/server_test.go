@@ -44,9 +44,6 @@ func testJWT() *jwtc.Configuration {
 	}
 }
 
-// testServer builds the real server for a test. Unset fields get test
-// defaults. A nil service leaves its routes mounted but unusable, so a test
-// sets only the services it calls.
 type testServer struct {
 	cfg        *config.Configuration
 	jwt        *jwtc.Configuration
@@ -71,8 +68,6 @@ func (s testServer) build(t *testing.T) *echo.Echo {
 	return NewServer(s.cfg, log, s.jwt, s.revocation, s.health, s.users)
 }
 
-// withAPIKey sends the API key on every request, since every /api route
-// requires it.
 func withAPIKey(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.Header.Set("X-API-Key", testAPIKey)

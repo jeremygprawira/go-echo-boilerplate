@@ -15,13 +15,11 @@ import (
 	"gorm.io/gorm"
 )
 
-func newMockStore(t *testing.T) (*repository.Store, sqlmock.Sqlmock) {
+func newSingleConnStore(t *testing.T) (*repository.Store, sqlmock.Sqlmock) {
 	t.Helper()
 	sqlDB, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	// One connection: while a transaction holds it, a query that bypasses the
-	// transaction cannot run, so it fails instead of passing unnoticed.
 	sqlDB.SetMaxOpenConns(1)
 	gdb, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{})
 	require.NoError(t, err)
@@ -29,7 +27,7 @@ func newMockStore(t *testing.T) (*repository.Store, sqlmock.Sqlmock) {
 }
 
 func TestAtomic_CommitsWritesMadeThroughTheTransaction(t *testing.T) {
-	s, mock := newMockStore(t)
+	s, mock := newSingleConnStore(t)
 	mock.ExpectBegin()
 	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO revoked_tokens")).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
@@ -45,7 +43,7 @@ func TestAtomic_CommitsWritesMadeThroughTheTransaction(t *testing.T) {
 }
 
 func TestAtomic_RollsBackOnError(t *testing.T) {
-	s, mock := newMockStore(t)
+	s, mock := newSingleConnStore(t)
 	mock.ExpectBegin()
 	mock.ExpectRollback()
 
@@ -55,7 +53,7 @@ func TestAtomic_RollsBackOnError(t *testing.T) {
 }
 
 func TestAtomic_RollsBackOnPanic(t *testing.T) {
-	s, mock := newMockStore(t)
+	s, mock := newSingleConnStore(t)
 	mock.ExpectBegin()
 	mock.ExpectRollback()
 

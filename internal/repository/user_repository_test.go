@@ -106,7 +106,7 @@ func TestCheckByEmailOrPhoneNumber(t *testing.T) {
 		"db error":   {err: errors.New("db error"), wantErr: true},
 	} {
 		t.Run(name, func(t *testing.T) {
-			s, mock := newMockStore(t)
+			s, mock := newSingleConnStore(t)
 			q := mock.ExpectQuery(regexp.QuoteMeta(`SELECT EXISTS`)).WithArgs(email, phone)
 			if tc.err != nil {
 				q.WillReturnError(tc.err)
@@ -122,9 +122,7 @@ func TestCheckByEmailOrPhoneNumber(t *testing.T) {
 	}
 }
 
-// sqlmock cannot run SQL, so this pins the filter that keeps a soft-deleted
-// row out of every lookup that returns a user.
-func TestUserLookups_SkipSoftDeletedUsers(t *testing.T) {
+func TestUserLookups_QueryFiltersDeletedAt(t *testing.T) {
 	ctx := context.Background()
 	for name, lookup := range map[string]func(*repository.Store) (*models.User, error){
 		"UserCredentials":     func(s *repository.Store) (*models.User, error) { return s.UserCredentials(ctx, "gone@example.com", "") },
@@ -132,7 +130,7 @@ func TestUserLookups_SkipSoftDeletedUsers(t *testing.T) {
 		"UserByID":            func(s *repository.Store) (*models.User, error) { return s.UserByID(ctx, 1) },
 	} {
 		t.Run(name, func(t *testing.T) {
-			s, mock := newMockStore(t)
+			s, mock := newSingleConnStore(t)
 			mock.ExpectQuery(`FROM users\s+WHERE deleted_at IS NULL AND`).WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
 			user, err := lookup(s)

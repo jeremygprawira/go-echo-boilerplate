@@ -1,7 +1,3 @@
-// Package repository is the PostgreSQL storage layer. Store is its only type:
-// every query is a method on it, so a transaction-bound Store has every query
-// with no list to keep in sync. Consumers declare the narrow interface of the
-// methods they call; this package declares none.
 package repository
 
 import (
@@ -48,7 +44,6 @@ func (s *Store) Atomic(ctx context.Context, fn func(tx *Store) error) (err error
 	return fn(&Store{db: tx})
 }
 
-// Ping reports whether the database answers.
 func (s *Store) Ping(ctx context.Context) error {
 	sqlDB, err := s.db.DB()
 	if err != nil {

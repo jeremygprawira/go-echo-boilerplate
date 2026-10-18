@@ -17,23 +17,15 @@ import (
 	echoSwagger "github.com/swaggo/echo-swagger"
 )
 
-// bearerHandler is a handler that reads its caller. Only the bearer field of a
-// route takes one, so it never runs without a verified access token.
 type bearerHandler func(c echo.Context, caller jwtc.Claims) error
 
-// route is one row of the API route table. Every row is mounted under /api, so
-// the API key always applies. Set exactly one of public and bearer.
 type route struct {
-	method string
-	path   string
-	// public needs only the API key.
-	public echo.HandlerFunc
-	// bearer also needs a live access token.
-	bearer bearerHandler
-	// rateLimited rows each get their own budget per client IP.
+	method      string
+	path        string
+	public      echo.HandlerFunc
+	bearer      bearerHandler
 	rateLimited bool
-	// idempotent rows replay the first response to a repeated Idempotency-Key.
-	idempotent bool
+	idempotent  bool
 }
 
 // @title GO-ECHO-BOILERPLATE API DOCUMENTATION
@@ -52,11 +44,6 @@ type route struct {
 // @BasePath /api
 // @schemes http https
 
-// NewServer builds the whole HTTP surface: server limits, the global
-// middleware chain, the infra routes, and every API route with the controls
-// its row asks for. Each feature's service is its own parameter, so wiring a
-// feature into core.Setup and mounting its routes here are checked by the
-// compiler together.
 func NewServer(
 	cfg *config.Configuration,
 	log *wlog.Logger,
@@ -71,8 +58,6 @@ func NewServer(
 	e.HTTPErrorHandler = ErrorHandler
 	e.IPExtractor = ipExtractor(cfg.Application.TrustedProxies)
 
-	// Config.Validate rejects a bad or non-positive value at startup. An unset
-	// value (tests) parses to zero, which means no timeout.
 	app := cfg.Application
 	e.Server.ReadHeaderTimeout, _ = time.ParseDuration(app.ReadHeaderTimeout)
 	e.Server.ReadTimeout, _ = time.ParseDuration(app.ReadTimeout)
@@ -88,7 +73,6 @@ func NewServer(
 	registerDocsRoutes(e, cfg)
 	e.GET("/health", healthHandler{health: health}.Check)
 
-	// Config.Validate rejects a bad ttl at startup, so the parse cannot fail.
 	idempotencyTTL, _ := time.ParseDuration(cfg.Idempotency.TTL)
 	controls := controls{
 		rateLimit:   middleware.RateLimiter(cfg),
@@ -101,8 +85,6 @@ func NewServer(
 	return e
 }
 
-// controls holds one instance of each per-route middleware, so every row that
-// asks for a control shares it.
 type controls struct {
 	rateLimit, bearer, idempotency echo.MiddlewareFunc
 }

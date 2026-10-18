@@ -64,8 +64,6 @@ func (m *MockUserRepository) UserByID(ctx context.Context, id int) (*models.User
 	return args.Get(0).(*models.User), args.Error(1)
 }
 
-// fakeStore joins the user mock and an in-memory revocation table into the one
-// store UserService takes.
 type fakeStore struct {
 	*MockUserRepository
 	*memRevoked

@@ -109,7 +109,7 @@ Each rule has a check that fails on a real past commit. Add a row when you add a
 | A handler that reads its caller mounts only on a bearer route row | `go build` (the `bearerHandler` type of the `bearer` field) | no past violation |
 | Each served route has a Swagger path with the same method, and each Swagger path is served | `make test` (`TestSwaggerPathsMatchServedRoutes`) | no past violation |
 | One rate limiter on many routes keeps a budget per route and client IP | `make test` (`TestRateLimiter_OneInstanceKeepsABudgetPerRoute`) | b60be39 |
-| A user lookup never returns a soft-deleted user | `make test` (`TestUserLookups_SkipSoftDeletedUsers`) | b60be39 |
+| A user lookup never returns a soft-deleted user | `make test` (`TestUserLookups_QueryFiltersDeletedAt`) | b60be39 |
 | `Store.Atomic` runs every query in `fn` on the transaction | `make test` (`TestAtomic_CommitsWritesMadeThroughTheTransaction`) | no past violation |
 | Echo's middleware package is imported as `echoMiddleware` | `make lint` (importas) | ab33d3a^ |
 | Every returned error is checked, including `Close` | `make lint` (errcheck) | 1c90978 |

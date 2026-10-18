@@ -27,7 +27,6 @@ const pgUniqueViolation = "23505"
 //nolint:gosec // G101: not a credential — a fixed decoy hash for constant-time comparison, not a secret.
 const dummyPasswordHash = "$2a$12$BOZVmY4H76pfJnkVfAJEk.m5t0QcXHgphRl4wrKGSl8F7A5PnQRC2" //#nosec G101 -- decoy bcrypt hash for timing-safe login, not a real credential
 
-// userStore is the storage UserService needs. *repository.Store satisfies it.
 type userStore interface {
 	CreateUser(ctx context.Context, user *models.User) error
 	UserCredentials(ctx context.Context, email string, phoneNumber string) (*models.User, error)

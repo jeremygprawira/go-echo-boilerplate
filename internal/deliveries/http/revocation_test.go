@@ -20,28 +20,26 @@ import (
 )
 
 type fakeUsers struct {
-	user *models.User
-	// gate, when set, holds each UserByID until every concurrent caller
-	// arrives (or a short timeout passes), to widen any check-then-act window.
-	gate *gate
+	user    *models.User
+	barrier *barrier
 }
 
-type gate struct {
+type barrier struct {
 	mu      sync.Mutex
 	waiting int
 	total   int
 	open    chan struct{}
 }
 
-func (g *gate) wait() {
-	g.mu.Lock()
-	g.waiting++
-	if g.waiting == g.total {
-		close(g.open)
+func (b *barrier) wait() {
+	b.mu.Lock()
+	b.waiting++
+	if b.waiting == b.total {
+		close(b.open)
 	}
-	g.mu.Unlock()
+	b.mu.Unlock()
 	select {
-	case <-g.open:
+	case <-b.open:
 	case <-time.After(300 * time.Millisecond):
 	}
 }
@@ -54,8 +52,8 @@ func (f *fakeUsers) UserByAccountNumber(context.Context, string) (*models.User, 
 	return f.user, nil
 }
 func (f *fakeUsers) UserByID(context.Context, int) (*models.User, error) {
-	if f.gate != nil {
-		f.gate.wait()
+	if f.barrier != nil {
+		f.barrier.wait()
 	}
 	return f.user, nil
 }
@@ -86,17 +84,17 @@ func (m *memRevoked) PurgeExpiredTokens(context.Context, time.Time) error { retu
 
 func revocationTestServer(t *testing.T) http.Handler {
 	t.Helper()
-	return revocationTestServerWithGate(t, nil)
+	return revocationTestServerWithBarrier(t, nil)
 }
 
-func revocationTestServerWithGate(t *testing.T, g *gate) http.Handler {
+func revocationTestServerWithBarrier(t *testing.T, b *barrier) http.Handler {
 	t.Helper()
 	cfg := testConfig()
 
 	hash, err := generator.Hash("Passw0rd!")
 	require.NoError(t, err)
 	email := "user@example.test"
-	users := &fakeUsers{user: &models.User{ID: 7, AccountNumber: "100", Name: "U", Email: &email, Password: hash}, gate: g}
+	users := &fakeUsers{user: &models.User{ID: 7, AccountNumber: "100", Name: "U", Email: &email, Password: hash}, barrier: b}
 
 	store := struct {
 		*fakeUsers
@@ -171,7 +169,7 @@ func TestRevocation_LogoutAndRotationInvalidateTokens(t *testing.T) {
 
 func TestRevocation_ConcurrentRefreshWithOneTokenMintsOnce(t *testing.T) {
 	const callers = 5
-	h := revocationTestServerWithGate(t, &gate{total: callers, open: make(chan struct{})})
+	h := revocationTestServerWithBarrier(t, &barrier{total: callers, open: make(chan struct{})})
 
 	code, resp := call(t, h, http.MethodPost, "/api/v1/users/tokens", "",
 		map[string]any{"email": "user@example.test", "password": "Passw0rd!"})

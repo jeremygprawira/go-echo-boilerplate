@@ -6,9 +6,6 @@ import (
 )
 
 const (
-	// queryInsertRevocation records a revoked JTI in one statement, so concurrent
-	// callers cannot both insert it: exactly one sees a row affected. A repeat
-	// revoke keeps the first row, whose expiry already covers the token.
 	queryInsertRevocation = `
 		INSERT INTO revoked_tokens (jti, expires_at) VALUES ($1, $2)
 		ON CONFLICT (jti) DO NOTHING
@@ -44,7 +41,6 @@ func (s *Store) IsTokenRevoked(ctx context.Context, jti string, now time.Time) (
 	return revoked, nil
 }
 
-// PurgeExpiredTokens deletes revocations whose token can no longer be used.
 func (s *Store) PurgeExpiredTokens(ctx context.Context, now time.Time) error {
 	return s.db.WithContext(ctx).Exec(queryDeleteExpiredRevocations, now).Error
 }

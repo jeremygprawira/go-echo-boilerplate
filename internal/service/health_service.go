@@ -7,7 +7,6 @@ import (
 	"github.com/jeremygprawira/wlog"
 )
 
-// pinger is the storage HealthService needs. *repository.Store satisfies it.
 type pinger interface {
 	Ping(ctx context.Context) error
 }

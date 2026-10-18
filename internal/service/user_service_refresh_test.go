@@ -15,7 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// memRevoked is an in-memory revoked_tokens table.
 type memRevoked struct{ rows map[string]time.Time }
 
 func newMemRevoked() *memRevoked { return &memRevoked{rows: map[string]time.Time{}} }
@@ -98,9 +97,6 @@ func TestUserService_RefreshTokens(t *testing.T) {
 		refreshToken, err := jwtc.SignRefreshToken(user, testJWTConfig())
 		require.NoError(t, err)
 
-		// UserByID returning (nil, nil) is how the repository reports "no such
-		// user" (see repository.Store.UserByID) — RefreshTokens must treat
-		// that as unauthorized rather than proceeding with a nil/zero-value user.
 		mockRepo.On("UserByID", mock.Anything, 1).Return(nil, nil)
 
 		svc := service.NewUserService(fakeStore{mockRepo, newMemRevoked()}, testJWTConfig())

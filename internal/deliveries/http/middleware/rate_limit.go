@@ -126,9 +126,7 @@ func (s *rateLimiterStore) evictLoop() {
 // Retry-After computed from the token bucket's actual refill delay.
 //
 // A bucket is keyed by the route and c.RealIP(), so one instance mounted on
-// several routes gives each route its own budget. http.NewServer sets
-// e.IPExtractor from application.trusted_proxies, so a client cannot pick its
-// own bucket by sending X-Forwarded-For or X-Real-IP.
+// several routes gives each route its own budget.
 func RateLimiter(cfg *appconfig.Configuration) echo.MiddlewareFunc {
 	mw, _ := rateLimiter(cfg)
 	return mw

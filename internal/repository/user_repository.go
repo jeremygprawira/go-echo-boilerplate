@@ -65,9 +65,8 @@ func (s *Store) UserByID(ctx context.Context, id int) (*models.User, error) {
 	return s.oneUser(ctx, queryUserByID, id)
 }
 
-// oneUser runs a single-row lookup. GORM's Scan on a Raw query does not return
-// ErrRecordNotFound: a miss leaves the struct zero with RowsAffected == 0, so
-// that case is returned as nil rather than a zero-value user.
+// GORM's Scan on a Raw query never returns ErrRecordNotFound. A miss shows only
+// as RowsAffected == 0.
 func (s *Store) oneUser(ctx context.Context, query string, args ...any) (*models.User, error) {
 	var user models.User
 	result := s.db.WithContext(ctx).Raw(query, args...).Scan(&user)
