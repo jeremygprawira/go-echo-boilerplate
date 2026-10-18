@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Runs internal/integration on a throwaway Postgres container. Extra arguments
+# go to go test, as in scripts/test-integration.sh -count=2 -shuffle=on.
+# The EXIT trap removes the container. A SIGKILL skips the trap and leaks it,
+# so remove leftovers with: docker rm -f $(docker ps -qf name=go-echo-integration-)
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
@@ -23,4 +27,4 @@ for i in $(seq 150); do
 done
 
 addr=$(docker port "$name" 5432/tcp | head -1)
-TEST_DATABASE_URL="postgres://app:app@$addr/app_test" go test -count=1 ./internal/integration/...
+TEST_DATABASE_URL="postgres://app:app@$addr/app_test" go test -count=1 "$@" ./internal/integration/...
