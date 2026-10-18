@@ -29,7 +29,7 @@ func run() error {
 	}
 
 	// 2. Setup application core, from logger, to echo server, database, etc.
-	e, deps, err := core.Setup(config)
+	e, tokenPurge, err := core.Setup(config)
 	if err != nil {
 		return fmt.Errorf("failed to setup application: %w", err)
 	}
@@ -39,7 +39,7 @@ func run() error {
 	// 3. Define processes to manage
 	processes := map[string]graceful.Process{
 		"http-server": graceful.NewEchoProcess(e, port),
-		"token-purge": deps.TokenPurge,
+		"token-purge": tokenPurge,
 		"cleanup":     graceful.NewFuncProcess(core.Teardown),
 	}
 

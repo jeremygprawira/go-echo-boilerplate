@@ -1,4 +1,4 @@
-package healthcheck_test
+package http
 
 import (
 	"context"
@@ -7,24 +7,18 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	healthcheck "go-echo-boilerplate/internal/deliveries/http/health_check"
-	"go-echo-boilerplate/internal/repository"
 	"go-echo-boilerplate/internal/service"
 
-	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 )
 
 type failingPing struct{ err error }
 
-func (f failingPing) Check(context.Context) error { return f.err }
+func (f failingPing) Ping(context.Context) error { return f.err }
 
 func TestHealth_DatabaseErrorIsNotDisclosed(t *testing.T) {
 	driverErr := errors.New("failed to connect to `user=dummyuser database=dummydb`: host=127.0.0.1 port=1: dial error: connection refused")
-	svc := service.New(service.Dependencies{Repository: repository.Repository{Health: failingPing{driverErr}}})
-
-	e := echo.New()
-	healthcheck.New(e.Group("/health"), svc)
+	e := testServer{health: service.NewHealthService(failingPing{driverErr})}.build(t)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/health", nil))
 

@@ -1,9 +1,9 @@
-package pgsql_test
+package repository_test
 
 import (
 	"context"
 	"errors"
-	"go-echo-boilerplate/internal/repository/pgsql"
+	"go-echo-boilerplate/internal/repository"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -13,7 +13,7 @@ import (
 )
 
 func TestHealthCheck(t *testing.T) {
-	setup := func(t *testing.T) (pgsql.HealthRepository, sqlmock.Sqlmock, func()) {
+	setup := func(t *testing.T) (*repository.Store, sqlmock.Sqlmock, func()) {
 		// Enable Ping verification
 		db, mock, err := sqlmock.New(sqlmock.MonitorPingsOption(true))
 		assert.NoError(t, err)
@@ -26,7 +26,7 @@ func TestHealthCheck(t *testing.T) {
 		}), &gorm.Config{})
 		assert.NoError(t, err)
 
-		repo := pgsql.NewHealthRepository(gormDB)
+		repo := repository.New(gormDB)
 
 		return repo, mock, func() {
 			_ = db.Close()
@@ -37,10 +37,10 @@ func TestHealthCheck(t *testing.T) {
 		repo, mock, teardown := setup(t)
 		defer teardown()
 
-		// Expect the Ping from repo.Check
+		// Expect the Ping from repo.Ping
 		mock.ExpectPing()
 
-		err := repo.Check(context.Background())
+		err := repo.Ping(context.Background())
 		assert.NoError(t, err)
 
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -50,10 +50,10 @@ func TestHealthCheck(t *testing.T) {
 		repo, mock, teardown := setup(t)
 		defer teardown()
 
-		// Expect the Ping from repo.Check to fail
+		// Expect the Ping from repo.Ping to fail
 		mock.ExpectPing().WillReturnError(errors.New("db down"))
 
-		err := repo.Check(context.Background())
+		err := repo.Ping(context.Background())
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "db down")
 

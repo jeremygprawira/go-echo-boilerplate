@@ -1,17 +1,14 @@
-package v1_test
+package http
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
-	httpdelivery "go-echo-boilerplate/internal/deliveries/http"
-	v1 "go-echo-boilerplate/internal/deliveries/http/api/v1"
 	"go-echo-boilerplate/internal/models"
 	"go-echo-boilerplate/internal/pkg/errorc"
 	"go-echo-boilerplate/internal/pkg/generator"
 	"go-echo-boilerplate/internal/pkg/jwtc"
-	"go-echo-boilerplate/internal/service"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -24,19 +21,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// notRevoked is a RevocationChecker that reports every token as live.
-type notRevoked struct{}
-
-func (notRevoked) IsRevoked(context.Context, string) (bool, error) { return false, nil }
-
 func strPtr(s string) *string {
 	return &s
 }
 
-func newEcho() *echo.Echo {
-	e := echo.New()
-	e.HTTPErrorHandler = httpdelivery.ErrorHandler
-	return e
+func userServer(t *testing.T, users *MockUserService, jwt *jwtc.Configuration) http.Handler {
+	t.Helper()
+	return withAPIKey(testServer{jwt: jwt, users: users}.build(t))
 }
 
 type MockUserService struct {
@@ -80,9 +71,8 @@ func (m *MockUserService) Logout(ctx context.Context, accessJTI string, refreshT
 	return args.Error(0)
 }
 
-func TestUserV1Handler_Create(t *testing.T) {
+func TestUserHandler_Create(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
-		e := newEcho()
 		reqBody := models.CreateUserRequest{
 			Name:     "Test User",
 			Email:    "test@example.com",
@@ -93,7 +83,7 @@ func TestUserV1Handler_Create(t *testing.T) {
 			},
 		}
 		jsonBody, _ := json.Marshal(reqBody)
-		req := httptest.NewRequest(http.MethodPost, "/v1/users", bytes.NewReader(jsonBody))
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/users", bytes.NewReader(jsonBody))
 		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 		rec := httptest.NewRecorder()
 
@@ -106,14 +96,7 @@ func TestUserV1Handler_Create(t *testing.T) {
 			Name:  reqBody.Name,
 		}, nil)
 
-		svc := &service.Service{
-			User: mockSvc,
-		}
-
-		g := e.Group("/v1")
-		v1.NewUserV1(g, svc, nil, nil, notRevoked{})
-
-		// ServeRequest
+		e := userServer(t, mockSvc, nil)
 		e.ServeHTTP(rec, req)
 
 		assert.Equal(t, http.StatusCreated, rec.Code)
@@ -123,19 +106,15 @@ func TestUserV1Handler_Create(t *testing.T) {
 	})
 
 	t.Run("Validation Error", func(t *testing.T) {
-		e := newEcho()
 		reqBody := models.CreateUserRequest{
 			// Missing required fields
 		}
 		jsonBody, _ := json.Marshal(reqBody)
-		req := httptest.NewRequest(http.MethodPost, "/v1/users", bytes.NewReader(jsonBody))
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/users", bytes.NewReader(jsonBody))
 		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 		rec := httptest.NewRecorder()
 
-		// Setup Service
-		svc := &service.Service{User: new(MockUserService)}
-		g := e.Group("/v1")
-		v1.NewUserV1(g, svc, nil, nil, notRevoked{})
+		e := userServer(t, new(MockUserService), nil)
 
 		e.ServeHTTP(rec, req)
 
@@ -145,23 +124,20 @@ func TestUserV1Handler_Create(t *testing.T) {
 	})
 
 	t.Run("Service Error - Already Exist", func(t *testing.T) {
-		e := newEcho()
 		reqBody := models.CreateUserRequest{
 			Name:     "Test",
 			Email:    "exist@example.com",
 			Password: "pass",
 		}
 		jsonBody, _ := json.Marshal(reqBody)
-		req := httptest.NewRequest(http.MethodPost, "/v1/users", bytes.NewReader(jsonBody))
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/users", bytes.NewReader(jsonBody))
 		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 		rec := httptest.NewRecorder()
 
 		mockSvc := new(MockUserService)
 		mockSvc.On("Create", mock.Anything, mock.Anything).Return(nil, errorc.AlreadyExists.New())
 
-		svc := &service.Service{User: mockSvc}
-		g := e.Group("/v1")
-		v1.NewUserV1(g, svc, nil, nil, notRevoked{})
+		e := userServer(t, mockSvc, nil)
 
 		e.ServeHTTP(rec, req)
 
@@ -170,14 +146,13 @@ func TestUserV1Handler_Create(t *testing.T) {
 	})
 
 	t.Run("Service Error - Internal Detail Never Leaks", func(t *testing.T) {
-		e := newEcho()
 		reqBody := models.CreateUserRequest{
 			Name:     "Test",
 			Email:    "test@example.com",
 			Password: "password123",
 		}
 		jsonBody, _ := json.Marshal(reqBody)
-		req := httptest.NewRequest(http.MethodPost, "/v1/users", bytes.NewReader(jsonBody))
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/users", bytes.NewReader(jsonBody))
 		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 		rec := httptest.NewRecorder()
 
@@ -185,9 +160,7 @@ func TestUserV1Handler_Create(t *testing.T) {
 		mockSvc.On("Create", mock.Anything, mock.Anything).
 			Return(nil, errorc.Database.New().Internal("failed to create user").Wrap(errors.New("pq: connection refused")))
 
-		svc := &service.Service{User: mockSvc}
-		g := e.Group("/v1")
-		v1.NewUserV1(g, svc, nil, nil, notRevoked{})
+		e := userServer(t, mockSvc, nil)
 
 		e.ServeHTTP(rec, req)
 
@@ -198,15 +171,14 @@ func TestUserV1Handler_Create(t *testing.T) {
 	})
 }
 
-func TestUserV1Handler_GetTokens(t *testing.T) {
+func TestUserHandler_GetTokens(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
-		e := newEcho()
 		reqBody := models.GetUserTokenRequest{
 			Email:    "test@example.com",
 			Password: "password123",
 		}
 		jsonBody, _ := json.Marshal(reqBody)
-		req := httptest.NewRequest(http.MethodPost, "/v1/users/tokens", bytes.NewReader(jsonBody))
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/users/tokens", bytes.NewReader(jsonBody))
 		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 		rec := httptest.NewRecorder()
 
@@ -221,9 +193,7 @@ func TestUserV1Handler_GetTokens(t *testing.T) {
 			},
 		}, nil)
 
-		svc := &service.Service{User: mockSvc}
-		g := e.Group("/v1")
-		v1.NewUserV1(g, svc, nil, nil, notRevoked{})
+		e := userServer(t, mockSvc, nil)
 
 		e.ServeHTTP(rec, req)
 
@@ -235,17 +205,14 @@ func TestUserV1Handler_GetTokens(t *testing.T) {
 	})
 
 	t.Run("Validation Error", func(t *testing.T) {
-		e := newEcho()
 		reqBody := models.GetUserTokenRequest{} // Empty request
 		jsonBody, _ := json.Marshal(reqBody)
-		req := httptest.NewRequest(http.MethodPost, "/v1/users/tokens", bytes.NewReader(jsonBody))
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/users/tokens", bytes.NewReader(jsonBody))
 		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 		rec := httptest.NewRecorder()
 
 		mockSvc := new(MockUserService)
-		svc := &service.Service{User: mockSvc}
-		g := e.Group("/v1")
-		v1.NewUserV1(g, svc, nil, nil, notRevoked{})
+		e := userServer(t, mockSvc, nil)
 
 		e.ServeHTTP(rec, req)
 
@@ -255,22 +222,19 @@ func TestUserV1Handler_GetTokens(t *testing.T) {
 	})
 
 	t.Run("Invalid Credentials", func(t *testing.T) {
-		e := newEcho()
 		reqBody := models.GetUserTokenRequest{
 			Email:    "test@example.com",
 			Password: "wrongpassword",
 		}
 		jsonBody, _ := json.Marshal(reqBody)
-		req := httptest.NewRequest(http.MethodPost, "/v1/users/tokens", bytes.NewReader(jsonBody))
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/users/tokens", bytes.NewReader(jsonBody))
 		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 		rec := httptest.NewRecorder()
 
 		mockSvc := new(MockUserService)
 		mockSvc.On("GetTokens", mock.Anything, mock.Anything).Return(nil, errorc.Unauthorized.New().Public(herr.Message("invalid credentials")))
 
-		svc := &service.Service{User: mockSvc}
-		g := e.Group("/v1")
-		v1.NewUserV1(g, svc, nil, nil, notRevoked{})
+		e := userServer(t, mockSvc, nil)
 
 		e.ServeHTTP(rec, req)
 
@@ -287,11 +251,10 @@ func TestUserV1Handler_GetTokens(t *testing.T) {
 // precedence shared by RefreshTokens and Logout (jwtc.ResolveRefreshToken):
 // an explicit body value wins; otherwise the refresh_token cookie is used;
 // with neither present, the request is rejected before reaching the service.
-func TestUserV1Handler_RefreshTokens_TokenResolution(t *testing.T) {
+func TestUserHandler_RefreshTokens_TokenResolution(t *testing.T) {
 	t.Run("Body token takes precedence over cookie", func(t *testing.T) {
-		e := newEcho()
 		jsonBody, _ := json.Marshal(models.RefreshTokenRequest{RefreshToken: "body-token"})
-		req := httptest.NewRequest(http.MethodPost, "/v1/users/tokens/refresh", bytes.NewReader(jsonBody))
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/users/tokens/refresh", bytes.NewReader(jsonBody))
 		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 		req.AddCookie(&http.Cookie{Name: "refresh_token", Value: "cookie-token"})
 		rec := httptest.NewRecorder()
@@ -300,9 +263,7 @@ func TestUserV1Handler_RefreshTokens_TokenResolution(t *testing.T) {
 		mockSvc.On("RefreshTokens", mock.Anything, "body-token").
 			Return(&models.GetUserTokenResponse{Tokens: []models.Token{{Type: "access"}, {Type: "refresh"}}}, nil)
 
-		svc := &service.Service{User: mockSvc}
-		g := e.Group("/v1")
-		v1.NewUserV1(g, svc, nil, nil, notRevoked{})
+		e := userServer(t, mockSvc, nil)
 
 		e.ServeHTTP(rec, req)
 
@@ -311,8 +272,7 @@ func TestUserV1Handler_RefreshTokens_TokenResolution(t *testing.T) {
 	})
 
 	t.Run("Falls back to cookie when body omits the token", func(t *testing.T) {
-		e := newEcho()
-		req := httptest.NewRequest(http.MethodPost, "/v1/users/tokens/refresh", bytes.NewReader([]byte("{}")))
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/users/tokens/refresh", bytes.NewReader([]byte("{}")))
 		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 		req.AddCookie(&http.Cookie{Name: "refresh_token", Value: "cookie-token"})
 		rec := httptest.NewRecorder()
@@ -321,9 +281,7 @@ func TestUserV1Handler_RefreshTokens_TokenResolution(t *testing.T) {
 		mockSvc.On("RefreshTokens", mock.Anything, "cookie-token").
 			Return(&models.GetUserTokenResponse{Tokens: []models.Token{{Type: "access"}, {Type: "refresh"}}}, nil)
 
-		svc := &service.Service{User: mockSvc}
-		g := e.Group("/v1")
-		v1.NewUserV1(g, svc, nil, nil, notRevoked{})
+		e := userServer(t, mockSvc, nil)
 
 		e.ServeHTTP(rec, req)
 
@@ -332,15 +290,12 @@ func TestUserV1Handler_RefreshTokens_TokenResolution(t *testing.T) {
 	})
 
 	t.Run("Rejects when neither body nor cookie carries a token", func(t *testing.T) {
-		e := newEcho()
-		req := httptest.NewRequest(http.MethodPost, "/v1/users/tokens/refresh", bytes.NewReader([]byte("{}")))
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/users/tokens/refresh", bytes.NewReader([]byte("{}")))
 		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 		rec := httptest.NewRecorder()
 
 		mockSvc := new(MockUserService)
-		svc := &service.Service{User: mockSvc}
-		g := e.Group("/v1")
-		v1.NewUserV1(g, svc, nil, nil, notRevoked{})
+		e := userServer(t, mockSvc, nil)
 
 		e.ServeHTTP(rec, req)
 
@@ -353,7 +308,7 @@ func TestUserV1Handler_RefreshTokens_TokenResolution(t *testing.T) {
 // TestUserV1Handler_Logout_TokenResolution mirrors the refresh-token
 // resolution coverage above for Logout, which is bearer-authed and so needs
 // a real access token to pass BearerAuthMiddleware.
-func TestUserV1Handler_Logout_TokenResolution(t *testing.T) {
+func TestUserHandler_Logout_TokenResolution(t *testing.T) {
 	cfg := &jwtc.Configuration{
 		AccessTokenSecret:   "access-secret",
 		RefreshTokenSecret:  "refresh-secret",
@@ -364,9 +319,8 @@ func TestUserV1Handler_Logout_TokenResolution(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("Body token takes precedence over cookie", func(t *testing.T) {
-		e := newEcho()
 		jsonBody, _ := json.Marshal(models.LogoutRequest{RefreshToken: "body-token"})
-		req := httptest.NewRequest(http.MethodPost, "/v1/users/logout", bytes.NewReader(jsonBody))
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/users/logout", bytes.NewReader(jsonBody))
 		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 		req.Header.Set(echo.HeaderAuthorization, "Bearer "+accessToken.Token)
 		req.AddCookie(&http.Cookie{Name: "refresh_token", Value: "cookie-token"})
@@ -375,9 +329,7 @@ func TestUserV1Handler_Logout_TokenResolution(t *testing.T) {
 		mockSvc := new(MockUserService)
 		mockSvc.On("Logout", mock.Anything, mock.Anything, "body-token").Return(nil)
 
-		svc := &service.Service{User: mockSvc}
-		g := e.Group("/v1")
-		v1.NewUserV1(g, svc, nil, cfg, notRevoked{})
+		e := userServer(t, mockSvc, cfg)
 
 		e.ServeHTTP(rec, req)
 
@@ -386,8 +338,7 @@ func TestUserV1Handler_Logout_TokenResolution(t *testing.T) {
 	})
 
 	t.Run("Falls back to cookie when body omits the token", func(t *testing.T) {
-		e := newEcho()
-		req := httptest.NewRequest(http.MethodPost, "/v1/users/logout", nil)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/users/logout", nil)
 		req.Header.Set(echo.HeaderAuthorization, "Bearer "+accessToken.Token)
 		req.AddCookie(&http.Cookie{Name: "refresh_token", Value: "cookie-token"})
 		rec := httptest.NewRecorder()
@@ -395,9 +346,7 @@ func TestUserV1Handler_Logout_TokenResolution(t *testing.T) {
 		mockSvc := new(MockUserService)
 		mockSvc.On("Logout", mock.Anything, mock.Anything, "cookie-token").Return(nil)
 
-		svc := &service.Service{User: mockSvc}
-		g := e.Group("/v1")
-		v1.NewUserV1(g, svc, nil, cfg, notRevoked{})
+		e := userServer(t, mockSvc, cfg)
 
 		e.ServeHTTP(rec, req)
 

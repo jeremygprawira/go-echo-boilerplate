@@ -1,4 +1,4 @@
-package core
+package http
 
 import (
 	"net/http"
@@ -7,13 +7,9 @@ import (
 
 	"go-echo-boilerplate/internal/config"
 	"go-echo-boilerplate/internal/deliveries/http/middleware"
-	"go-echo-boilerplate/internal/pkg/logger"
-	"go-echo-boilerplate/internal/service"
 
-	wlogzap "github.com/jeremygprawira/wlog/log/zap"
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
 )
 
 func limitedServer(t *testing.T, mutate func(*config.Configuration)) *echo.Echo {
@@ -24,9 +20,7 @@ func limitedServer(t *testing.T, mutate func(*config.Configuration)) *echo.Echo 
 	if mutate != nil {
 		mutate(cfg)
 	}
-	log, err := logger.NewWlog(cfg, wlogzap.Drain(zap.NewNop()))
-	require.NoError(t, err)
-	e := BuildHTTPServer(&Dependencies{Service: &service.Service{}, Config: cfg, Log: log})
+	e := testServer{cfg: cfg}.build(t)
 	e.POST("/probe", func(c echo.Context) error { return c.NoContent(http.StatusOK) }, middleware.RateLimiter(cfg))
 	return e
 }

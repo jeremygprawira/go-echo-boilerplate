@@ -9,7 +9,6 @@ import (
 
 	"go-echo-boilerplate/internal/config"
 	"go-echo-boilerplate/internal/models"
-	"go-echo-boilerplate/internal/repository/pgsql"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
@@ -38,7 +37,7 @@ func logCreateUser(t *testing.T, environment string) string {
 	mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO "users"`)).WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
 	mock.ExpectCommit()
 	email := dummyEmail
-	require.NoError(t, pgsql.NewUserRepository(gdb).Create(context.Background(), &models.User{Name: "D", Email: &email, Password: dummyHash, AccountNumber: "1"}))
+	require.NoError(t, gdb.WithContext(context.Background()).Create(&models.User{Name: "D", Email: &email, Password: dummyHash, AccountNumber: "1"}).Error)
 	require.NoError(t, mock.ExpectationsWereMet())
 	return buf.String()
 }

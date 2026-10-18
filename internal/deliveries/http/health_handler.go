@@ -1,24 +1,21 @@
-package healthcheck
+package http
 
 import (
+	"context"
+	"go-echo-boilerplate/internal/models"
 	"go-echo-boilerplate/internal/pkg/response"
-	"go-echo-boilerplate/internal/service"
-
 	"net/http"
 
 	"github.com/labstack/echo/v4"
 )
 
-type healthHandler struct {
-	service *service.Service
+// healthService is what GET /health needs. *service.HealthService satisfies it.
+type healthService interface {
+	Check(ctx context.Context) (*models.HealthResponse, error)
 }
 
-func New(api *echo.Group, service *service.Service) {
-	hc := healthHandler{
-		service: service,
-	}
-
-	api.GET("", hc.Check)
+type healthHandler struct {
+	health healthService
 }
 
 // Check godoc
@@ -30,8 +27,8 @@ func New(api *echo.Group, service *service.Service) {
 // @Success 200 {object} models.Response{data=[]models.HealthDetailResponse}
 // @Failure 503 {object} models.Response{data=[]models.HealthDetailResponse} "A dependency is unreachable"
 // @Router /health [get]
-func (h *healthHandler) Check(ctx echo.Context) error {
-	health, err := h.service.Health.Check(ctx.Request().Context())
+func (h healthHandler) Check(ctx echo.Context) error {
+	health, err := h.health.Check(ctx.Request().Context())
 	if err != nil {
 		return err
 	}

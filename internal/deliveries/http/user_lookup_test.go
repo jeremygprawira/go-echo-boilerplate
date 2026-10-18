@@ -1,4 +1,4 @@
-package v1_test
+package http
 
 import (
 	"bytes"
@@ -9,12 +9,10 @@ import (
 	"testing"
 	"time"
 
-	v1 "go-echo-boilerplate/internal/deliveries/http/api/v1"
 	"go-echo-boilerplate/internal/models"
 	"go-echo-boilerplate/internal/pkg/generator"
 	"go-echo-boilerplate/internal/pkg/jwtc"
 	"go-echo-boilerplate/internal/repository"
-	"go-echo-boilerplate/internal/repository/pgsql"
 	"go-echo-boilerplate/internal/service"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -26,7 +24,7 @@ import (
 
 var credentialColumns = []string{"id", "account_number", "name", "email", "phone_number", "phone_country_code", "password"}
 
-func newRealRepoServer(t *testing.T) (*echo.Echo, sqlmock.Sqlmock, *jwtc.Configuration) {
+func newRealRepoServer(t *testing.T) (http.Handler, sqlmock.Sqlmock, *jwtc.Configuration) {
 	t.Helper()
 	sqlDB, mock, err := sqlmock.New()
 	require.NoError(t, err)
@@ -41,18 +39,13 @@ func newRealRepoServer(t *testing.T) (*echo.Echo, sqlmock.Sqlmock, *jwtc.Configu
 		RefreshTokenDuration: time.Hour,
 		Issuer:               "test",
 	}
-	svc := service.New(service.Dependencies{
-		Repository: repository.Repository{User: pgsql.NewUserRepository(gdb)},
-		JWTConfig:  jwtConfig,
-	})
-	e := newEcho()
-	v1.NewUserV1(e.Group("/v1"), svc, nil, jwtConfig, notRevoked{})
-	return e, mock, jwtConfig
+	users := service.NewUserService(repository.New(gdb), jwtConfig)
+	return withAPIKey(testServer{jwt: jwtConfig, users: users}.build(t)), mock, jwtConfig
 }
 
-func login(e *echo.Echo, email, password string) (*httptest.ResponseRecorder, time.Duration) {
+func login(e http.Handler, email, password string) (*httptest.ResponseRecorder, time.Duration) {
 	body, _ := json.Marshal(map[string]string{"email": email, "password": password})
-	req := httptest.NewRequest(http.MethodPost, "/v1/users/tokens", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/users/tokens", bytes.NewReader(body))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 	rec := httptest.NewRecorder()
 	start := time.Now()
@@ -89,7 +82,7 @@ func TestMe_RemovedAccountIsNotFound(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta("FROM users")).WithArgs("100").
 		WillReturnRows(sqlmock.NewRows([]string{"id", "account_number", "name", "email", "phone_number", "phone_country_code", "created_at", "updated_at"}))
 
-	req := httptest.NewRequest(http.MethodGet, "/v1/users/me", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/users/me", nil)
 	req.Header.Set(echo.HeaderAuthorization, "Bearer "+token.Token)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)

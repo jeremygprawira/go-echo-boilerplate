@@ -1,4 +1,4 @@
-package pgsql_test
+package repository_test
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"go-echo-boilerplate/internal/repository/pgsql"
+	"go-echo-boilerplate/internal/repository"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/require"
@@ -26,7 +26,7 @@ func TestRevokedTokenRevoke_ReportsWhetherThisCallerInserted(t *testing.T) {
 			WithArgs("jti-1", sqlmock.AnyArg()).
 			WillReturnResult(sqlmock.NewResult(0, rows))
 
-		got, err := pgsql.NewRevokedTokenRepository(gdb).Revoke(context.Background(), "jti-1", time.Now().Add(time.Hour))
+		got, err := repository.New(gdb).RevokeToken(context.Background(), "jti-1", time.Now().Add(time.Hour))
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 		require.NoError(t, mock.ExpectationsWereMet())

@@ -7,7 +7,6 @@ import (
 	"go-echo-boilerplate/internal/pkg/errorc"
 	"go-echo-boilerplate/internal/pkg/generator"
 	"go-echo-boilerplate/internal/pkg/jwtc"
-	"go-echo-boilerplate/internal/repository"
 	"go-echo-boilerplate/internal/service"
 	"testing"
 	"time"
@@ -36,17 +35,12 @@ type MockUserRepository struct {
 	mock.Mock
 }
 
-func (m *MockUserRepository) Create(ctx context.Context, user *models.User) error {
+func (m *MockUserRepository) CreateUser(ctx context.Context, user *models.User) error {
 	args := m.Called(ctx, user)
 	return args.Error(0)
 }
 
-func (m *MockUserRepository) CheckByEmailOrPhoneNumber(ctx context.Context, email string, phoneNumber string) (bool, error) {
-	args := m.Called(ctx, email, phoneNumber)
-	return args.Bool(0), args.Error(1)
-}
-
-func (m *MockUserRepository) GetCredentialsByEmailOrPhoneNumber(ctx context.Context, email string, phoneNumber string) (*models.User, error) {
+func (m *MockUserRepository) UserCredentials(ctx context.Context, email string, phoneNumber string) (*models.User, error) {
 	args := m.Called(ctx, email, phoneNumber)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -54,7 +48,7 @@ func (m *MockUserRepository) GetCredentialsByEmailOrPhoneNumber(ctx context.Cont
 	return args.Get(0).(*models.User), args.Error(1)
 }
 
-func (m *MockUserRepository) GetOneByAccountNumber(ctx context.Context, accountNumber string) (*models.User, error) {
+func (m *MockUserRepository) UserByAccountNumber(ctx context.Context, accountNumber string) (*models.User, error) {
 	args := m.Called(ctx, accountNumber)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -62,7 +56,7 @@ func (m *MockUserRepository) GetOneByAccountNumber(ctx context.Context, accountN
 	return args.Get(0).(*models.User), args.Error(1)
 }
 
-func (m *MockUserRepository) GetOneByID(ctx context.Context, id int) (*models.User, error) {
+func (m *MockUserRepository) UserByID(ctx context.Context, id int) (*models.User, error) {
 	args := m.Called(ctx, id)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -70,21 +64,22 @@ func (m *MockUserRepository) GetOneByID(ctx context.Context, id int) (*models.Us
 	return args.Get(0).(*models.User), args.Error(1)
 }
 
+// fakeStore joins the user mock and an in-memory revocation table into the one
+// store UserService takes.
+type fakeStore struct {
+	*MockUserRepository
+	*memRevoked
+}
+
 func TestUserService_Create(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		mockRepo := new(MockUserRepository)
 
-		mockRepo.On("Create", mock.Anything, mock.MatchedBy(func(u *models.User) bool {
+		mockRepo.On("CreateUser", mock.Anything, mock.MatchedBy(func(u *models.User) bool {
 			return u.Email != nil && *u.Email == "test@example.com" && u.Name == "Test User"
 		})).Return(nil)
 
-		deps := service.Dependencies{
-			Repository: repository.Repository{
-				User: mockRepo,
-			},
-		}
-
-		svc := service.NewUserService(&deps)
+		svc := service.NewUserService(fakeStore{mockRepo, newMemRevoked()}, nil)
 
 		req := &models.CreateUserRequest{
 			Name:  "Test User",
@@ -112,13 +107,7 @@ func TestUserService_Create(t *testing.T) {
 	t.Run("Invalid Phone Number", func(t *testing.T) {
 		mockRepo := new(MockUserRepository)
 
-		deps := service.Dependencies{
-			Repository: repository.Repository{
-				User: mockRepo,
-			},
-		}
-
-		svc := service.NewUserService(&deps)
+		svc := service.NewUserService(fakeStore{mockRepo, newMemRevoked()}, nil)
 
 		req := &models.CreateUserRequest{
 			PhoneNumber: models.PhoneNumber{
@@ -136,16 +125,10 @@ func TestUserService_Create(t *testing.T) {
 	t.Run("User Already Exists", func(t *testing.T) {
 		mockRepo := new(MockUserRepository)
 
-		mockRepo.On("Create", mock.Anything, mock.Anything).
+		mockRepo.On("CreateUser", mock.Anything, mock.Anything).
 			Return(&pgconn.PgError{Code: "23505"})
 
-		deps := service.Dependencies{
-			Repository: repository.Repository{
-				User: mockRepo,
-			},
-		}
-
-		svc := service.NewUserService(&deps)
+		svc := service.NewUserService(fakeStore{mockRepo, newMemRevoked()}, nil)
 
 		req := &models.CreateUserRequest{
 			Email:    "existing@example.com",
@@ -164,15 +147,9 @@ func TestUserService_Create(t *testing.T) {
 	t.Run("DB Create Error", func(t *testing.T) {
 		mockRepo := new(MockUserRepository)
 
-		mockRepo.On("Create", mock.Anything, mock.Anything).Return(errors.New("db create error"))
+		mockRepo.On("CreateUser", mock.Anything, mock.Anything).Return(errors.New("db create error"))
 
-		deps := service.Dependencies{
-			Repository: repository.Repository{
-				User: mockRepo,
-			},
-		}
-
-		svc := service.NewUserService(&deps)
+		svc := service.NewUserService(fakeStore{mockRepo, newMemRevoked()}, nil)
 
 		req := &models.CreateUserRequest{
 			Email:    "test@example.com",
@@ -195,7 +172,7 @@ func TestUserService_GetTokens(t *testing.T) {
 
 		hashedPassword, _ := generator.Hash("password123")
 
-		mockRepo.On("GetCredentialsByEmailOrPhoneNumber", mock.Anything, "test@example.com", "").
+		mockRepo.On("UserCredentials", mock.Anything, "test@example.com", "").
 			Return(&models.User{
 				ID:            1,
 				Email:         strPtr("test@example.com"),
@@ -204,14 +181,7 @@ func TestUserService_GetTokens(t *testing.T) {
 				AccountNumber: "123456",
 			}, nil)
 
-		deps := service.Dependencies{
-			Repository: repository.Repository{
-				User: mockRepo,
-			},
-			JWTConfig: testJWTConfig(),
-		}
-
-		svc := service.NewUserService(&deps)
+		svc := service.NewUserService(fakeStore{mockRepo, newMemRevoked()}, testJWTConfig())
 
 		req := &models.GetUserTokenRequest{
 			Email:    "test@example.com",
@@ -237,15 +207,9 @@ func TestUserService_GetTokens(t *testing.T) {
 	t.Run("User Not Found", func(t *testing.T) {
 		mockRepo := new(MockUserRepository)
 
-		mockRepo.On("GetCredentialsByEmailOrPhoneNumber", mock.Anything, "notfound@example.com", "").Return(nil, nil)
+		mockRepo.On("UserCredentials", mock.Anything, "notfound@example.com", "").Return(nil, nil)
 
-		deps := service.Dependencies{
-			Repository: repository.Repository{
-				User: mockRepo,
-			},
-		}
-
-		svc := service.NewUserService(&deps)
+		svc := service.NewUserService(fakeStore{mockRepo, newMemRevoked()}, nil)
 
 		req := &models.GetUserTokenRequest{
 			Email:    "notfound@example.com",
@@ -266,20 +230,14 @@ func TestUserService_GetTokens(t *testing.T) {
 
 		hashedPassword, _ := generator.Hash("password123")
 
-		mockRepo.On("GetCredentialsByEmailOrPhoneNumber", mock.Anything, "test@example.com", "").
+		mockRepo.On("UserCredentials", mock.Anything, "test@example.com", "").
 			Return(&models.User{
 				ID:       1,
 				Email:    strPtr("test@example.com"),
 				Password: hashedPassword,
 			}, nil)
 
-		deps := service.Dependencies{
-			Repository: repository.Repository{
-				User: mockRepo,
-			},
-		}
-
-		svc := service.NewUserService(&deps)
+		svc := service.NewUserService(fakeStore{mockRepo, newMemRevoked()}, nil)
 
 		req := &models.GetUserTokenRequest{
 			Email:    "test@example.com",
@@ -299,15 +257,10 @@ func TestUserService_GetTokens(t *testing.T) {
 func TestGetTokens_UserNotFound_GenericError(t *testing.T) {
 	mockRepo := new(MockUserRepository)
 	mockRepo.
-		On("GetCredentialsByEmailOrPhoneNumber", mock.Anything, "nobody@example.com", "").
+		On("UserCredentials", mock.Anything, "nobody@example.com", "").
 		Return((*models.User)(nil), nil)
 
-	deps := service.Dependencies{
-		Repository: repository.Repository{
-			User: mockRepo,
-		},
-	}
-	svc := service.NewUserService(&deps)
+	svc := service.NewUserService(fakeStore{mockRepo, newMemRevoked()}, nil)
 
 	_, err := svc.GetTokens(context.Background(), &models.GetUserTokenRequest{
 		Email:    "nobody@example.com",
@@ -324,15 +277,10 @@ func TestGetTokens_WrongPassword_SameGenericError(t *testing.T) {
 	hashed, _ := generator.Hash("correct-password")
 	mockRepo := new(MockUserRepository)
 	mockRepo.
-		On("GetCredentialsByEmailOrPhoneNumber", mock.Anything, "user@example.com", "").
+		On("UserCredentials", mock.Anything, "user@example.com", "").
 		Return(&models.User{ID: 1, AccountNumber: "1", Password: hashed}, nil)
 
-	deps := service.Dependencies{
-		Repository: repository.Repository{
-			User: mockRepo,
-		},
-	}
-	svc := service.NewUserService(&deps)
+	svc := service.NewUserService(fakeStore{mockRepo, newMemRevoked()}, nil)
 
 	_, err := svc.GetTokens(context.Background(), &models.GetUserTokenRequest{
 		Email:    "user@example.com",

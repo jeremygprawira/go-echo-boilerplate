@@ -1,16 +1,13 @@
-package healthcheck_test
+package http
 
 import (
 	"context"
 	"encoding/json"
-	healthcheck "go-echo-boilerplate/internal/deliveries/http/health_check"
 	"go-echo-boilerplate/internal/models"
-	"go-echo-boilerplate/internal/service"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -29,12 +26,9 @@ func (m *MockHealthService) Check(ctx context.Context) (*models.HealthResponse, 
 }
 
 func TestHealthHandler_Check(t *testing.T) {
-	e := echo.New()
-
 	t.Run("Success", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/health", nil)
 		rec := httptest.NewRecorder()
-		e.NewContext(req, rec)
 
 		mockHealthSvc := new(MockHealthService)
 		expectedResp := &models.HealthResponse{
@@ -46,12 +40,7 @@ func TestHealthHandler_Check(t *testing.T) {
 		}
 		mockHealthSvc.On("Check", mock.Anything).Return(expectedResp, nil)
 
-		svc := &service.Service{
-			Health: mockHealthSvc,
-		}
-
-		g := e.Group("/health")
-		healthcheck.New(g, svc)
+		e := testServer{health: mockHealthSvc}.build(t)
 
 		e.ServeHTTP(rec, req)
 

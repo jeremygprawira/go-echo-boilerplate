@@ -1,7 +1,7 @@
-package v1
+package http
 
 import (
-	"go-echo-boilerplate/internal/config"
+	"context"
 	"go-echo-boilerplate/internal/constant"
 	"go-echo-boilerplate/internal/deliveries/http/middleware"
 	"go-echo-boilerplate/internal/models"
@@ -9,46 +9,36 @@ import (
 	"go-echo-boilerplate/internal/pkg/jwtc"
 	"go-echo-boilerplate/internal/pkg/response"
 	"go-echo-boilerplate/internal/pkg/validator"
-	"go-echo-boilerplate/internal/service"
 	"net/http"
 	"time"
 
 	"github.com/labstack/echo/v4"
 )
 
-type userV1Handler struct {
-	service    *service.Service
-	config     *config.Configuration
-	jwtConfig  *jwtc.Configuration
-	revocation middleware.RevocationChecker
+// userService is what the user routes need. *service.UserService satisfies it.
+type userService interface {
+	Create(ctx context.Context, request *models.CreateUserRequest) (*models.User, error)
+	GetTokens(ctx context.Context, request *models.GetUserTokenRequest) (*models.GetUserTokenResponse, error)
+	GetByAccountNumber(ctx context.Context, accountNumber string) (*models.User, error)
+	RefreshTokens(ctx context.Context, refreshToken string) (*models.GetUserTokenResponse, error)
+	Logout(ctx context.Context, accessJTI string, refreshToken string) error
 }
 
-func NewUserV1(v1 *echo.Group, service *service.Service, config *config.Configuration, jwtConfig *jwtc.Configuration, revocation middleware.RevocationChecker) {
-	h := &userV1Handler{
-		service:    service,
-		config:     config,
-		jwtConfig:  jwtConfig,
-		revocation: revocation,
+type userHandler struct {
+	users userService
+}
+
+func userRoutes(users userService) []route {
+	h := userHandler{users: users}
+	return []route{
+		{method: http.MethodPost, path: "/v1/users", handler: h.Create, access: public, rateLimited: true, idempotent: true},
+		{method: http.MethodPost, path: "/v1/users/tokens", handler: h.GetTokens, access: public, rateLimited: true},
+		// Not idempotent: a cached replay would skip the revocation check and
+		// hand out the tokens from an already rotated refresh token.
+		{method: http.MethodPost, path: "/v1/users/tokens/refresh", handler: h.RefreshTokens, access: public, rateLimited: true},
+		{method: http.MethodGet, path: "/v1/users/me", handler: h.GetUserByAccessToken, access: bearer},
+		{method: http.MethodPost, path: "/v1/users/logout", handler: h.Logout, access: bearer},
 	}
-
-	// Config.Validate rejects a bad ttl at startup, so the parse cannot fail
-	// here. A nil config (handler tests) leaves the ttl at zero.
-	var idempotencyTTL time.Duration
-	if config != nil {
-		idempotencyTTL, _ = time.ParseDuration(config.Idempotency.TTL)
-	}
-
-	noBearerRoute := v1.Group("/users")
-	noBearerRoute.POST("", h.Create, middleware.RateLimiter(config), middleware.Idempotency(idempotencyTTL))
-	noBearerRoute.POST("/tokens", h.GetTokens, middleware.RateLimiter(config))
-	// No Idempotency here: a cached replay would skip the revocation check and
-	// hand out the tokens from an already rotated refresh token.
-	noBearerRoute.POST("/tokens/refresh", h.RefreshTokens, middleware.RateLimiter(config))
-
-	bearerRoute := v1.Group("/users")
-	bearerRoute.Use(middleware.BearerAuthMiddleware(h.jwtConfig, h.revocation))
-	bearerRoute.GET("/me", h.GetUserByAccessToken)
-	bearerRoute.POST("/logout", h.Logout)
 }
 
 // Create registers a new user
@@ -65,7 +55,7 @@ func NewUserV1(v1 *echo.Group, service *service.Service, config *config.Configur
 // @Failure 409 {object} models.Response "User Already Exists (Email or Phone)"
 // @Failure 500 {object} models.Response "Internal Server Error"
 // @Router /api/v1/users [post]
-func (h *userV1Handler) Create(ctx echo.Context) error {
+func (h userHandler) Create(ctx echo.Context) error {
 	var request models.CreateUserRequest
 	if err := ctx.Bind(&request); err != nil {
 		return err
@@ -75,7 +65,7 @@ func (h *userV1Handler) Create(ctx echo.Context) error {
 		return errorc.FromValidation(err)
 	}
 
-	user, err := h.service.User.Create(ctx.Request().Context(), &request)
+	user, err := h.users.Create(ctx.Request().Context(), &request)
 	if err != nil {
 		return err
 	}
@@ -96,7 +86,7 @@ func (h *userV1Handler) Create(ctx echo.Context) error {
 // @Failure 404 {object} models.Response "User Not Found"
 // @Failure 500 {object} models.Response "Internal Server Error"
 // @Router /api/v1/users/tokens [post]
-func (h *userV1Handler) GetTokens(ctx echo.Context) error {
+func (h userHandler) GetTokens(ctx echo.Context) error {
 	var request models.GetUserTokenRequest
 	if err := ctx.Bind(&request); err != nil {
 		return err
@@ -106,7 +96,7 @@ func (h *userV1Handler) GetTokens(ctx echo.Context) error {
 		return errorc.FromValidation(err)
 	}
 
-	user, err := h.service.User.GetTokens(ctx.Request().Context(), &request)
+	user, err := h.users.GetTokens(ctx.Request().Context(), &request)
 	if err != nil {
 		return err
 	}
@@ -140,7 +130,7 @@ func (h *userV1Handler) GetTokens(ctx echo.Context) error {
 // @Failure 422 {object} models.Response "Validation Failed"
 // @Failure 401 {object} models.Response "Invalid or Revoked Refresh Token"
 // @Router /api/v1/users/tokens/refresh [post]
-func (h *userV1Handler) RefreshTokens(ctx echo.Context) error {
+func (h userHandler) RefreshTokens(ctx echo.Context) error {
 	var request models.RefreshTokenRequest
 	if err := ctx.Bind(&request); err != nil {
 		return err
@@ -151,7 +141,7 @@ func (h *userV1Handler) RefreshTokens(ctx echo.Context) error {
 		return errorc.Validation.New().FieldError("refreshToken", "MISSING_FIELD", "refreshToken is required")
 	}
 
-	tokens, err := h.service.User.RefreshTokens(ctx.Request().Context(), refreshToken)
+	tokens, err := h.users.RefreshTokens(ctx.Request().Context(), refreshToken)
 	if err != nil {
 		return err
 	}
@@ -172,15 +162,15 @@ func (h *userV1Handler) RefreshTokens(ctx echo.Context) error {
 // @Failure 401 {object} models.Response "Unauthorized"
 // @Router /api/v1/users/logout [post]
 // @Security BearerAuth
-func (h *userV1Handler) Logout(ctx echo.Context) error {
-	jti, _ := ctx.Get("jti").(string)
+func (h userHandler) Logout(ctx echo.Context) error {
+	jti := middleware.Claims(ctx).ID
 
 	var request models.LogoutRequest
 	_ = ctx.Bind(&request) // body is optional; the cookie fallback covers callers with none
 
 	refreshToken := jwtc.ResolveRefreshToken(ctx.Request(), request.RefreshToken)
 
-	if err := h.service.User.Logout(ctx.Request().Context(), jti, refreshToken); err != nil {
+	if err := h.users.Logout(ctx.Request().Context(), jti, refreshToken); err != nil {
 		return err
 	}
 
@@ -209,10 +199,10 @@ func (h *userV1Handler) Logout(ctx echo.Context) error {
 // @Failure 500 {object} models.Response "Internal Server Error"
 // @Router /api/v1/users/me [get]
 // @Security BearerAuth
-func (h *userV1Handler) GetUserByAccessToken(ctx echo.Context) error {
-	accountNumber := ctx.Get("accountNumber").(string)
+func (h userHandler) GetUserByAccessToken(ctx echo.Context) error {
+	accountNumber := middleware.Claims(ctx).AccountNumber
 
-	user, err := h.service.User.GetByAccountNumber(ctx.Request().Context(), accountNumber)
+	user, err := h.users.GetByAccountNumber(ctx.Request().Context(), accountNumber)
 	if err != nil {
 		return err
 	}

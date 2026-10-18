@@ -7,21 +7,22 @@ import (
 	"github.com/jeremygprawira/wlog"
 )
 
-type HealthService interface {
-	Check(ctx context.Context) (*models.HealthResponse, error)
+// pinger is the storage HealthService needs. *repository.Store satisfies it.
+type pinger interface {
+	Ping(ctx context.Context) error
 }
 
-type healthService struct {
-	d *Dependencies
+type HealthService struct {
+	db pinger
 }
 
-func NewHealthService(d *Dependencies) HealthService {
-	return &healthService{d: d}
+func NewHealthService(db pinger) *HealthService {
+	return &HealthService{db: db}
 }
 
-func (hs *healthService) Check(ctx context.Context) (*models.HealthResponse, error) {
+func (hs *HealthService) Check(ctx context.Context) (*models.HealthResponse, error) {
 	postgreHealth := models.HealthDetailResponse{Type: models.TYPE_HEALTH, Component: "PostgreSQL", Status: "OK"}
-	if err := hs.d.Repository.Health.Check(ctx); err != nil {
+	if err := hs.db.Ping(ctx); err != nil {
 		// The driver error names the database role, database and host, and
 		// /health is anonymous, so the detail goes to the wide event only.
 		wlog.Set(ctx, "health.postgresql_error", err.Error())

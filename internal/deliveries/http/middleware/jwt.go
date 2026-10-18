@@ -17,20 +17,17 @@ type RevocationChecker interface {
 	IsRevoked(ctx context.Context, jti string) (bool, error)
 }
 
-// BearerAuthMiddleware validates JWT access tokens from the Authorization header
-// and injects authenticated user claims into the request context.
-//
-// The middleware:
-//   - Extracts the Bearer token from the Authorization header
-//   - Validates the token signature, expiration, and type via validator.AccessToken
-//   - Injects user claims into the context for downstream handlers
-//
-// Context keys set:
-//   - "userID": int - The authenticated user's ID
-//   - "accountNumber": string - The user's account number
-//   - "email": string - The user's email address
-//   - "phoneNumber": string - The user's phone number
-//   - "jti": string - The access token's ID
+const claimsKey = "claims"
+
+// Claims returns the access-token claims that BearerAuthMiddleware verified
+// for this request. It is nil on a route without bearer access.
+func Claims(c echo.Context) *jwtc.Claims {
+	claims, _ := c.Get(claimsKey).(*jwtc.Claims)
+	return claims
+}
+
+// BearerAuthMiddleware validates the access token in the Authorization header,
+// rejects a revoked one, and makes its claims available through Claims.
 func BearerAuthMiddleware(config *jwtc.Configuration, revocation RevocationChecker) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(ctx echo.Context) error {
@@ -62,12 +59,7 @@ func BearerAuthMiddleware(config *jwtc.Configuration, revocation RevocationCheck
 				return errorc.Unauthorized.New().Public(herr.Message("token revoked"))
 			}
 
-			// Inject claims into context for downstream handlers
-			ctx.Set("userID", claims.UserID)
-			ctx.Set("accountNumber", claims.AccountNumber)
-			ctx.Set("email", claims.Email)
-			ctx.Set("phoneNumber", claims.PhoneNumber)
-			ctx.Set("jti", claims.ID)
+			ctx.Set(claimsKey, claims)
 
 			return next(ctx)
 		}

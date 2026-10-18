@@ -7,31 +7,31 @@ import (
 
 const tokenPurgeInterval = time.Hour
 
+// tokenStore is the storage TokenService needs. *repository.Store satisfies it.
+type tokenStore interface {
+	IsTokenRevoked(ctx context.Context, jti string, now time.Time) (bool, error)
+	PurgeExpiredTokens(ctx context.Context, now time.Time) error
+}
+
 // TokenService answers whether a JWT ID is revoked. A database error is
 // returned, never read as "not revoked", so callers fail closed.
 //
 // It is also a graceful.Process: Start purges expired revocations on a timer
 // until its context is cancelled at shutdown.
-type TokenService interface {
-	IsRevoked(ctx context.Context, jti string) (bool, error)
-	Start(ctx context.Context) error
-	Stop(ctx context.Context) error
-}
-
-type tokenService struct {
-	d     *Dependencies
+type TokenService struct {
+	store tokenStore
 	every time.Duration
 }
 
-func NewTokenService(d *Dependencies) TokenService {
-	return &tokenService{d: d, every: tokenPurgeInterval}
+func NewTokenService(store tokenStore) *TokenService {
+	return &TokenService{store: store, every: tokenPurgeInterval}
 }
 
-func (ts *tokenService) IsRevoked(ctx context.Context, jti string) (bool, error) {
-	return ts.d.Repository.RevokedToken.IsRevoked(ctx, jti, time.Now())
+func (ts *TokenService) IsRevoked(ctx context.Context, jti string) (bool, error) {
+	return ts.store.IsTokenRevoked(ctx, jti, time.Now())
 }
 
-func (ts *tokenService) Start(ctx context.Context) error {
+func (ts *TokenService) Start(ctx context.Context) error {
 	ticker := time.NewTicker(ts.every)
 	defer ticker.Stop()
 	for {
@@ -41,17 +41,10 @@ func (ts *tokenService) Start(ctx context.Context) error {
 		case now := <-ticker.C:
 			// A failed purge only leaves expired rows behind, which IsRevoked
 			// already ignores. The next tick retries.
-			_ = ts.d.Repository.RevokedToken.PurgeExpired(ctx, now)
+			_ = ts.store.PurgeExpiredTokens(ctx, now)
 		}
 	}
 }
 
 // Stop has nothing to release: Start returns once its context is cancelled.
-func (ts *tokenService) Stop(context.Context) error { return nil }
-
-// revoke keeps jti revoked for ttl, which callers set to the token's full
-// lifetime so the row outlives the token. It reports whether this call
-// revoked jti first, so a single-use token can be spent only once.
-func revoke(ctx context.Context, d *Dependencies, jti string, ttl time.Duration) (bool, error) {
-	return d.Repository.RevokedToken.Revoke(ctx, jti, time.Now().Add(ttl))
-}
+func (ts *TokenService) Stop(context.Context) error { return nil }

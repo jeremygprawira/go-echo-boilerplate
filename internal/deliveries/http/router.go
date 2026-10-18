@@ -2,12 +2,12 @@ package http
 
 import (
 	"go-echo-boilerplate/internal/config"
-	v1 "go-echo-boilerplate/internal/deliveries/http/api/v1"
-	healthcheck "go-echo-boilerplate/internal/deliveries/http/health_check"
 	"go-echo-boilerplate/internal/deliveries/http/middleware"
 	"go-echo-boilerplate/internal/pkg/jwtc"
-	"go-echo-boilerplate/internal/service"
+	"net"
 	"net/http"
+	"slices"
+	"time"
 
 	_ "go-echo-boilerplate/docs"
 
@@ -15,6 +15,28 @@ import (
 	"github.com/labstack/echo/v4"
 	echoSwagger "github.com/swaggo/echo-swagger"
 )
+
+// access says who may call a route. The zero value is bearer, so a row that
+// leaves it out fails closed.
+type access int
+
+const (
+	bearer access = iota // X-API-Key and a live access token
+	public               // X-API-Key only
+)
+
+// route is one row of the API route table. Every row is mounted under /api, so
+// the API key always applies; the other controls are the row's fields.
+type route struct {
+	method  string
+	path    string
+	handler echo.HandlerFunc
+	access  access
+	// rateLimited rows each get their own budget per client IP.
+	rateLimited bool
+	// idempotent rows replay the first response to a repeated Idempotency-Key.
+	idempotent bool
+}
 
 // @title GO-ECHO-BOILERPLATE API DOCUMENTATION
 // @version 1.0
@@ -31,28 +53,76 @@ import (
 // @host localhost:8080
 // @BasePath /api
 // @schemes http https
-func New(eco *echo.Echo, service *service.Service, config *config.Configuration, jwtConfig *jwtc.Configuration, revocation middleware.RevocationChecker, log *wlog.Logger) {
-	// Middleware for Recover and Logging
-	middleware := middleware.New(eco, config, log)
-	middleware.Default(config)
 
-	eco.GET("/", func(ctx echo.Context) error {
-		message := "This is your Go Echo Boilerplate"
-		return ctx.String(http.StatusOK, message)
+// NewServer builds the whole HTTP surface: server limits, the global
+// middleware chain, the infra routes, and every API route with the controls
+// its row asks for. Each feature's service is its own parameter, so wiring a
+// feature into core.Setup and mounting its routes here are checked by the
+// compiler together.
+func NewServer(
+	cfg *config.Configuration,
+	log *wlog.Logger,
+	jwt *jwtc.Configuration,
+	revocation middleware.RevocationChecker,
+	health healthService,
+	users userService,
+) *echo.Echo {
+	e := echo.New()
+	e.HideBanner = true
+	e.HidePort = true
+	e.HTTPErrorHandler = ErrorHandler
+	e.IPExtractor = ipExtractor(cfg.Application.TrustedProxies)
+
+	// Config.Validate rejects a bad or non-positive value at startup. An unset
+	// value (tests) parses to zero, which means no timeout.
+	app := cfg.Application
+	e.Server.ReadHeaderTimeout, _ = time.ParseDuration(app.ReadHeaderTimeout)
+	e.Server.ReadTimeout, _ = time.ParseDuration(app.ReadTimeout)
+	e.Server.WriteTimeout, _ = time.ParseDuration(app.WriteTimeout)
+	e.Server.IdleTimeout, _ = time.ParseDuration(app.IdleTimeout)
+
+	mw := middleware.New(e, cfg, log)
+	mw.Default(cfg)
+
+	e.GET("/", func(ctx echo.Context) error {
+		return ctx.String(http.StatusOK, "This is your Go Echo Boilerplate")
 	})
+	registerDocsRoutes(e, cfg)
+	e.GET("/health", healthHandler{health: health}.Check)
 
-	registerDocsRoutes(eco, config)
+	// Config.Validate rejects a bad ttl at startup, so the parse cannot fail.
+	idempotencyTTL, _ := time.ParseDuration(cfg.Idempotency.TTL)
+	controls := controls{
+		rateLimit:   middleware.RateLimiter(cfg),
+		bearer:      middleware.BearerAuthMiddleware(jwt, revocation),
+		idempotency: middleware.Idempotency(idempotencyTTL),
+	}
+	controls.mount(e.Group("/api", mw.ApiKeyMiddleware(cfg)), slices.Concat(
+		userRoutes(users),
+	))
+	return e
+}
 
-	// Health Grouping
-	health := eco.Group("/health")
-	healthcheck.New(health, service)
+// controls holds one instance of each per-route middleware, so every row that
+// asks for a control shares it.
+type controls struct {
+	rateLimit, bearer, idempotency echo.MiddlewareFunc
+}
 
-	// API Grouping
-	api := eco.Group("/api")
-	api.Use(middleware.ApiKeyMiddleware(config))
-
-	// Initialize V1 Handlers
-	v1.New(api, service, config, jwtConfig, revocation)
+func (c controls) mount(api *echo.Group, routes []route) {
+	for _, r := range routes {
+		var chain []echo.MiddlewareFunc
+		if r.rateLimited {
+			chain = append(chain, c.rateLimit)
+		}
+		if r.access != public {
+			chain = append(chain, c.bearer)
+		}
+		if r.idempotent {
+			chain = append(chain, c.idempotency)
+		}
+		api.Add(r.method, r.path, r.handler, chain...)
+	}
 }
 
 func registerDocsRoutes(eco *echo.Echo, config *config.Configuration) {
@@ -63,4 +133,22 @@ func registerDocsRoutes(eco *echo.Echo, config *config.Configuration) {
 		return ectx.File("api-docs.html")
 	})
 	eco.GET("/swagger/*", echoSwagger.WrapHandler)
+}
+
+// ipExtractor decides what c.RealIP returns, which keys the rate limiter.
+// With no trusted proxies the TCP peer is the client and client headers are
+// ignored. Otherwise X-Forwarded-For is read right to left, skipping only the
+// listed proxies; Echo's default trust of private and loopback ranges is off.
+func ipExtractor(trustedProxies []string) echo.IPExtractor {
+	if len(trustedProxies) == 0 {
+		return echo.ExtractIPDirect()
+	}
+	options := []echo.TrustOption{echo.TrustLoopback(false), echo.TrustLinkLocal(false), echo.TrustPrivateNet(false)}
+	for _, cidr := range trustedProxies {
+		// Config.Validate rejects a bad CIDR at startup.
+		if _, ipNet, err := net.ParseCIDR(cidr); err == nil {
+			options = append(options, echo.TrustIPRange(ipNet))
+		}
+	}
+	return echo.ExtractIPFromXFFHeader(options...)
 }

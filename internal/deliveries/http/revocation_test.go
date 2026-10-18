@@ -1,4 +1,4 @@
-package core
+package http
 
 import (
 	"bytes"
@@ -10,21 +10,14 @@ import (
 	"testing"
 	"time"
 
-	"go-echo-boilerplate/internal/config"
 	"go-echo-boilerplate/internal/models"
 	"go-echo-boilerplate/internal/pkg/generator"
 	"go-echo-boilerplate/internal/pkg/jwtc"
-	"go-echo-boilerplate/internal/pkg/logger"
-	"go-echo-boilerplate/internal/repository"
 	"go-echo-boilerplate/internal/service"
 
-	wlogzap "github.com/jeremygprawira/wlog/log/zap"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
 )
-
-const testAPIKey = "test-api-key-0123456789abcdef0123456789"
 
 type fakeUsers struct {
 	user *models.User
@@ -53,17 +46,14 @@ func (g *gate) wait() {
 	}
 }
 
-func (f *fakeUsers) Create(context.Context, *models.User) error { return nil }
-func (f *fakeUsers) CheckByEmailOrPhoneNumber(context.Context, string, string) (bool, error) {
-	return true, nil
-}
-func (f *fakeUsers) GetCredentialsByEmailOrPhoneNumber(context.Context, string, string) (*models.User, error) {
+func (f *fakeUsers) CreateUser(context.Context, *models.User) error { return nil }
+func (f *fakeUsers) UserCredentials(context.Context, string, string) (*models.User, error) {
 	return f.user, nil
 }
-func (f *fakeUsers) GetOneByAccountNumber(context.Context, string) (*models.User, error) {
+func (f *fakeUsers) UserByAccountNumber(context.Context, string) (*models.User, error) {
 	return f.user, nil
 }
-func (f *fakeUsers) GetOneByID(context.Context, int) (*models.User, error) {
+func (f *fakeUsers) UserByID(context.Context, int) (*models.User, error) {
 	if f.gate != nil {
 		f.gate.wait()
 	}
@@ -75,7 +65,7 @@ type memRevoked struct {
 	rows map[string]time.Time
 }
 
-func (m *memRevoked) Revoke(_ context.Context, jti string, expiresAt time.Time) (bool, error) {
+func (m *memRevoked) RevokeToken(_ context.Context, jti string, expiresAt time.Time) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, ok := m.rows[jti]; ok {
@@ -85,14 +75,14 @@ func (m *memRevoked) Revoke(_ context.Context, jti string, expiresAt time.Time) 
 	return true, nil
 }
 
-func (m *memRevoked) IsRevoked(_ context.Context, jti string, now time.Time) (bool, error) {
+func (m *memRevoked) IsTokenRevoked(_ context.Context, jti string, now time.Time) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	exp, ok := m.rows[jti]
 	return ok && exp.After(now), nil
 }
 
-func (m *memRevoked) PurgeExpired(context.Context, time.Time) error { return nil }
+func (m *memRevoked) PurgeExpiredTokens(context.Context, time.Time) error { return nil }
 
 func revocationTestServer(t *testing.T) http.Handler {
 	t.Helper()
@@ -101,28 +91,25 @@ func revocationTestServer(t *testing.T) http.Handler {
 
 func revocationTestServerWithGate(t *testing.T, g *gate) http.Handler {
 	t.Helper()
-	cfg := &config.Configuration{}
-	cfg.Application.Environment = "local"
-	cfg.Authorization.Access = config.TokenConfiguration{Secret: "access-secret-0123456789abcdef0123456789", Duration: "15m"}
-	cfg.Authorization.Refresh = config.TokenConfiguration{Secret: "refresh-secret-0123456789abcdef012345678", Duration: "168h"}
-	cfg.Authorization.APIKey = testAPIKey
-	cfg.Idempotency.TTL = "10m"
+	cfg := testConfig()
 
 	hash, err := generator.Hash("Passw0rd!")
 	require.NoError(t, err)
 	email := "user@example.test"
 	users := &fakeUsers{user: &models.User{ID: 7, AccountNumber: "100", Name: "U", Email: &email, Password: hash}, gate: g}
 
-	jwtConfig := jwtc.DefaultConfig(cfg)
-	svc := service.New(service.Dependencies{
-		Repository: repository.Repository{User: users, RevokedToken: &memRevoked{rows: map[string]time.Time{}}},
-		Config:     cfg,
-		JWTConfig:  jwtConfig,
-	})
-	log, err := logger.NewWlog(cfg, wlogzap.Drain(zap.NewNop()))
-	require.NoError(t, err)
+	store := struct {
+		*fakeUsers
+		*memRevoked
+	}{users, &memRevoked{rows: map[string]time.Time{}}}
 
-	return BuildHTTPServer(&Dependencies{Service: svc, Config: cfg, JWTConfig: jwtConfig, Log: log})
+	jwtConfig := jwtc.DefaultConfig(cfg)
+	return testServer{
+		cfg:        cfg,
+		jwt:        jwtConfig,
+		revocation: service.NewTokenService(store),
+		users:      service.NewUserService(store, jwtConfig),
+	}.build(t)
 }
 
 func call(t *testing.T, h http.Handler, method, path, bearer string, body any, headers ...string) (int, map[string]any) {
