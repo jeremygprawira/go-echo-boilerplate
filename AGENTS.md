@@ -47,8 +47,9 @@ Clean Architecture, written the Go way. Dependencies point inward: `deliveries/h
 
 **Layers:**
 - `internal/repository` has one type, `Store`. Every query is a method on it, such as `CreateUser`, `UserByID` or `RevokeToken`, with its SQL in an unexported const in the same file. `Atomic(ctx, fn func(tx *Store) error)` runs `fn` in one transaction on a `Store` bound to it, so the transaction has every query. The package declares no interfaces.
+- `scripts/check-deadcode.sh` cannot see an unused `Store` method, because deadcode counts every method of a type that reaches an interface as used. So a reusable `Store` method with no caller, such as `UserExistsByEmailOrPhoneNumber`, stays only when it has a test.
 - `internal/service` has one concrete struct per feature: `UserService`, `TokenService`, `HealthService`. Each one declares the store methods it calls as a small unexported interface (`userStore`, `tokenStore`, `pinger`) and takes it in its constructor. A service never imports the repository, gorm, echo or deliveries.
-- `internal/deliveries/http` is one package that exports `NewServer` and `ErrorHandler`. Each feature has a handler file with its own unexported service interface (`userService`) and a function that returns its route rows (`userRoutes`). `NewServer` builds the rate limiter, the bearer check and the idempotency store once, and mounts every row under `/api` behind the API key. Middleware lives in `internal/deliveries/http/middleware`.
+- `internal/deliveries/http` is one package that exports `NewServer` and `ErrorHandler`. Each feature has a handler file with its own unexported service interface (`userService`) and a function that returns its route rows (`userRoutes`). A handler never imports `internal/service`. `NewServer` builds the rate limiter, the bearer check and the idempotency store once, and mounts every row under `/api` behind the API key. Middleware lives in `internal/deliveries/http/middleware`.
 - `internal/models` holds the entities and DTOs that the layers share. The `User` entity uses `*string` for nullable columns (`Email`, `PhoneNumber`). Request DTOs use plain strings, where `""` means absent, and the service converts them. `User.Password` is `json:"-"`, so the hash never reaches a response. User lookups skip soft-deleted rows (`deleted_at IS NULL`).
 
 **Route rows.** A `route` has a `method`, a `path`, exactly one of `public` or `bearer`, and the flags `rateLimited` and `idempotent`. A `public` handler is a plain `echo.HandlerFunc` and needs only the API key. A handler that reads its caller is a `bearerHandler`, `func(echo.Context, jwtc.Claims) error`. It goes in the `bearer` field, which also needs a live access token. If you put it in `public`, the build fails. Each `rateLimited` row has its own budget per client IP. `mount` panics at startup on a row with no handler or two.
@@ -103,13 +104,13 @@ Each rule has a check that fails on a real past commit. Add a row when you add a
 | Rule | Enforced by | Fails on |
 | --- | --- | --- |
 | `internal/pkg` is a leaf. It never imports `repository`, `service`, `deliveries` or `core` | `make lint` (depguard `pkg-is-leaf`) | 1334145 |
-| `internal/deliveries` never imports `repository` or gorm | `make lint` (depguard `deliveries-no-persistence`) | no past violation |
-| `internal/service` never imports `repository`, gorm, echo or `deliveries` | `make lint` (depguard `service-no-adapters`) | b60be39 |
+| `internal/deliveries` never imports `repository`, gorm or `service` | `make lint` (depguard `deliveries-no-persistence`) | 1cee85c |
+| `internal/service` never imports `repository`, gorm, echo or `deliveries` | `make lint` (depguard `service-no-adapters`) | 1cee85c |
 | `internal/repository` never imports `service` or `deliveries` | `make lint` (depguard `repository-no-callers`) | no past violation |
 | A handler that reads its caller mounts only on a bearer route row | `go build` (the `bearerHandler` type of the `bearer` field) | no past violation |
 | Each served route has a Swagger path with the same method, and each Swagger path is served | `make test` (`TestSwaggerPathsMatchServedRoutes`) | no past violation |
-| One rate limiter on many routes keeps a budget per route and client IP | `make test` (`TestRateLimiter_OneInstanceKeepsABudgetPerRoute`) | b60be39 |
-| A user lookup never returns a soft-deleted user | `make test` (`TestUserLookups_QueryFiltersDeletedAt`) | b60be39 |
+| One rate limiter on many route rows keeps a budget per method, route and client IP | `make test` (`TestRateLimiter_OneInstanceKeepsABudgetPerRoute`, `TestRateLimiter_OneInstanceKeepsABudgetPerMethodOnAPath`) | 1cee85c, 898283f |
+| A user lookup never returns a soft-deleted user | `make test` (`TestUserLookups_QueryFiltersDeletedAt`) | 1cee85c |
 | `Store.Atomic` runs every query in `fn` on the transaction | `make test` (`TestAtomic_CommitsWritesMadeThroughTheTransaction`) | no past violation |
 | Echo's middleware package is imported as `echoMiddleware` | `make lint` (importas) | ab33d3a^ |
 | Every returned error is checked, including `Close` | `make lint` (errcheck) | 1c90978 |
