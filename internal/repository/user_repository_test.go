@@ -12,6 +12,7 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -117,6 +118,27 @@ func TestCheckByEmailOrPhoneNumber(t *testing.T) {
 			assert.Equal(t, tc.wantErr, err != nil)
 			assert.Equal(t, tc.want, exists)
 			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+// sqlmock cannot run SQL, so this pins the filter that keeps a soft-deleted
+// row out of every lookup that returns a user.
+func TestUserLookups_SkipSoftDeletedUsers(t *testing.T) {
+	ctx := context.Background()
+	for name, lookup := range map[string]func(*repository.Store) (*models.User, error){
+		"UserCredentials":     func(s *repository.Store) (*models.User, error) { return s.UserCredentials(ctx, "gone@example.com", "") },
+		"UserByAccountNumber": func(s *repository.Store) (*models.User, error) { return s.UserByAccountNumber(ctx, "100") },
+		"UserByID":            func(s *repository.Store) (*models.User, error) { return s.UserByID(ctx, 1) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, mock := newMockStore(t)
+			mock.ExpectQuery(`FROM users\s+WHERE deleted_at IS NULL AND`).WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+			user, err := lookup(s)
+			require.NoError(t, err)
+			require.Nil(t, user)
+			require.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
 }
