@@ -1,36 +1,42 @@
 #!/usr/bin/env bash
-# Fails when this tree has unreachable funcs that the base tree does not.
-# Usage: scripts/check-deadcode.sh [base-ref]   (default: merge base with origin/master)
+# Fails when deadcode finds an unreachable func that scripts/deadcode-allow.txt
+# does not list, when the list names a func that is reachable or gone, or when
+# an entry has no "# reason".
 set -euo pipefail
 export LC_ALL=C
+cd "$(dirname "$0")/.."
 
-root=$(git rev-parse --show-toplevel)
-if [ "$(git rev-parse --is-shallow-repository)" = true ]; then
-	echo "deadcode: shallow clone, fetch full history to find the merge base" >&2
-	exit 1
-fi
-base=${1:-$(git merge-base origin/master HEAD)}
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-go build -modfile="$root/tools/go.mod" -o "$tmp/deadcode" golang.org/x/tools/cmd/deadcode
+allow=scripts/deadcode-allow.txt
+src=$allow
+[ -f "$src" ] || src=/dev/null
 
-funcs_by_pkg_and_name() { (cd "$1" && "$tmp/deadcode" -f '{{range .Funcs}}{{$.Path}}: {{.Name}}{{"\n"}}{{end}}' ./... | sort -u); }
+go build -modfile=tools/go.mod -o "$tmp/deadcode" golang.org/x/tools/cmd/deadcode
+"$tmp/deadcode" -f '{{range .Funcs}}{{$.Path}}: {{.Name}}{{"\n"}}{{end}}' ./... | sort -u > "$tmp/found"
+sed -e 's/#.*//' -e 's/[[:space:]]*$//' -e '/^$/d' "$src" | sort -u > "$tmp/allowed"
 
-mkdir "$tmp/base"
-git -C "$root" archive "$base" | tar -x -C "$tmp/base"
-funcs_by_pkg_and_name "$tmp/base" > "$tmp/before"
-funcs_by_pkg_and_name "$root" > "$tmp/after"
+unlisted=$(comm -23 "$tmp/found" "$tmp/allowed")
+stale=$(comm -13 "$tmp/found" "$tmp/allowed")
+no_reason=$(grep -v -e '^#' -e '^[[:space:]]*$' "$src" | grep -v '#[[:space:]]*[^[:space:]]' || true)
 
-allow="$root/scripts/deadcode-allow.txt"
-touch "$tmp/allow"
-[ -f "$allow" ] && sed -e 's/#.*//' -e 's/[[:space:]]*$//' -e '/^$/d' "$allow" | sort -u > "$tmp/allow"
-
-new=$(comm -13 "$tmp/before" "$tmp/after" | comm -23 - "$tmp/allow")
-if [ -n "$new" ]; then
-	echo "deadcode: new unreachable funcs versus $base:"
-	echo "$new"
-	echo "Call them, delete them, or list them in scripts/deadcode-allow.txt with a reason."
-	exit 1
+fail=0
+if [ -n "$unlisted" ]; then
+	echo "deadcode: unreachable funcs that $allow does not list:"
+	echo "$unlisted"
+	echo "Call them, delete them, or list them with a reason."
+	fail=1
 fi
-echo "deadcode: no new unreachable funcs versus $base ($(wc -l < "$tmp/after" | tr -d ' ') existing)"
+if [ -n "$stale" ]; then
+	echo "deadcode: $allow lists funcs that are reachable or gone:"
+	echo "$stale"
+	fail=1
+fi
+if [ -n "$no_reason" ]; then
+	echo "deadcode: $allow entries with no # reason:"
+	echo "$no_reason"
+	fail=1
+fi
+[ "$fail" = 0 ] && echo "deadcode: $(wc -l < "$tmp/found" | tr -d ' ') unreachable funcs, each listed with a reason"
+exit "$fail"

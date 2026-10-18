@@ -1,6 +1,8 @@
-# Unreachable funcs that scripts/check-deadcode.sh accepts.
-# This repo is a boilerplate, so a generic helper with no caller yet can stay
-# when it has a test. One line per func, in deadcode's package: Func form:
+# Unreachable funcs that scripts/check-deadcode.sh accepts. Every other
+# unreachable func fails the check, and so does a line here whose func is
+# reachable or gone. This repo is a boilerplate, so a generic helper with no
+# caller yet can stay when it has a behavior test. One line per func, in
+# deadcode's package: Func form, with a reason:
 #   go-echo-boilerplate/internal/pkg/example: Helper  # why it stays
 go-echo-boilerplate/internal/models: ParsePagination  # cursor pagination input for list endpoints
 go-echo-boilerplate/internal/pkg/response: SuccessPagination  # envelope for paginated list endpoints
