@@ -23,7 +23,7 @@ func registerPasswordValidations() {
 
 // registerPasswordMinLength validates minimum password length
 func registerPasswordMinLength() {
-	if err := valid.RegisterValidation("passwordMinLength", func(fl v10.FieldLevel) bool {
+	if err := valid.RegisterValidation(TagPasswordMinLength, func(fl v10.FieldLevel) bool {
 		str, ok := getStringValue(fl)
 		if !ok {
 			return false
@@ -41,7 +41,7 @@ func registerPasswordMinLength() {
 
 // registerPasswordMaxLength validates maximum password length (bcrypt limit)
 func registerPasswordMaxLength() {
-	if err := valid.RegisterValidation("passwordMaxLength", func(fl v10.FieldLevel) bool {
+	if err := valid.RegisterValidation(TagPasswordMaxLength, func(fl v10.FieldLevel) bool {
 		str, ok := getStringValue(fl)
 		if !ok {
 			return false
@@ -60,7 +60,7 @@ func registerPasswordMaxLength() {
 // registerPasswordStrength validates password complexity
 // Requires at least one uppercase, one lowercase, one number, and one special character
 func registerPasswordStrength() {
-	if err := valid.RegisterValidation("passwordStrength", func(fl v10.FieldLevel) bool {
+	if err := valid.RegisterValidation(TagPasswordStrength, func(fl v10.FieldLevel) bool {
 		str, ok := getStringValue(fl)
 		if !ok {
 			return false
