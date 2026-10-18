@@ -5,7 +5,7 @@ go 1.26.9
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/golang-jwt/jwt/v5 v5.3.0
-	github.com/jackc/pgx/v5 v5.6.0
+	github.com/jackc/pgx/v5 v5.9.2
 	github.com/jeremygprawira/herr v0.2.0
 	github.com/jeremygprawira/wlog v1.0.0
 	github.com/jeremygprawira/wlog/errors/herr v1.0.0
@@ -13,7 +13,7 @@ require (
 	github.com/jeremygprawira/wlog/middleware/echo v1.0.0
 	github.com/stretchr/testify v1.12.1
 	github.com/swaggo/swag v1.16.6
-	golang.org/x/sync v0.22.0
+	golang.org/x/sync v0.23.0
 	golang.org/x/time v0.15.0
 	gorm.io/gorm v1.31.1
 )
@@ -42,8 +42,8 @@ require (
 	github.com/swaggo/files/v2 v2.0.0 // indirect
 	go.uber.org/multierr v1.10.0 // indirect
 	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394 // indirect
-	golang.org/x/mod v0.37.0 // indirect
-	golang.org/x/tools v0.47.0 // indirect
+	golang.org/x/mod v0.41.0 // indirect
+	golang.org/x/tools v0.49.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
@@ -74,10 +74,10 @@ require (
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	go.uber.org/zap v1.28.0
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/crypto v0.54.0
-	golang.org/x/net v0.57.0 // indirect
+	golang.org/x/crypto v0.57.0
+	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/oauth2 v0.36.0
-	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/text v0.40.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 	gorm.io/driver/postgres v1.6.0
 )
