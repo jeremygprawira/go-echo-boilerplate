@@ -21,7 +21,3 @@ func Connect(config *config.Configuration) (*Database, error) {
 		PostgreDatabase: postgreDatabase,
 	}, nil
 }
-
-func Disconnect(db *Database) error {
-	return DisconnectFromPostgreSQL(db.PostgreDatabase)
-}

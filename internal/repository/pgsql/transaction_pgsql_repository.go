@@ -8,22 +8,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// TransactionRepository provides methods for managing database transactions.
-// The Atomic method is the recommended approach for most use cases as it handles
-// all transaction lifecycle management automatically.
+// TransactionRepository runs a function inside one database transaction.
 type TransactionRepository interface {
-	// Begin starts a new database transaction.
-	// Note: Prefer using Atomic() for automatic transaction management.
-	Begin(ctx context.Context) (*gorm.DB, error)
-
-	// Commit commits the current transaction.
-	// Note: This should only be used with manually managed transactions from Begin().
-	Commit(ctx context.Context, tx *gorm.DB) error
-
-	// Rollback rolls back the current transaction.
-	// Note: This should only be used with manually managed transactions from Begin().
-	Rollback(ctx context.Context, tx *gorm.DB) error
-
 	// Atomic executes a function within a database transaction.
 	// If the function returns an error or panics, the transaction is rolled back.
 	// Otherwise, the transaction is committed.
@@ -38,36 +24,7 @@ func NewTransactionRepository(db *gorm.DB) TransactionRepository {
 	return &transactionRepository{db: db}
 }
 
-// Begin starts a new database transaction with context support.
-// Returns the transaction instance or an error if the transaction cannot be started.
-func (tr *transactionRepository) Begin(ctx context.Context) (*gorm.DB, error) {
-	tx := tr.db.WithContext(ctx).Begin()
-	if tx.Error != nil {
-		return nil, fmt.Errorf("failed to begin transaction: %w", tx.Error)
-	}
-	return tx, nil
-}
-
-// Commit commits the provided transaction.
-// The caller is responsible for passing the correct transaction instance.
-func (tr *transactionRepository) Commit(ctx context.Context, tx *gorm.DB) error {
-	if err := tx.Commit().Error; err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
-	}
-	return nil
-}
-
-// Rollback rolls back the provided transaction.
-// The caller is responsible for passing the correct transaction instance.
-func (tr *transactionRepository) Rollback(ctx context.Context, tx *gorm.DB) error {
-	if err := tx.Rollback().Error; err != nil {
-		return fmt.Errorf("failed to rollback transaction: %w", err)
-	}
-	return nil
-}
-
 // Atomic executes the provided function within a database transaction.
-// This is the recommended way to handle transactions as it ensures proper cleanup.
 //
 // Transaction Lifecycle:
 // 1. Begin transaction
@@ -77,7 +34,7 @@ func (tr *transactionRepository) Rollback(ctx context.Context, tx *gorm.DB) erro
 //
 // Example usage:
 //
-//	err := repo.Transaction.Atomic(ctx, func(ctx context.Context, r *PostgreRepository) error {
+//	err := transactionRepository.Atomic(ctx, func(ctx context.Context, r *PostgreRepository) error {
 //	    // Perform database operations using r
 //	    if err := r.SomeRepo.Create(ctx, data); err != nil {
 //	        return err // This will trigger a rollback

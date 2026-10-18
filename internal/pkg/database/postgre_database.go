@@ -79,12 +79,3 @@ func gormLogger(config *config.Configuration, w logger.Writer) logger.Interface 
 		Colorful:             true,
 	})
 }
-
-func DisconnectFromPostgreSQL(db *gorm.DB) error {
-	pg, err := db.DB()
-	if err != nil {
-		return err
-	}
-
-	return pg.Close()
-}
