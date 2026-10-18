@@ -110,16 +110,6 @@ func TestUserV1Handler_Create(t *testing.T) {
 			User: mockSvc,
 		}
 
-		// Since NewUserV1 registers routes, we can't test handler method directly nicely unless we export it or use the router.
-		// Use reflect or just checking the registered route?
-		// Actually, standard way is to create the handler struct manually or call the constructor and then rely on Echo router matching.
-		// However, NewUserV1 takes a Group.
-		// Let's create a wrapper to assert the handler logic.
-		// But wait, the handler struct `userV1Handler` is private.
-		// So we must test via route dispatch or refactor to make handler testable.
-		// Given I cannot easily refactor to export handler, testing via router is best.
-
-		// Setup Group
 		g := e.Group("/v1")
 		v1.NewUserV1(g, svc, nil, nil, notRevoked{})
 

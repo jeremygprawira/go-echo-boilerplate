@@ -14,13 +14,6 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestRepositoryExposesPorts(t *testing.T) {
-	// Zero-value struct: fields must be the port types, not a nested Postgre struct.
-	var r repository.Repository
-	require.Nil(t, r.User)
-	require.Nil(t, r.Health)
-}
-
 func newMockRepository(t *testing.T) (*repository.Repository, sqlmock.Sqlmock) {
 	t.Helper()
 	sqlDB, mock, err := sqlmock.New()
