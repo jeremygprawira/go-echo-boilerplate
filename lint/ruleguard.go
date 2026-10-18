@@ -2,14 +2,22 @@
 
 package lint
 
-import "github.com/quasilyte/go-ruleguard/dsl"
+import (
+	"github.com/quasilyte/go-ruleguard/dsl"
+	"github.com/quasilyte/go-ruleguard/dsl/types"
+)
 
-// structScan: GORM's Scan never returns ErrRecordNotFound, so a missing row
-// comes back as a zero-value struct with a nil error.
+func pointsToStruct(ctx *dsl.VarFilterContext) bool {
+	p := types.AsPointer(ctx.Type)
+	return p != nil && types.AsStruct(p.Elem().Underlying()) != nil
+}
+
+// structScan: GORM's Scan and Find never return ErrRecordNotFound, so a
+// missing row comes back as a zero-value struct with a nil error.
 func structScan(m dsl.Matcher) {
 	m.Import(`gorm.io/gorm`)
-	m.Match(`$db.Scan(&$x)`).
-		Where(m["db"].Type.Is(`*gorm.DB`) && m["x"].Type.Underlying().Is(`struct{$*_}`) &&
+	m.Match(`$db.Scan($x)`, `$db.Find($x, $*_)`).
+		Where(m["db"].Type.Is(`*gorm.DB`) && m["x"].Filter(pointsToStruct) &&
 			!(m.File().PkgPath.Matches(`/internal/repository$`) && m.File().Name.Matches(`^store\.go$`))).
-		Report(`Scan into a struct returns a zero value when no row matches; read one row through repository.one`)
+		Report(`Scan or Find into a struct returns a zero value when no row matches; read one row through repository.one`)
 }
