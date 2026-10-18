@@ -43,22 +43,25 @@ func TestRoutes_EveryAPIRouteEnforcesItsControls(t *testing.T) {
 		seen[route] = true
 		path := routeParam.ReplaceAllString(r.Path, "1")
 		t.Run(route, func(t *testing.T) {
+			probe := func(target, bearer string, headers ...string) int {
+				code, _ := call(t, h, r.Method, target, bearer, nil, headers...)
+				assert.Less(t, code, http.StatusInternalServerError, "%s answered %d. A handler panic also answers 500", target, code)
+				return code
+			}
 			access, err := jwtc.SignAccessToken(&models.User{ID: 7, AccountNumber: "100"}, jwt)
 			require.NoError(t, err)
-			code, _ := call(t, h, r.Method, path, access.Token, nil, "X-API-Key", "")
-			assert.Equal(t, http.StatusUnauthorized, code, "a live bearer token but no X-API-Key")
+			assert.Equal(t, http.StatusUnauthorized, probe(path, access.Token, "X-API-Key", ""), "a live bearer token but no X-API-Key")
+			assert.Equal(t, http.StatusUnauthorized, probe(path+"?api_key="+configtest.APIKey, access.Token, "X-API-Key", ""), "the API key only in the query string")
 
 			if !publicRoutes[route] {
-				code, _ = call(t, h, r.Method, path, "", nil)
-				assert.Equal(t, http.StatusUnauthorized, code, "no bearer token. If this route is public, add it to publicRoutes")
+				assert.Equal(t, http.StatusUnauthorized, probe(path, ""), "no bearer token. If this route is public, add it to publicRoutes in internal/deliveries/http/route_controls_test.go")
 				return
 			}
 			var codes []int
 			for i := 0; i <= burst; i++ {
-				code, _ = call(t, h, r.Method, path, "", nil)
-				codes = append(codes, code)
+				codes = append(codes, probe(path, ""))
 			}
-			assert.Contains(t, codes, http.StatusTooManyRequests, "%d calls with a burst of %d", burst+1, burst)
+			assert.Contains(t, codes, http.StatusTooManyRequests, "%d calls with a burst of %d and no 429. Set rateLimited: true on the route row", burst+1, burst)
 		})
 	}
 	for route := range publicRoutes {
@@ -94,4 +97,3 @@ func TestRoutes_UnknownUserPathIsNotFound(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, code, "%s %s", tc.method, tc.path)
 	}
 }
-
