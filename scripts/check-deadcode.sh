@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
+if [ $# -gt 0 ]; then
+	echo "usage: scripts/check-deadcode.sh (takes no arguments)" >&2
+	exit 2
+fi
 export LC_ALL=C
 cd "$(dirname "$0")/.."
 

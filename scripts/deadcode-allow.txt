@@ -1,3 +1,5 @@
+# Unreachable funcs that scripts/check-deadcode.sh accepts. Format:
+#   package: Func  # reason
 go-echo-boilerplate/internal/models: ParsePagination  # cursor pagination input for list endpoints
 go-echo-boilerplate/internal/pkg/response: SuccessPagination  # envelope for paginated list endpoints
 go-echo-boilerplate/internal/pkg/boolc: And  # boolean helpers for multi-condition checks
