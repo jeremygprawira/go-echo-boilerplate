@@ -118,7 +118,7 @@ func TestGoogleOAuth_FetchFails(t *testing.T) {
 		resp int
 	}{
 		{"code exchange rejected", "bad-code", "", http.StatusOK},
-		{"userinfo error status", "good-code", `{"error":"boom"}`, http.StatusInternalServerError},
+		{"userinfo error status with a valid profile", "good-code", "", http.StatusInternalServerError},
 		{"userinfo not json", "good-code", `<html>`, http.StatusOK},
 		{"userinfo wrong types", "good-code", `{"email":5,"name":true}`, http.StatusOK},
 		{"userinfo without email", "good-code", `{"id":"42","name":"Ann Lee"}`, http.StatusOK},

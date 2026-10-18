@@ -41,6 +41,7 @@ func TestValidateAccountNumber(t *testing.T) {
 		assert.False(t, AccountNumber("453201511283036a"))
 		assert.False(t, AccountNumber("4532-0151-1283-0366"))
 		assert.False(t, AccountNumber("4532 0151 1283 0366"))
+		assert.False(t, AccountNumber("6:11514433546201"), "':' must not count as digit 10")
 	})
 }
 
