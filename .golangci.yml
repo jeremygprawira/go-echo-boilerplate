@@ -60,6 +60,8 @@ linters:
               desc: a service declares the store methods it calls as a small interface, and core.Setup passes the repository.Store
             - pkg: gorm.io
               desc: a service declares the store methods it calls as a small interface; gorm stays in internal/repository
+            - pkg: github.com/jackc/pgx
+              desc: the repository turns driver errors into models.ErrNotFound and models.ErrConflict; match those with errors.Is
             - pkg: github.com/labstack/echo
               desc: a service knows nothing about HTTP; handlers in internal/deliveries/http call it
             - pkg: go-echo-boilerplate/internal/deliveries
