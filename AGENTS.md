@@ -14,6 +14,7 @@ make run ENV=local            # Run without hot-reload (ENV=local|dev|uat|prod)
 make build                    # Build binary to bin/server
 make test                     # go test -v -race ./...
 make test-coverage            # Coverage report in coverage/coverage.html
+make test-integration         # Integration suite on a throwaway Postgres container (needs Docker)
 make lint                     # Pinned golangci-lint run ./...
 make lint-fix                 # Pinned golangci-lint with auto-fix
 make security-scan            # Pinned gosec ./...
@@ -31,12 +32,13 @@ go test -v -race ./internal/service/ -run TestUserService_Create
 ```
 
 Notes:
-- `make ci` runs `go mod tidy -diff` for both modules, build, `go test -race`, golangci-lint, gosec, `scripts/check-repo.sh`, `scripts/check-deadcode.sh` and `make docs-check`. CI runs `make ci` as its one job, plus `scripts/check-pr-base.sh` on pull requests. Without GitHub Actions, run the same checks locally: `make ci` by hand, `make hooks` for the opt-in pre-push hook in `.githooks/pre-push`, and `make pr-base PR=<number>`.
+- `make ci` runs `go mod tidy -diff` for both modules, build, `go test -race`, golangci-lint, gosec, `scripts/check-repo.sh`, `scripts/check-deadcode.sh` and `make docs-check`. CI runs `make ci` in its `ci` job, plus `scripts/check-pr-base.sh` on pull requests. Its `integration` job runs `internal/integration` against a Postgres service. Without GitHub Actions, run the same checks locally: `make ci` by hand, `make test-integration`, `make hooks` for the opt-in pre-push hook in `.githooks/pre-push`, and `make pr-base PR=<number>`.
 - golangci-lint, gosec, deadcode and swag are pinned in `tools/go.mod` and run as `go tool -modfile=tools/go.mod <tool>`. Change a tool version there, never with `go install ...@latest`. A bare `golangci-lint` on your PATH can be another version with other defaults, so always use `make lint` or `make ci`.
 - The `ENV` env var selects the config file: `config/config.<env>.yaml`, loaded via Viper (`internal/config/config.go`). `make run` fails if the file is missing.
 - `application.environment` must be one of `local`, `dev`, `uat`, `staging`, `prod`, `production` (case and surrounding space ignored), or startup fails. It decodes to a `config.Environment`, and `Environment.IsProduction()` is true for `prod` and `production`.
 - Swagger docs are a generated Go package (`docs/docs.go`) imported by the router (`_ "go-echo-boilerplate/docs"`). After changing handler `@` annotations, run `make docs` and commit the result, or `make docs-check` fails. The general info block (`@title`, `@BasePath`, the security definitions) sits on `main` in `cmd/http/main.go`, the file `swag -g` reads. `@BasePath` is `/`, because each `@Router` path already starts with `/api`.
 - Migrations use goose against `migration/db/postgre`; the Makefile exports `.env` before running.
+- A timestamp column is `TIMESTAMPTZ`, never `TIMESTAMP`. The app sends times over the simple protocol as UTC text, and the gorm driver reads a `TIMESTAMP` in `application.timezone`, so a `TIMESTAMP` reads back shifted by that zone's offset.
 - `application.trusted_proxies` (list of CIDRs, default empty) sets `e.IPExtractor` in `NewServer` (`internal/deliveries/http/router.go`). Empty means `c.RealIP()` is the TCP peer. Otherwise it is the rightmost `X-Forwarded-For` entry not inside a listed proxy range. The rate limiter keys on it.
 - `application.read_header_timeout`, `read_timeout`, `write_timeout`, `idle_timeout` (defaults 5s/15s/30s/60s) are set on `e.Server` in `NewServer`. `application.timeout` is the per-request deadline, empty for none. Every duration in the config file needs a unit, such as `30s`. A bare number such as `timeout: 30` fails startup with a message that names the key.
 
@@ -102,6 +104,8 @@ If `Store` lacks a method that `OrderTx` lists, `core.Setup` fails to build.
 
 Tests live beside the code (`*_test.go`) and use testify. Repository tests use go-sqlmock, not a real database. Handler tests drive the real server: `testServer{users: fake}.build(t)` in `internal/deliveries/http/server_test.go` calls `NewServer` with test config and only the services that the test sets. Build test config with `configtest.Valid(mutate...)` (`internal/config/configtest`). It carries the `Initialize` defaults, so tests run with the rate limiter and the other controls on.
 
+`internal/integration` runs the real server from `core.Setup` on real Postgres and checks properties over HTTP. It reads `TEST_DATABASE_URL` and skips without it, so `make test` and `make ci` need no Docker. It applies the goose Up sections in `migration/db/postgre` to an empty schema, and refuses a database whose name does not end in `_test`, because it drops the `public` schema. `make test-integration` starts a throwaway container for it. A security fix in the service or repository layer gets a property here too, because sqlmock cannot show how Postgres behaves.
+
 ## Rules and what enforces them
 
 Each rule has a check that fails on a real past commit. Add a row when you add a check.
@@ -133,6 +137,11 @@ Each rule has a check that fails on a real past commit. Add a row when you add a
 | A config that omits `rate_limit` keeps the limiter on. Only `enabled: false` turns it off, and a zero rate, burst or `expires_in` fails startup | `make test` (`TestInitialize_OmittedOrEmptyRateLimitKeepsLimiterOn`, `TestInitialize_ZeroRateLimitFails`) | ab33d3a |
 | `configtest.Valid` carries the same defaults as `config.Initialize` | `make test` (`TestValid_MatchesInitializeDefaults`) | no past violation |
 | A duration written without a unit fails startup and names the key | `make test` (`TestInitialize_RejectsDurationWithoutUnit`) | no past violation |
+| Login answers an unknown account and a wrong password with the same status and `errorCode` | `make test-integration` (`TestLogin_UnknownAccountAndWrongPasswordLookTheSame`) | dff4183^, 6b1dc3b^ |
+| After logout, the old access token on `/me` and the old refresh token answer 401 | `make test-integration` (`TestLogout_RevokesAccessAndRefreshTokens`) | 6b1dc3b^, 701e02d^ |
+| Concurrent refreshes with one refresh token give exactly one 200, over 5 chained rounds | `make test-integration` (`TestRefresh_ConcurrentUseOfOneTokenMintsOnce`) | e4ac4c3^, dff4183^ |
+| A refresh token for a deleted user row answers 401 | `make test-integration` (`TestRefresh_FailsAfterUserRowIsDeleted`) | 701e02d^ |
+| `GET /me` returns the `createdAt` instant that register returned, with a non-UTC `application.timezone` | `make test-integration` (`TestMe_ReturnsTheCreatedAtThatRegisterReturned`) | 9b4716f |
 | Echo's middleware package is imported as `echoMiddleware` | `make lint` (importas) | ab33d3a^ |
 | Every returned error is checked, including `Close` | `make lint` (errcheck) | 1c90978 |
 | Every `FROM golang:` image matches the go.mod Go minor version | `scripts/check-repo.sh` | 5180441^, bd3fd72^, f910f52^, e2c4e2d^, 9bf871f |
