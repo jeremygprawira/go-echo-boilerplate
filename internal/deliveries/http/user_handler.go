@@ -3,7 +3,6 @@ package http
 import (
 	"context"
 	"go-echo-boilerplate/internal/constant"
-	"go-echo-boilerplate/internal/deliveries/http/middleware"
 	"go-echo-boilerplate/internal/models"
 	"go-echo-boilerplate/internal/pkg/errorc"
 	"go-echo-boilerplate/internal/pkg/jwtc"
@@ -31,13 +30,13 @@ type userHandler struct {
 func userRoutes(users userService) []route {
 	h := userHandler{users: users}
 	return []route{
-		{method: http.MethodPost, path: "/v1/users", handler: h.Create, access: public, rateLimited: true, idempotent: true},
-		{method: http.MethodPost, path: "/v1/users/tokens", handler: h.GetTokens, access: public, rateLimited: true},
+		{method: http.MethodPost, path: "/v1/users", public: h.Create, rateLimited: true, idempotent: true},
+		{method: http.MethodPost, path: "/v1/users/tokens", public: h.GetTokens, rateLimited: true},
 		// Not idempotent: a cached replay would skip the revocation check and
 		// hand out the tokens from an already rotated refresh token.
-		{method: http.MethodPost, path: "/v1/users/tokens/refresh", handler: h.RefreshTokens, access: public, rateLimited: true},
-		{method: http.MethodGet, path: "/v1/users/me", handler: h.GetUserByAccessToken, access: bearer},
-		{method: http.MethodPost, path: "/v1/users/logout", handler: h.Logout, access: bearer},
+		{method: http.MethodPost, path: "/v1/users/tokens/refresh", public: h.RefreshTokens, rateLimited: true},
+		{method: http.MethodGet, path: "/v1/users/me", bearer: h.GetUserByAccessToken},
+		{method: http.MethodPost, path: "/v1/users/logout", bearer: h.Logout},
 	}
 }
 
@@ -162,15 +161,13 @@ func (h userHandler) RefreshTokens(ctx echo.Context) error {
 // @Failure 401 {object} models.Response "Unauthorized"
 // @Router /api/v1/users/logout [post]
 // @Security BearerAuth
-func (h userHandler) Logout(ctx echo.Context) error {
-	jti := middleware.Claims(ctx).ID
-
+func (h userHandler) Logout(ctx echo.Context, caller jwtc.Claims) error {
 	var request models.LogoutRequest
 	_ = ctx.Bind(&request) // body is optional; the cookie fallback covers callers with none
 
 	refreshToken := jwtc.ResolveRefreshToken(ctx.Request(), request.RefreshToken)
 
-	if err := h.users.Logout(ctx.Request().Context(), jti, refreshToken); err != nil {
+	if err := h.users.Logout(ctx.Request().Context(), caller.ID, refreshToken); err != nil {
 		return err
 	}
 
@@ -199,10 +196,8 @@ func (h userHandler) Logout(ctx echo.Context) error {
 // @Failure 500 {object} models.Response "Internal Server Error"
 // @Router /api/v1/users/me [get]
 // @Security BearerAuth
-func (h userHandler) GetUserByAccessToken(ctx echo.Context) error {
-	accountNumber := middleware.Claims(ctx).AccountNumber
-
-	user, err := h.users.GetByAccountNumber(ctx.Request().Context(), accountNumber)
+func (h userHandler) GetUserByAccessToken(ctx echo.Context, caller jwtc.Claims) error {
+	user, err := h.users.GetByAccountNumber(ctx.Request().Context(), caller.AccountNumber)
 	if err != nil {
 		return err
 	}

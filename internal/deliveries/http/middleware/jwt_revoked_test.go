@@ -73,3 +73,19 @@ func TestBearer_AllowsNonRevokedToken(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code)
 }
+
+func TestWithClaims_FailsClosedWithoutBearerAuth(t *testing.T) {
+	e := echo.New()
+	e.HTTPErrorHandler = httpdelivery.ErrorHandler
+	ran := false
+	e.GET("/me", middleware.WithClaims(func(c echo.Context, _ jwtc.Claims) error {
+		ran = true
+		return c.NoContent(http.StatusOK)
+	}))
+
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/me", nil))
+
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	require.False(t, ran)
+}

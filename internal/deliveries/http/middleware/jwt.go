@@ -18,15 +18,8 @@ type RevocationChecker interface {
 
 const claimsKey = "claims"
 
-// Claims returns the access-token claims that BearerAuthMiddleware verified
-// for this request. It is nil on a route without bearer access.
-func Claims(c echo.Context) *jwtc.Claims {
-	claims, _ := c.Get(claimsKey).(*jwtc.Claims)
-	return claims
-}
-
 // BearerAuthMiddleware validates the access token in the Authorization header,
-// rejects a revoked one, and makes its claims available through Claims.
+// rejects a revoked one, and keeps its claims for WithClaims.
 func BearerAuthMiddleware(config *jwtc.Configuration, revocation RevocationChecker) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(ctx echo.Context) error {
@@ -62,5 +55,18 @@ func BearerAuthMiddleware(config *jwtc.Configuration, revocation RevocationCheck
 
 			return next(ctx)
 		}
+	}
+}
+
+// WithClaims hands h the claims that BearerAuthMiddleware verified for this
+// request. Without them it rejects the request, so a handler mounted without
+// the middleware fails closed.
+func WithClaims(h func(c echo.Context, claims jwtc.Claims) error) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		claims, ok := c.Get(claimsKey).(*jwtc.Claims)
+		if !ok {
+			return errorc.Unauthorized.New().Internal("bearer handler ran without verified claims")
+		}
+		return h(c, *claims)
 	}
 }

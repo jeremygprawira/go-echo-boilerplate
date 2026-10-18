@@ -77,7 +77,7 @@ Routes (`internal/deliveries/http/api/v1/user_v1_handler.go`), all under `/api/v
 
 `RefreshTokens` and `Logout` both resolve the refresh token the same way (`jwtc.ResolveRefreshToken` in `internal/pkg/jwtc`): an explicit value in the request body wins; otherwise they fall back to the `refresh_token` cookie set by `GetTokens` (login). This lets a browser client rely purely on the httpOnly cookie, a non-browser client pass the token explicitly in the body, and either client call any of the three endpoints without caring which channel the others used.
 
-`middleware.BearerAuthMiddleware` (`internal/deliveries/http/middleware/jwt.go`) does, in order: check `Authorization: Bearer <token>` header present and well-formed → `jwtc.ParseAccessToken` → `revocation.IsRevoked(ctx, claims.ID)` (a `middleware.RevocationChecker`, which `service.TokenService` satisfies) → set `userID`/`accountNumber`/`email`/`phoneNumber`/`jti` on the Echo context.
+`middleware.BearerAuthMiddleware` (`internal/deliveries/http/middleware/jwt.go`) does, in order: check `Authorization: Bearer <token>` header present and well-formed → `jwtc.ParseAccessToken` → `revocation.IsRevoked(ctx, claims.ID)` (a `middleware.RevocationChecker`, which `service.TokenService` satisfies) → keep the verified `jwtc.Claims` for `middleware.WithClaims`. A handler that reads its caller has the type `func(echo.Context, jwtc.Claims) error` and goes in a route row's `bearer` field, so it only runs behind this middleware. Putting it in the `public` field does not compile.
 
 ### Refresh (`UserService.RefreshTokens`)
 

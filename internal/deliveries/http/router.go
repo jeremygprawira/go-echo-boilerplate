@@ -1,6 +1,7 @@
 package http
 
 import (
+	"fmt"
 	"go-echo-boilerplate/internal/config"
 	"go-echo-boilerplate/internal/deliveries/http/middleware"
 	"go-echo-boilerplate/internal/pkg/jwtc"
@@ -16,22 +17,19 @@ import (
 	echoSwagger "github.com/swaggo/echo-swagger"
 )
 
-// access says who may call a route. The zero value is bearer, so a row that
-// leaves it out fails closed.
-type access int
-
-const (
-	bearer access = iota // X-API-Key and a live access token
-	public               // X-API-Key only
-)
+// bearerHandler is a handler that reads its caller. Only the bearer field of a
+// route takes one, so it never runs without a verified access token.
+type bearerHandler func(c echo.Context, caller jwtc.Claims) error
 
 // route is one row of the API route table. Every row is mounted under /api, so
-// the API key always applies; the other controls are the row's fields.
+// the API key always applies. Set exactly one of public and bearer.
 type route struct {
-	method  string
-	path    string
-	handler echo.HandlerFunc
-	access  access
+	method string
+	path   string
+	// public needs only the API key.
+	public echo.HandlerFunc
+	// bearer also needs a live access token.
+	bearer bearerHandler
 	// rateLimited rows each get their own budget per client IP.
 	rateLimited bool
 	// idempotent rows replay the first response to a repeated Idempotency-Key.
@@ -111,17 +109,22 @@ type controls struct {
 
 func (c controls) mount(api *echo.Group, routes []route) {
 	for _, r := range routes {
+		if (r.public == nil) == (r.bearer == nil) {
+			panic(fmt.Sprintf("route %s %s: set exactly one of public and bearer", r.method, r.path))
+		}
 		var chain []echo.MiddlewareFunc
 		if r.rateLimited {
 			chain = append(chain, c.rateLimit)
 		}
-		if r.access != public {
+		handler := r.public
+		if r.bearer != nil {
 			chain = append(chain, c.bearer)
+			handler = middleware.WithClaims(r.bearer)
 		}
 		if r.idempotent {
 			chain = append(chain, c.idempotency)
 		}
-		api.Add(r.method, r.path, r.handler, chain...)
+		api.Add(r.method, r.path, handler, chain...)
 	}
 }
 
