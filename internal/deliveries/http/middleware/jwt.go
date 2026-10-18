@@ -4,9 +4,11 @@ import (
 	"context"
 	"go-echo-boilerplate/internal/pkg/errorc"
 	"go-echo-boilerplate/internal/pkg/jwtc"
+	"strconv"
 	"strings"
 
 	"github.com/jeremygprawira/herr"
+	"github.com/jeremygprawira/wlog"
 	"github.com/labstack/echo/v4"
 )
 
@@ -19,7 +21,8 @@ type RevocationChecker interface {
 const claimsKey = "claims"
 
 // BearerAuthMiddleware validates the access token in the Authorization header,
-// rejects a revoked one, and keeps its claims for WithClaims.
+// rejects a revoked one, and keeps its claims for WithClaims. It sets the wide
+// event's user.id from the verified claims.
 func BearerAuthMiddleware(config *jwtc.Configuration, revocation RevocationChecker) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(ctx echo.Context) error {
@@ -52,6 +55,7 @@ func BearerAuthMiddleware(config *jwtc.Configuration, revocation RevocationCheck
 			}
 
 			ctx.Set(claimsKey, claims)
+			wlog.SetGroup(ctx.Request().Context(), "user", "id", strconv.Itoa(claims.UserID))
 
 			return next(ctx)
 		}

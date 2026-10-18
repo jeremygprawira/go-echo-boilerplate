@@ -200,7 +200,7 @@ wlog.Error(ctx, err)
 - query values and cookies (cookie values masked)
 - request bodies with `Content-Type: application/json`, and response bodies, up to 10 KiB each
 
-`user.id` comes from the `X-User-ID` header. Change `extractUserID` in `internal/deliveries/http/middleware/logger.go` to read it from your auth setup.
+`user.id` is set by `BearerAuthMiddleware` from the verified access token, so only bearer routes carry it. A client header such as `X-User-ID` is never an identity. It appears only under `http.request_headers`, as the client sent it.
 
 ### Request ID
 
