@@ -1,7 +1,7 @@
 package core
 
 import (
-	"context"
+	"fmt"
 	"go-echo-boilerplate/internal/config"
 	deliveryhttp "go-echo-boilerplate/internal/deliveries/http"
 	"go-echo-boilerplate/internal/pkg/database"
@@ -22,8 +22,7 @@ func Setup(cfg config.Validated) (server *echo.Echo, tokenPurge graceful.Process
 
 	db, err := database.Connect(cfg)
 	if err != nil {
-		logger.Instance.Error(context.Background(), "failed to connect to database", logger.Error(err))
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("connect to database: %w", err)
 	}
 	sqlDB, err := db.PostgreDatabase.DB()
 	if err != nil {

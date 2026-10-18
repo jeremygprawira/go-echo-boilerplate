@@ -36,12 +36,12 @@ func run() error {
 	ctx := context.Background()
 	config, err := config.Initialize(ctx)
 	if err != nil {
-		panic(fmt.Errorf("failed to initialize configuration: %w", err))
+		return fmt.Errorf("load configuration: %w", err)
 	}
 
 	e, tokenPurge, err := core.Setup(config)
 	if err != nil {
-		return fmt.Errorf("failed to setup application: %w", err)
+		return fmt.Errorf("set up application: %w", err)
 	}
 
 	port := fmt.Sprintf(":%d", config.Get().Application.Port)

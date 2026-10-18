@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -45,6 +46,11 @@ func Initialize(ctx context.Context) (Validated, error) {
 	}
 
 	if err := viper.Unmarshal(&configuration, viper.DecodeHook(decodeHook)); err != nil {
+		// Drop mapstructure's "decoding failed" header, so each problem prints
+		// on one line, as Validate's do.
+		if problems := errors.Unwrap(err); problems != nil {
+			return Validated{}, problems
+		}
 		return Validated{}, err
 	}
 

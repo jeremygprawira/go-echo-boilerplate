@@ -21,3 +21,4 @@ go-echo-boilerplate/internal/pkg/stringc: TrimAndLowerCase  # pair of TrimAndUpp
 go-echo-boilerplate/internal/pkg/validator: AccountNumber  # checks numbers that generator.AccountNumber makes
 go-echo-boilerplate/internal/pkg/validator: Luhn  # check-digit rule behind AccountNumber
 go-echo-boilerplate/internal/config/configtest: Valid  # test fixture: a validated config with the Initialize defaults
+go-echo-boilerplate/internal/pkg/logger: Error  # error field for the plain startup and shutdown logger
