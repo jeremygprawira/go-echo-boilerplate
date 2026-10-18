@@ -49,6 +49,7 @@ Clean Architecture, written the Go way. Dependencies point inward: `deliveries/h
 
 **Layers:**
 - `internal/repository` has one type, `Store`. Every query is a method on it, such as `CreateUser`, `UserByID` or `RevokeToken`, with its SQL in an unexported const in the same file. `Atomic(ctx, fn func(tx *Store) error)` runs `fn` in one transaction on a `Store` bound to it, so the transaction has every query. The package declares no interfaces.
+- A lookup with no row returns `models.ErrNotFound`, never `(nil, nil)`. Read one row with `one[T](s.db.WithContext(ctx).Raw(query, args...))` in `store.go`. GORM's `Scan` reports a missing row as a zero-value struct with a nil error, and `one` owns that check. A write that breaks a unique constraint returns `models.ErrConflict`, with the driver error still in the chain. Wrap the write in `conflict(...)`. Services match both with `errors.Is` and never read driver error codes. The two errors live in `internal/models` because a service may not import the repository.
 - `scripts/check-deadcode.sh` cannot see an unused `Store` method, because deadcode counts every method of a type that reaches an interface as used. So a reusable `Store` method with no caller, such as `UserExistsByEmailOrPhoneNumber`, stays only when it has a test.
 - `internal/service` has one concrete struct per feature: `UserService`, `TokenService`, `HealthService`. Each one declares the store methods it calls as a small unexported interface (`userStore`, `tokenStore`, `pinger`) and takes it in its constructor. A service never imports the repository, gorm, echo or deliveries.
 - `internal/deliveries/http` is one package that exports `NewServer` and `ErrorHandler`. Each feature has a handler file with its own unexported service interface (`userService`) and a function that returns its route rows (`userRoutes`). A handler never imports `internal/service`. `NewServer` builds the rate limiter, the bearer check and the idempotency store once, and mounts every row under `/api` behind the API key. Middleware lives in `internal/deliveries/http/middleware`.
@@ -58,7 +59,7 @@ Clean Architecture, written the Go way. Dependencies point inward: `deliveries/h
 
 **Add a feature.** For example `notes`, with a table, one public route and one bearer route:
 1. Add the migration with `make migrate-create NAME=notes`, and the entity in `internal/models`.
-2. Add the queries as `Store` methods in `internal/repository/note_repository.go`, with sqlmock tests.
+2. Add the queries as `Store` methods in `internal/repository/note_repository.go`, with sqlmock tests. A single-row read goes through `one[models.Note]`, and an insert into a table with a unique index through `conflict`.
 3. Add `internal/service/note_service.go`: a `noteStore` interface with the store methods the service calls, a `NoteService` struct, and `NewNoteService(store noteStore)`.
 4. Add `internal/deliveries/http/note_handler.go`: a `noteService` interface, the handlers with their swag annotations, and `noteRoutes(notes noteService) []route`.
 5. Wire it in three existing files. In `NewServer`, add a `notes noteService` parameter and add `noteRoutes(notes)` to the `slices.Concat` call. In `core.Setup`, add `service.NewNoteService(store)` to the `NewServer` call. In `internal/deliveries/http/server_test.go`, add a `notes` field to `testServer`.
@@ -112,6 +113,9 @@ Each rule has a check that fails on a real past commit. Add a row when you add a
 | A handler that reads its caller mounts only on a bearer route row | `go build` (the `bearerHandler` type of the `bearer` field) | no past violation |
 | Each served route has a Swagger path with the same method, and each Swagger path is served | `make test` (`TestSwaggerPathsMatchServedRoutes`) | no past violation |
 | One rate limiter on many route rows keeps a budget per method, route and client IP | `make test` (`TestRateLimiter_OneInstanceKeepsABudgetPerRoute`, `TestRateLimiter_OneInstanceKeepsABudgetPerMethodOnAPath`) | 1cee85c, 898283f |
+| A lookup with no row returns `models.ErrNotFound`, never `(nil, nil)` or a zero-value struct | `make test` (`TestUserLookups_NoRowIsErrNotFound`). On past trees, which have no `ErrNotFound`, its nil-user half | 701e02d^, dff4183^ |
+| A GORM `Scan` into a struct happens only in `internal/repository/store.go`, which holds `one` | `make lint` (ruleguard `structScan` in `lint/ruleguard.go`, run by gocritic) | dff4183^ |
+| A unique violation reaches the service as `models.ErrConflict`. `internal/service` never imports the pgx driver | `make test` (`TestCreateUser_UniqueViolationIsErrConflict`), and `make lint` (depguard `service-no-adapters`) | 1c90978, 76d4b1e |
 | A user lookup never returns a soft-deleted user | `make test` (`TestUserLookups_QueryFiltersDeletedAt`) | 1cee85c |
 | `Store.Atomic` runs every query in `fn` on the transaction | `make test` (`TestAtomic_CommitsWritesMadeThroughTheTransaction`) | no past violation |
 | A duration in config is a `time.Duration` field. Only `internal/config` calls `time.ParseDuration` | `make lint` (forbidigo) | 8db11a6^ |
