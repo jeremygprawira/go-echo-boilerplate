@@ -25,6 +25,8 @@ ENV ?= dev
 # Override with: make migrate-up DB_DSN="postgres://..."
 DB_DSN ?= postgres://$${DB_USER}:$${DB_PASSWORD}@$${DB_HOST}:$${DB_PORT}/$${DB_NAME}?sslmode=$${DB_SSL_MODE}
 
+GO_TOOL := go tool -modfile=tools/go.mod
+
 # Build flags for production
 BUILD_FLAGS=-ldflags="-s -w -X main.Version=$$(git describe --tags --always --dirty) -X main.BuildTime=$$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
@@ -171,24 +173,16 @@ test-integration:
 # ============================================================================
 lint:
 	@echo "🔍 Running linter..."
-	@if ! command -v golangci-lint > /dev/null; then \
-		echo "⚠️  golangci-lint not installed. Run 'make install-tools'"; \
-		exit 1; \
-	fi
-	@golangci-lint run ./...
+	@$(GO_TOOL) golangci-lint run ./...
 
 lint-fix:
 	@echo "🔧 Running linter with auto-fix..."
-	@golangci-lint run --fix ./...
+	@$(GO_TOOL) golangci-lint run --fix ./...
 
 security-scan:
 	@echo "🔒 Running security scan..."
-	@if ! command -v gosec > /dev/null; then \
-		echo "⚠️  Installing gosec..."; \
-		go install github.com/securego/gosec/v2/cmd/gosec@latest; \
-	fi
-	@gosec -fmt=json -out=security-report.json ./... || true
-	@gosec ./...
+	@$(GO_TOOL) gosec -fmt=json -out=security-report.json ./... || true
+	@$(GO_TOOL) gosec ./...
 
 # ============================================================================
 # Documentation
@@ -285,14 +279,10 @@ install-tools:
 	@echo "🔧 Installing development tools..."
 	@echo "Installing air (hot-reload)..."
 	@go install github.com/air-verse/air@latest
-	@echo "Installing golangci-lint..."
-	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	@echo "Installing swag (Swagger)..."
 	@go install github.com/swaggo/swag/cmd/swag@latest
 	@echo "Installing goose (migrations)..."
 	@go install github.com/pressly/goose/v3/cmd/goose@latest
-	@echo "Installing gosec (security)..."
-	@go install github.com/securego/gosec/v2/cmd/gosec@latest
 	@echo "✅ All tools installed successfully"
 
 check-port:
