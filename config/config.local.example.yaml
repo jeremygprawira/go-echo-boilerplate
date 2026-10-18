@@ -58,5 +58,4 @@ google:
   client_id: ""
   client_secret: ""
   redirect_uri: ""
-  state: ""
   user_info_url: "https://www.googleapis.com/oauth2/v2/userinfo"

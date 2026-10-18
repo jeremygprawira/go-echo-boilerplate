@@ -93,7 +93,6 @@ type (
 		ClientID     string `mapstructure:"client_id"`
 		ClientSecret string `mapstructure:"client_secret"`
 		RedirectURI  string `mapstructure:"redirect_uri"`
-		State        string `mapstructure:"state"`
 		UserInfoURL  string `mapstructure:"user_info_url"`
 	}
 )
