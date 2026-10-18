@@ -36,32 +36,57 @@ Notes:
 - `application.environment` must be one of `local`, `dev`, `uat`, `staging`, `prod`, `production` (case and surrounding space ignored), or `Validate` fails. `IsProduction()` is true for `prod` and `production`.
 - Swagger docs are a generated Go package (`docs/docs.go`) imported by the router (`_ "go-echo-boilerplate/docs"`). After changing handler `@` annotations, run `make docs` or the build serves stale docs.
 - Migrations use goose against `migration/db/postgre`; the Makefile exports `.env` before running.
-- `application.trusted_proxies` (list of CIDRs, default empty) sets `e.IPExtractor` in `core.BuildHTTPServer`. Empty means `c.RealIP()` is the TCP peer. Otherwise it is the rightmost `X-Forwarded-For` entry not inside a listed proxy range. The rate limiter keys on it.
-- `application.read_header_timeout`, `read_timeout`, `write_timeout`, `idle_timeout` (Go durations, defaults 5s/15s/30s/60s) are set on `e.Server` in `core.BuildHTTPServer`. `Validate` requires each to be positive and rejects a negative `application.timeout`.
+- `application.trusted_proxies` (list of CIDRs, default empty) sets `e.IPExtractor` in `NewServer` (`internal/deliveries/http/router.go`). Empty means `c.RealIP()` is the TCP peer. Otherwise it is the rightmost `X-Forwarded-For` entry not inside a listed proxy range. The rate limiter keys on it.
+- `application.read_header_timeout`, `read_timeout`, `write_timeout`, `idle_timeout` (Go durations, defaults 5s/15s/30s/60s) are set on `e.Server` in `NewServer`. `Validate` requires each to be positive and rejects a negative `application.timeout`.
 
 ## Architecture
 
-Clean architecture with dependencies pointing inward: `deliveries (HTTP) → service → repository → PostgreSQL`.
+Clean Architecture, written the Go way. Dependencies point inward: `deliveries/http` calls `service`, and `service` uses `models`. The Postgres adapter in `internal/repository` satisfies the small interfaces that each service declares. Only `internal/core` and `cmd/http` import both sides. depguard enforces the direction (see the rule table).
 
-**Startup flow** (`cmd/http/main.go`): `config.Initialize` → `core.Setup` (`internal/core/setup.go`) initializes logger, connects DB, builds JWT config, then wires `repository.New → service.New → handler.New`. Process lifecycle (HTTP server + cleanup) is managed by `internal/pkg/graceful`, which handles signal-based graceful shutdown.
+**Startup flow** (`cmd/http/main.go`): `config.Initialize`, then `core.Setup` (`internal/core/setup.go`). `core.Setup` starts the logger, connects the database, builds one `repository.Store`, builds each service on that store, and passes each service to `deliveryhttp.NewServer` as its own argument. `internal/pkg/graceful` runs the HTTP server, the token purge loop and the cleanup, and shuts them down on a signal.
 
-**Layer wiring pattern** — each layer has an aggregator struct that new features must be registered in:
-- `internal/repository/ports.go` declares one interface per repository. `internal/repository/main_repository.go` → `Repository{User, Health, RevokedToken}` holds those interfaces, and `WithinTransaction` rebuilds the same struct on a transaction. Implementations live in `internal/repository/pgsql/` (GORM, split into `*_repository.go` and `*_query.go`) and are collected in `pgsql.PostgreRepository` (`main_pgsql_repository.go`).
-- `internal/service/main_service.go` → `Service` struct; services receive `service.Dependencies` (repository, config, JWT config)
-- `internal/deliveries/http/router.go` → routes; versioned handlers under `internal/deliveries/http/api/v1/`, registered in `v1_handler.go`. The `/api` group is protected by API-key middleware; JWT middleware is applied per-route.
-- `internal/models/` holds domain entities and DTOs shared across layers. The `User` entity uses `*string` for nullable columns (`Email`, `PhoneNumber`). Request DTOs use plain strings, where `""` means absent, and the service converts them. `User.Password` is `json:"-"`, so the hash never reaches a response.
+**Layers:**
+- `internal/repository` has one type, `Store`. Every query is a method on it, such as `CreateUser`, `UserByID` or `RevokeToken`, with its SQL in an unexported const in the same file. `Atomic(ctx, fn func(tx *Store) error)` runs `fn` in one transaction on a `Store` bound to it, so the transaction has every query. The package declares no interfaces.
+- `internal/service` has one concrete struct per feature: `UserService`, `TokenService`, `HealthService`. Each one declares the store methods it calls as a small unexported interface (`userStore`, `tokenStore`, `pinger`) and takes it in its constructor. A service never imports the repository, gorm, echo or deliveries.
+- `internal/deliveries/http` is one package that exports `NewServer` and `ErrorHandler`. Each feature has a handler file with its own unexported service interface (`userService`) and a function that returns its route rows (`userRoutes`). `NewServer` builds the rate limiter, the bearer check and the idempotency store once, and mounts every row under `/api` behind the API key. Middleware lives in `internal/deliveries/http/middleware`.
+- `internal/models` holds the entities and DTOs that the layers share. The `User` entity uses `*string` for nullable columns (`Email`, `PhoneNumber`). Request DTOs use plain strings, where `""` means absent, and the service converts them. `User.Password` is `json:"-"`, so the hash never reaches a response. User lookups skip soft-deleted rows (`deleted_at IS NULL`).
 
-Adding a feature with a new repository touches these places:
-- the model in `internal/models/`
-- the pgsql repository, registered in `pgsql/main_pgsql_repository.go`
-- its interface in `repository/ports.go`
-- the `Repository` field in `main_repository.go`, set in both `New` and `WithinTransaction`
-- the service, registered in `main_service.go`
-- the handler, called from `v1_handler.go`
+**Route rows.** A `route` has a `method`, a `path`, exactly one of `public` or `bearer`, and the flags `rateLimited` and `idempotent`. A `public` handler is a plain `echo.HandlerFunc` and needs only the API key. A handler that reads its caller is a `bearerHandler`, `func(echo.Context, jwtc.Claims) error`. It goes in the `bearer` field, which also needs a live access token. If you put it in `public`, the build fails. Each `rateLimited` row has its own budget per client IP. `mount` panics at startup on a row with no handler or two.
+
+**Add a feature.** For example `notes`, with a table, one public route and one bearer route:
+1. Add the migration with `make migrate-create NAME=notes`, and the entity in `internal/models`.
+2. Add the queries as `Store` methods in `internal/repository/note_repository.go`, with sqlmock tests.
+3. Add `internal/service/note_service.go`: a `noteStore` interface with the store methods the service calls, a `NoteService` struct, and `NewNoteService(store noteStore)`.
+4. Add `internal/deliveries/http/note_handler.go`: a `noteService` interface, the handlers with their swag annotations, and `noteRoutes(notes noteService) []route`.
+5. Wire it in three existing files. In `NewServer`, add a `notes noteService` parameter and add `noteRoutes(notes)` to the `slices.Concat` call. In `core.Setup`, add `service.NewNoteService(store)` to the `NewServer` call. In `internal/deliveries/http/server_test.go`, add a `notes` field to `testServer`.
+6. Run `make docs`. `TestSwaggerPathsMatchServedRoutes` fails until each served route has an `@Router` with the same method and path.
+
+If a store method, a service method, a `NewServer` parameter or a `core.Setup` argument is missing, the build fails. If nothing mounts a route function, `make lint` reports it as unused and the feature's server tests get 404.
+
+**Transactions.** A use case that needs several writes in one transaction declares a small func type, and `core.Setup` adapts `Store.Atomic` to it. The use case never imports the repository. The store interface that the transaction hands back is exported, because `core.Setup` must name it:
+
+```go
+// internal/service/order_service.go
+type OrderTx interface {
+	CreateOrder(ctx context.Context, order *models.Order) error
+	ReserveStock(ctx context.Context, sku string, quantity int) error
+}
+
+type RunOrderTx func(ctx context.Context, fn func(tx OrderTx) error) error
+
+func NewOrderService(store orderStore, inTx RunOrderTx) *OrderService
+
+// internal/core/setup.go
+service.NewOrderService(store, func(ctx context.Context, fn func(service.OrderTx) error) error {
+	return store.Atomic(ctx, func(tx *repository.Store) error { return fn(tx) })
+}),
+```
+
+If `Store` lacks a method that `OrderTx` lists, `core.Setup` fails to build.
 
 **Wide-event logging** ([wlog](https://github.com/jeremygprawira/wlog), built in `internal/pkg/logger`, documented in `docs/markdowns/LOGGING.md`): one zap entry per request, emitted by `wlogecho` (the logging middleware) at request end, with the route as message and the wlog event as fields. Handlers/services do not log per-step. They enrich the event on the request context with `wlog.Set(ctx, key, val)` and `wlog.SetGroup(ctx, group, kv...)`. Errors reach the event through the central `ErrorHandler`, so handlers just return them. The redactor masks sensitive keys (passwords, tokens, auth headers) before the drain writes. Direct logging via `logger.Instance` is for startup/shutdown, not request handling.
 
-**Error handling** (`internal/pkg/errorc` + [herr](https://github.com/jeremygprawira/herr)): errors are defined once as immutable classes in the `errorc` (error customized) catalog and stamped per-use, as in `errorc.Database.New().Internal("failed to create user").Wrap(err)`. Two surfaces: `.Public(herr.Message(...))` for user-meaningful 4xx messages (sent to clients), `.Internal(...)`/`.Wrap(...)` for server detail (logged only, herr structurally prevents leaks). Handlers and middleware just `return err`. `RecoverMiddleware` turns panics into errors and hands every error to the central `ErrorHandler` (`internal/deliveries/http/error_handler.go`, registered as `e.HTTPErrorHandler` in `core.Setup`). It records the error on the wide event with `wlog.Error` and renders herr's safe wire body into the shared `models.Response` envelope: `code` is the HTTP status, `errorCode` the catalog id, and `metadata.requestId` the `X-Request-Id` response header. Validation failures return 422 via `errorc.FromValidation`. Success envelopes use the same `models.Response` (`internal/pkg/response`).
+**Error handling** (`internal/pkg/errorc` + [herr](https://github.com/jeremygprawira/herr)): errors are defined once as immutable classes in the `errorc` (error customized) catalog and stamped per-use, as in `errorc.Database.New().Internal("failed to create user").Wrap(err)`. Two surfaces: `.Public(herr.Message(...))` for user-meaningful 4xx messages (sent to clients), `.Internal(...)`/`.Wrap(...)` for server detail (logged only, herr structurally prevents leaks). Handlers and middleware just `return err`. `RecoverMiddleware` turns panics into errors and hands every error to the central `ErrorHandler` (`internal/deliveries/http/error_handler.go`, registered as `e.HTTPErrorHandler` in `NewServer`). It records the error on the wide event with `wlog.Error` and renders herr's safe wire body into the shared `models.Response` envelope: `code` is the HTTP status, `errorCode` the catalog id, and `metadata.requestId` the `X-Request-Id` response header. Validation failures return 422 via `errorc.FromValidation`. Success envelopes use the same `models.Response` (`internal/pkg/response`).
 
 **Auth**: dual-token JWT (short-lived access + refresh). `internal/pkg/jwtc` owns it: configuration, `SignAccessToken`/`SignRefreshToken` and `ParseAccessToken`/`ParseRefreshToken`. See `docs/markdowns/JWT_USAGE.md`. `internal/pkg/openauth` is optional Google sign-in that nothing wires. To use it, build `openauth.NewGoogleOAuth(cfg.Google)` in `core.Setup`, make a random state per login, and pass it to `AuthURL` and then `Callback`.
 
@@ -69,7 +94,7 @@ Adding a feature with a new repository touches these places:
 
 ## Testing conventions
 
-Tests live beside the code (`*_test.go`) using testify; repository tests use go-sqlmock rather than a real database. Handler tests use Echo's httptest helpers.
+Tests live beside the code (`*_test.go`) and use testify. Repository tests use go-sqlmock, not a real database. Handler tests drive the real server: `testServer{users: fake}.build(t)` in `internal/deliveries/http/server_test.go` calls `NewServer` with test config and only the services that the test sets.
 
 ## Rules and what enforces them
 
@@ -79,7 +104,13 @@ Each rule has a check that fails on a real past commit. Add a row when you add a
 | --- | --- | --- |
 | `internal/pkg` is a leaf. It never imports `repository`, `service`, `deliveries` or `core` | `make lint` (depguard `pkg-is-leaf`) | 1334145 |
 | `internal/deliveries` never imports `repository` or gorm | `make lint` (depguard `deliveries-no-persistence`) | no past violation |
-| `internal/service` never imports `repository/pgsql` or gorm | `make lint` (depguard `service-no-driver`) | no past violation |
+| `internal/service` never imports `repository`, gorm, echo or `deliveries` | `make lint` (depguard `service-no-adapters`) | b60be39 |
+| `internal/repository` never imports `service` or `deliveries` | `make lint` (depguard `repository-no-callers`) | no past violation |
+| A handler that reads its caller mounts only on a bearer route row | `go build` (the `bearerHandler` type of the `bearer` field) | no past violation |
+| Each served route has a Swagger path with the same method, and each Swagger path is served | `make test` (`TestSwaggerPathsMatchServedRoutes`) | no past violation |
+| One rate limiter on many routes keeps a budget per route and client IP | `make test` (`TestRateLimiter_OneInstanceKeepsABudgetPerRoute`) | b60be39 |
+| A user lookup never returns a soft-deleted user | `make test` (`TestUserLookups_SkipSoftDeletedUsers`) | b60be39 |
+| `Store.Atomic` runs every query in `fn` on the transaction | `make test` (`TestAtomic_CommitsWritesMadeThroughTheTransaction`) | no past violation |
 | Echo's middleware package is imported as `echoMiddleware` | `make lint` (importas) | ab33d3a^ |
 | Every returned error is checked, including `Close` | `make lint` (errcheck) | 1c90978 |
 | Every `FROM golang:` image matches the go.mod Go minor version | `scripts/check-repo.sh` | 5180441^, bd3fd72^, f910f52^, e2c4e2d^, 9bf871f |

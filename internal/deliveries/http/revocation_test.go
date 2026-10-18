@@ -21,7 +21,7 @@ import (
 
 type fakeUsers struct {
 	user *models.User
-	// gate, when set, holds each GetOneByID until every concurrent caller
+	// gate, when set, holds each UserByID until every concurrent caller
 	// arrives (or a short timeout passes), to widen any check-then-act window.
 	gate *gate
 }

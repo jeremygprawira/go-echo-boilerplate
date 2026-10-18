@@ -65,7 +65,7 @@ claims, err := jwtc.ParseRefreshToken(tokenString, jwtConfig)  // rejects TokenT
 
 ## HTTP flow
 
-Routes (`internal/deliveries/http/api/v1/user_v1_handler.go`), all under `/api/v1/users` behind the `X-API-Key` middleware:
+Routes (`userRoutes` in `internal/deliveries/http/user_handler.go`), all under `/api/v1/users` behind the `X-API-Key` middleware:
 
 | Route | Auth | Handler |
 |---|---|---|
@@ -81,7 +81,7 @@ Routes (`internal/deliveries/http/api/v1/user_v1_handler.go`), all under `/api/v
 
 ### Refresh (`UserService.RefreshTokens`)
 
-Validates the refresh token, then **claims** its JTI with `RevokedTokenRepository.Revoke`, which reports whether this call inserted the row. The claim is one `INSERT ... ON CONFLICT (jti) DO NOTHING`, so of several concurrent requests with the same token exactly one inserts the row. That request loads the user and gets a fresh access+refresh pair. Every other request, and any later replay, gets 401 and mints nothing.
+Validates the refresh token, then **claims** its JTI with `Store.RevokeToken`, which reports whether this call inserted the row. The claim is one `INSERT ... ON CONFLICT (jti) DO NOTHING`, so of several concurrent requests with the same token exactly one inserts the row. That request loads the user and gets a fresh access+refresh pair. Every other request, and any later replay, gets 401 and mints nothing.
 
 ### Logout (`UserService.Logout`)
 
@@ -89,13 +89,13 @@ Revokes the current access token's JTI, and — if a refresh token is also prese
 
 ## Revocation backend
 
-`repository.RevokedTokenRepository` (`internal/repository/ports.go`, implemented in `internal/repository/pgsql/revocation_pgsql_repository.go`) holds the SQL. It keeps revoked JTIs in the Postgres `revoked_tokens` table (migration `migration/db/postgre/20261014000000_revoked_tokens.sql`). Revocation therefore survives restarts and is shared by every instance. The rules live in `internal/service`.
+`repository.Store` holds the SQL in `internal/repository/revoked_token_repository.go` (`RevokeToken`, `IsTokenRevoked`, `PurgeExpiredTokens`). It keeps revoked JTIs in the Postgres `revoked_tokens` table (migration `migration/db/postgre/20261014000000_revoked_tokens.sql`). Revocation therefore survives restarts and is shared by every instance. The rules live in `internal/service`.
 
 - `RefreshTokens` and `Logout` store each JTI with an expiry of now plus the token's full lifetime, so the row outlives the token.
 - `service.TokenService.IsRevoked` ignores expired rows. A database error is returned as an error, never as "not revoked". The bearer middleware and `RefreshTokens` answer 500 for it, so revocation fails closed.
 - `service.TokenService` runs as a `graceful` process (`token-purge` in `cmd/http/main.go`). It deletes expired rows every hour and stops on shutdown.
 
-Tests use an in-memory fake of `RevokedTokenRepository`, or of `middleware.RevocationChecker` in the delivery tests.
+Tests use an in-memory fake of the store methods a service declares, or of `middleware.RevocationChecker` in the delivery tests.
 
 `POST /users/tokens/refresh` has no `Idempotency` middleware. A cached replay would skip the revocation check and return tokens minted from a refresh token that has since been rotated or logged out. A client that loses a refresh response must log in again.
 
