@@ -104,7 +104,7 @@ If `Store` lacks a method that `OrderTx` lists, `core.Setup` fails to build.
 
 Tests live beside the code (`*_test.go`) and use testify. Repository tests use go-sqlmock, not a real database. Handler tests drive the real server: `testServer{users: fake}.build(t)` in `internal/deliveries/http/server_test.go` calls `NewServer` with test config and only the services that the test sets. Build test config with `configtest.Valid(mutate...)` (`internal/config/configtest`). It carries the `Initialize` defaults, so tests run with the rate limiter and the other controls on.
 
-`internal/integration` runs the real server from `core.Setup` on real Postgres and checks properties over HTTP. It reads `TEST_DATABASE_URL` and skips without it, so `make test` and `make ci` need no Docker. It applies the goose Up sections in `migration/db/postgre` to an empty schema, and refuses a database whose name does not end in `_test`, because it drops the `public` schema. `make test-integration` starts a throwaway container for it. A security fix in the service or repository layer gets a property here too, because sqlmock cannot show how Postgres behaves.
+`internal/integration` runs the real server from `core.Setup` on real Postgres and checks properties over HTTP. It reads `TEST_DATABASE_URL` and skips without it, so `make test` and `make ci` need no Docker. It applies the goose Up sections in `migration/db/postgre` to an empty schema. Because it drops the `public` schema, it refuses a `TEST_DATABASE_URL` with query parameters or several hosts, then checks that the database name pgx resolves (which also reads `PGDATABASE`) and `SELECT current_database()` both end in `_test`. `make test-integration` starts a throwaway container for it, and passes extra arguments to `go test`. Each test makes its own emails with `email(t)`, so `-count=2` and `-shuffle=on` work. The script runs without `-race` for speed, and the suite passes with `-race`. A security fix in the service or repository layer gets a property here too, because sqlmock cannot show how Postgres behaves.
 
 ## Rules and what enforces them
 
@@ -141,7 +141,10 @@ Each rule has a check that fails on a real past commit. Add a row when you add a
 | After logout, the old access token on `/me` and the old refresh token answer 401 | `make test-integration` (`TestLogout_RevokesAccessAndRefreshTokens`) | 6b1dc3b^, 701e02d^ |
 | Concurrent refreshes with one refresh token give exactly one 200, over 5 chained rounds | `make test-integration` (`TestRefresh_ConcurrentUseOfOneTokenMintsOnce`) | e4ac4c3^, dff4183^ |
 | A refresh token for a deleted user row answers 401 | `make test-integration` (`TestRefresh_FailsAfterUserRowIsDeleted`) | 701e02d^ |
-| `GET /me` returns the `createdAt` instant that register returned, with a non-UTC `application.timezone` | `make test-integration` (`TestMe_ReturnsTheCreatedAtThatRegisterReturned`) | 9b4716f |
+| `GET /me` returns the `createdAt` instant that register returned, with a non-UTC `application.timezone` | `make test-integration` (`TestMe_ReturnsTheCreatedAtThatRegisterReturned`) | 3a6d57d |
+| A soft-deleted user logs in like an unknown account, gets 404 from `/me` with an old token, and 401 on refresh | `make test-integration` (`TestSoftDeletedUser_CannotLogInReadMeOrRefresh`) | 206a15f^ |
+| The integration suite refuses a database not named `_test` through the URL path, `dbname`/`database` parameters and `PGDATABASE`, and leaves it intact | `make test-integration` (`TestSetup_RefusesDatabasesNotNamedTest`) | 447a593 |
+| The integration suite passes when rerun and shuffled in one process | `scripts/test-integration.sh -count=2 -shuffle=on` | 447a593 |
 | Echo's middleware package is imported as `echoMiddleware` | `make lint` (importas) | ab33d3a^ |
 | Every returned error is checked, including `Close` | `make lint` (errcheck) | 1c90978 |
 | Every `FROM golang:` image matches the go.mod Go minor version | `scripts/check-repo.sh` | 5180441^, bd3fd72^, f910f52^, e2c4e2d^, 9bf871f |
