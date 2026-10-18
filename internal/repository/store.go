@@ -2,11 +2,16 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"go-echo-boilerplate/internal/models"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jeremygprawira/wlog"
 	"gorm.io/gorm"
 )
+
+const pgUniqueViolation = "23505"
 
 type Store struct {
 	db *gorm.DB
@@ -56,4 +61,26 @@ func (s *Store) Ping(ctx context.Context) error {
 func recordTransactionError(ctx context.Context, code string, err error) {
 	wlog.SetGroup(ctx, "transaction", "error_code", code)
 	wlog.Error(ctx, err)
+}
+
+// GORM's Scan reports a missing row as a nil error and a zero value, never
+// ErrRecordNotFound.
+func one[T any](query *gorm.DB) (*T, error) {
+	var row T
+	result := query.Scan(&row)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, models.ErrNotFound
+	}
+	return &row, nil
+}
+
+func conflict(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation {
+		return fmt.Errorf("%w: %w", models.ErrConflict, err)
+	}
+	return err
 }

@@ -97,7 +97,7 @@ func TestUserService_RefreshTokens(t *testing.T) {
 		refreshToken, err := jwtc.SignRefreshToken(user, testJWTConfig())
 		require.NoError(t, err)
 
-		mockRepo.On("UserByID", mock.Anything, 1).Return(nil, nil)
+		mockRepo.On("UserByID", mock.Anything, 1).Return(nil, models.ErrNotFound)
 
 		svc := service.NewUserService(fakeStore{mockRepo, newMemRevoked()}, testJWTConfig())
 

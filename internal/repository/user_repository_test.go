@@ -11,6 +11,7 @@ import (
 	"go-echo-boilerplate/internal/repository"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/postgres"
@@ -89,6 +90,7 @@ func TestUserCreate(t *testing.T) {
 
 		err := repo.CreateUser(context.Background(), user)
 		assert.Error(t, err)
+		assert.NotErrorIs(t, err, models.ErrConflict)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 }
@@ -122,21 +124,61 @@ func TestUserExistsByEmailOrPhoneNumber(t *testing.T) {
 	}
 }
 
-func TestUserLookups_QueryFiltersDeletedAt(t *testing.T) {
+func userLookups() map[string]func(*repository.Store) (*models.User, error) {
 	ctx := context.Background()
-	for name, lookup := range map[string]func(*repository.Store) (*models.User, error){
+	return map[string]func(*repository.Store) (*models.User, error){
 		"UserCredentials":     func(s *repository.Store) (*models.User, error) { return s.UserCredentials(ctx, "gone@example.com", "") },
 		"UserByAccountNumber": func(s *repository.Store) (*models.User, error) { return s.UserByAccountNumber(ctx, "100") },
 		"UserByID":            func(s *repository.Store) (*models.User, error) { return s.UserByID(ctx, 1) },
-	} {
+	}
+}
+
+func TestUserLookups_QueryFiltersDeletedAt(t *testing.T) {
+	for name, lookup := range userLookups() {
 		t.Run(name, func(t *testing.T) {
 			s, mock := newSingleConnStore(t)
 			mock.ExpectQuery(`FROM users\s+WHERE deleted_at IS NULL AND`).WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
-			user, err := lookup(s)
-			require.NoError(t, err)
-			require.Nil(t, user)
+			_, _ = lookup(s)
 			require.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
+}
+
+func TestUserLookups_NoRowIsErrNotFound(t *testing.T) {
+	for name, lookup := range userLookups() {
+		t.Run(name, func(t *testing.T) {
+			s, mock := newSingleConnStore(t)
+			mock.ExpectQuery("FROM users").WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+			user, err := lookup(s)
+			assert.Nil(t, user)
+			assert.ErrorIs(t, err, models.ErrNotFound)
+		})
+	}
+}
+
+func TestUserLookups_RowIsReturned(t *testing.T) {
+	for name, lookup := range userLookups() {
+		t.Run(name, func(t *testing.T) {
+			s, mock := newSingleConnStore(t)
+			mock.ExpectQuery("FROM users").WillReturnRows(sqlmock.NewRows([]string{"id", "account_number"}).AddRow(1, "100"))
+
+			user, err := lookup(s)
+			require.NoError(t, err)
+			assert.Equal(t, &models.User{ID: 1, AccountNumber: "100"}, user)
+		})
+	}
+}
+
+func TestCreateUser_UniqueViolationIsErrConflict(t *testing.T) {
+	s, mock := newSingleConnStore(t)
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO "users"`)).WillReturnError(&pgconn.PgError{Code: "23505"})
+	mock.ExpectRollback()
+
+	err := s.CreateUser(context.Background(), &models.User{AccountNumber: "100"})
+	assert.ErrorIs(t, err, models.ErrConflict)
+	var pgErr *pgconn.PgError
+	assert.ErrorAs(t, err, &pgErr, "the driver error stays in the chain for the log")
 }

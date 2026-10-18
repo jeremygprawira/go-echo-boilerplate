@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"go-echo-boilerplate/internal/models"
 	"go-echo-boilerplate/internal/pkg/errorc"
 	"go-echo-boilerplate/internal/pkg/generator"
@@ -11,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -124,7 +124,7 @@ func TestUserService_Create(t *testing.T) {
 		mockRepo := new(MockUserRepository)
 
 		mockRepo.On("CreateUser", mock.Anything, mock.Anything).
-			Return(&pgconn.PgError{Code: "23505"})
+			Return(fmt.Errorf("%w: duplicate key", models.ErrConflict))
 
 		svc := service.NewUserService(fakeStore{mockRepo, newMemRevoked()}, nil)
 
@@ -205,7 +205,7 @@ func TestUserService_GetTokens(t *testing.T) {
 	t.Run("User Not Found", func(t *testing.T) {
 		mockRepo := new(MockUserRepository)
 
-		mockRepo.On("UserCredentials", mock.Anything, "notfound@example.com", "").Return(nil, nil)
+		mockRepo.On("UserCredentials", mock.Anything, "notfound@example.com", "").Return(nil, models.ErrNotFound)
 
 		svc := service.NewUserService(fakeStore{mockRepo, newMemRevoked()}, nil)
 
@@ -256,7 +256,7 @@ func TestGetTokens_UserNotFound_GenericError(t *testing.T) {
 	mockRepo := new(MockUserRepository)
 	mockRepo.
 		On("UserCredentials", mock.Anything, "nobody@example.com", "").
-		Return((*models.User)(nil), nil)
+		Return((*models.User)(nil), models.ErrNotFound)
 
 	svc := service.NewUserService(fakeStore{mockRepo, newMemRevoked()}, nil)
 
@@ -289,4 +289,24 @@ func TestGetTokens_WrongPassword_SameGenericError(t *testing.T) {
 	require.True(t, errorc.Unauthorized.Is(err))
 
 	mockRepo.AssertExpectations(t)
+}
+
+func TestUserService_GetByAccountNumber(t *testing.T) {
+	for name, tc := range map[string]struct {
+		err   error
+		class interface{ Is(error) bool }
+	}{
+		"missing user is not found": {err: models.ErrNotFound, class: errorc.DataNotFound},
+		"database failure is a 5xx": {err: errors.New("connection reset"), class: errorc.Database},
+	} {
+		t.Run(name, func(t *testing.T) {
+			mockRepo := new(MockUserRepository)
+			mockRepo.On("UserByAccountNumber", mock.Anything, "100").Return(nil, tc.err)
+			svc := service.NewUserService(fakeStore{mockRepo, newMemRevoked()}, nil)
+
+			user, err := svc.GetByAccountNumber(context.Background(), "100")
+			assert.Nil(t, user)
+			assert.True(t, tc.class.Is(err), "got %v", err)
+		})
+	}
 }

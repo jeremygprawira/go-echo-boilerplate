@@ -34,8 +34,10 @@ const (
 	`
 )
 
+// CreateUser returns models.ErrConflict when the email, phone number or
+// account number is taken.
 func (s *Store) CreateUser(ctx context.Context, user *models.User) error {
-	return s.db.WithContext(ctx).Create(user).Error
+	return conflict(s.db.WithContext(ctx).Create(user).Error)
 }
 
 // UserExistsByEmailOrPhoneNumber reports whether a user holds that email or
@@ -50,31 +52,17 @@ func (s *Store) UserExistsByEmailOrPhoneNumber(ctx context.Context, email string
 }
 
 // UserCredentials returns the user with that email or phone number, password
-// hash included, or nil when there is none.
+// hash included, or models.ErrNotFound.
 func (s *Store) UserCredentials(ctx context.Context, email string, phoneNumber string) (*models.User, error) {
-	return s.oneUser(ctx, queryUserCredentials, email, phoneNumber)
+	return one[models.User](s.db.WithContext(ctx).Raw(queryUserCredentials, email, phoneNumber))
 }
 
-// UserByAccountNumber returns the user, or nil when there is none.
+// UserByAccountNumber returns the user, or models.ErrNotFound.
 func (s *Store) UserByAccountNumber(ctx context.Context, accountNumber string) (*models.User, error) {
-	return s.oneUser(ctx, queryUserByAccountNumber, accountNumber)
+	return one[models.User](s.db.WithContext(ctx).Raw(queryUserByAccountNumber, accountNumber))
 }
 
-// UserByID returns the user, or nil when there is none.
+// UserByID returns the user, or models.ErrNotFound.
 func (s *Store) UserByID(ctx context.Context, id int) (*models.User, error) {
-	return s.oneUser(ctx, queryUserByID, id)
-}
-
-// GORM's Scan on a Raw query never returns ErrRecordNotFound. A miss shows only
-// as RowsAffected == 0.
-func (s *Store) oneUser(ctx context.Context, query string, args ...any) (*models.User, error) {
-	var user models.User
-	result := s.db.WithContext(ctx).Raw(query, args...).Scan(&user)
-	if result.Error != nil {
-		return nil, result.Error
-	}
-	if result.RowsAffected == 0 {
-		return nil, nil
-	}
-	return &user, nil
+	return one[models.User](s.db.WithContext(ctx).Raw(queryUserByID, id))
 }

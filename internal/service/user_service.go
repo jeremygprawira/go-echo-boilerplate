@@ -11,14 +11,9 @@ import (
 	"go-echo-boilerplate/internal/pkg/validator"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jeremygprawira/herr"
 	"github.com/jeremygprawira/wlog"
 )
-
-// pgUniqueViolation is the PostgreSQL error code for a UNIQUE constraint violation.
-// See: https://www.postgresql.org/docs/current/errcodes-appendix.html
-const pgUniqueViolation = "23505"
 
 // dummyPasswordHash is a valid bcrypt hash compared against on the
 // user-not-found path so login timing does not reveal whether an account
@@ -119,8 +114,7 @@ func (us *UserService) Create(ctx context.Context, request *models.CreateUserReq
 	err = us.store.CreateUser(ctx, user)
 	if err != nil {
 		wlog.SetGroup(ctx, "user", "is_inserted_to_db", false)
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation {
+		if errors.Is(err, models.ErrConflict) {
 			return nil, errorc.AlreadyExists.New().Public(herr.Message("User already exists with that email or phone number")).Wrap(err)
 		}
 		return nil, errorc.Database.New().Internal("failed to create user").Wrap(err)
@@ -149,7 +143,7 @@ func (us *UserService) GetTokens(ctx context.Context, request *models.GetUserTok
 	}
 
 	user, err := us.store.UserCredentials(ctx, request.Email, request.PhoneNumber.Number)
-	if err != nil {
+	if err != nil && !errors.Is(err, models.ErrNotFound) {
 		return nil, errorc.Database.New().Internal("failed to get user credentials").Wrap(err)
 	}
 
@@ -238,7 +232,7 @@ func (us *UserService) RefreshTokens(ctx context.Context, refreshToken string) (
 	}
 
 	user, err := us.store.UserByID(ctx, claims.UserID)
-	if err != nil || user == nil {
+	if err != nil {
 		return nil, errorc.Unauthorized.New().Public(herr.Message("invalid refresh token")).Wrap(err)
 	}
 
@@ -275,12 +269,11 @@ func (us *UserService) GetByAccountNumber(ctx context.Context, accountNumber str
 	})
 
 	user, err := us.store.UserByAccountNumber(ctx, accountNumber)
+	if errors.Is(err, models.ErrNotFound) {
+		return nil, errorc.DataNotFound.New().Public(herr.Message("User not found")).Wrap(err)
+	}
 	if err != nil {
 		return nil, errorc.Database.New().Internal("failed to get user").Wrap(err)
-	}
-
-	if user == nil {
-		return nil, errorc.DataNotFound.New().Public(herr.Message("User not found"))
 	}
 
 	return user, nil
