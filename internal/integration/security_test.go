@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +19,7 @@ import (
 	"go-echo-boilerplate/internal/config/configtest"
 	"go-echo-boilerplate/internal/core"
 
+	"github.com/jackc/pgx/v5"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -33,28 +33,19 @@ var (
 func TestMain(m *testing.M) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
-		fmt.Fprintln(os.Stderr, "integration: TEST_DATABASE_URL is unset, skipping. Run make test-integration")
-		os.Exit(0)
+		os.Exit(m.Run())
 	}
 	os.Exit(run(m, dsn))
 }
 
 func run(m *testing.M, dsn string) int {
-	cfg, err := configFor(dsn)
+	cfg, conn, err := prepare(dsn)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "integration:", err)
 		return 1
 	}
-	db, err = sql.Open("pgx", dsn)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "integration:", err)
-		return 1
-	}
+	db = conn
 	defer func() { _ = db.Close() }()
-	if err := migrate(db, "../../migration/db/postgre"); err != nil {
-		fmt.Fprintln(os.Stderr, "integration: migrate:", err)
-		return 1
-	}
 	e, _, err := core.Setup(cfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "integration: setup:", err)
@@ -65,34 +56,67 @@ func run(m *testing.M, dsn string) int {
 	return m.Run()
 }
 
-// configFor refuses a database whose name does not end in _test, because
-// migrate drops the public schema.
+func needDB(t *testing.T) {
+	t.Helper()
+	if srv == nil {
+		t.Skip("TEST_DATABASE_URL is unset. Run make test-integration")
+	}
+}
+
+func prepare(dsn string) (config.Validated, *sql.DB, error) {
+	cfg, err := configFor(dsn)
+	if err != nil {
+		return config.Validated{}, nil, err
+	}
+	conn, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return config.Validated{}, nil, err
+	}
+	if err := migrate(conn, "../../migration/db/postgre"); err != nil {
+		_ = conn.Close()
+		return config.Validated{}, nil, fmt.Errorf("migrate: %w", err)
+	}
+	return cfg, conn, nil
+}
+
+// configFor refuses a DSN that may reach a database whose name does not end
+// in _test, because migrate drops the public schema. Query parameters such
+// as dbname override the URL path, so it allows none.
 func configFor(dsn string) (config.Validated, error) {
 	u, err := url.Parse(dsn)
 	if err != nil {
 		return config.Validated{}, err
 	}
-	port, err := strconv.Atoi(u.Port())
+	if u.RawQuery != "" || strings.Contains(u.Host, ",") {
+		return config.Validated{}, fmt.Errorf("TEST_DATABASE_URL must name one host and have no query parameters, because they can change the database")
+	}
+	pc, err := pgx.ParseConfig(dsn)
 	if err != nil {
-		return config.Validated{}, fmt.Errorf("port in TEST_DATABASE_URL: %w", err)
+		return config.Validated{}, err
 	}
-	name := strings.TrimPrefix(u.Path, "/")
-	if !strings.HasSuffix(name, "_test") {
-		return config.Validated{}, fmt.Errorf("database %q must end in _test, because the suite drops its schema", name)
+	if !strings.HasSuffix(pc.Database, "_test") {
+		return config.Validated{}, fmt.Errorf("database %q must end in _test, because the suite drops its schema", pc.Database)
 	}
-	password, _ := u.User.Password()
 	return configtest.Valid(func(c *config.Configuration) {
 		c.Application.Timezone = "Asia/Jakarta"
 		c.PostgreSQL = config.PostgreSQL{
-			Host: u.Hostname(), Port: port, User: u.User.Username(), Password: password,
-			Name: name, SSLMode: "disable", MaxOpenConns: 10, MaxIdleConns: 10,
+			Host: pc.Host, Port: int(pc.Port), User: pc.User, Password: pc.Password,
+			Name: pc.Database, SSLMode: "disable", MaxOpenConns: 10, MaxIdleConns: 10,
 		}
 		c.RateLimit.Burst = 50
 	}), nil
 }
 
-// migrate applies the goose Up section of each migration, oldest first.
+// migrate applies the goose Up section of each migration, oldest first, to
+// an empty public schema.
 func migrate(db *sql.DB, dir string) error {
+	var name string
+	if err := db.QueryRow("SELECT current_database()").Scan(&name); err != nil {
+		return err
+	}
+	if !strings.HasSuffix(name, "_test") {
+		return fmt.Errorf("connected to database %q, which does not end in _test", name)
+	}
 	if _, err := db.Exec("DROP SCHEMA public CASCADE; CREATE SCHEMA public;"); err != nil {
 		return err
 	}
@@ -130,6 +154,7 @@ func post(t *testing.T, path, bearer string, body any) (int, reply) {
 
 func do(t *testing.T, method, path, bearer string, body any) (int, reply) {
 	t.Helper()
+	needDB(t)
 	raw, err := json.Marshal(body)
 	require.NoError(t, err)
 	req, err := http.NewRequest(method, srv.URL+path, bytes.NewReader(raw))
@@ -241,4 +266,48 @@ func TestMe_ReturnsTheCreatedAtThatRegisterReturned(t *testing.T) {
 	require.Equal(t, http.StatusOK, code)
 	assert.WithinDuration(t, registered.Data.CreatedAt, me.Data.CreatedAt, time.Millisecond,
 		"/me returns the instant that register returned, with application.timezone Asia/Jakarta")
+}
+
+// TestSetup_RefusesDatabasesNotNamedTest points the setup at a database with
+// a marker table through each DSN form that names it, then checks the marker
+// survived.
+func TestSetup_RefusesDatabasesNotNamedTest(t *testing.T) {
+	needDB(t)
+	const target = "guard_target"
+	_, err := db.Exec("DROP DATABASE IF EXISTS " + target + " WITH (FORCE)")
+	require.NoError(t, err)
+	_, err = db.Exec("CREATE DATABASE " + target)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = db.Exec("DROP DATABASE IF EXISTS " + target + " WITH (FORCE)") })
+
+	u, err := url.Parse(os.Getenv("TEST_DATABASE_URL"))
+	require.NoError(t, err)
+	at := func(path, query string) string {
+		v := *u
+		v.Path, v.RawQuery = path, query
+		return v.String()
+	}
+	direct, err := sql.Open("pgx", at("/"+target, ""))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = direct.Close() })
+	_, err = direct.Exec("CREATE TABLE marker (id int)")
+	require.NoError(t, err)
+
+	t.Setenv("PGDATABASE", target)
+	for form, dsn := range map[string]string{
+		"path":                at("/"+target, ""),
+		"dbname param":        at(u.Path, "dbname="+target),
+		"database param":      at(u.Path, "database="+target),
+		"PGDATABASE, no path": at("", ""),
+	} {
+		_, conn, err := prepare(dsn)
+		if conn != nil {
+			_ = conn.Close()
+		}
+		assert.Error(t, err, form)
+	}
+	assert.Error(t, migrate(direct, "../../migration/db/postgre"), "migrate on a connection to %s", target)
+
+	var n int
+	require.NoError(t, direct.QueryRow("SELECT count(*) FROM marker").Scan(&n), "the marker table survives")
 }
