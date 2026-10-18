@@ -38,10 +38,10 @@ func (s *Store) CreateUser(ctx context.Context, user *models.User) error {
 	return s.db.WithContext(ctx).Create(user).Error
 }
 
-// CheckByEmailOrPhoneNumber reports whether a user holds that email or phone
-// number. An empty argument matches nothing. It counts soft-deleted users, as
-// the unique indexes on email and phone_number do.
-func (s *Store) CheckByEmailOrPhoneNumber(ctx context.Context, email string, phoneNumber string) (bool, error) {
+// UserExistsByEmailOrPhoneNumber reports whether a user holds that email or
+// phone number. An empty argument matches nothing. It counts soft-deleted
+// users, as the unique indexes on email and phone_number do.
+func (s *Store) UserExistsByEmailOrPhoneNumber(ctx context.Context, email string, phoneNumber string) (bool, error) {
 	var exists bool
 	if err := s.db.WithContext(ctx).Raw(queryUserExistsByEmailOrPhoneNumber, email, phoneNumber).Scan(&exists).Error; err != nil {
 		return false, err

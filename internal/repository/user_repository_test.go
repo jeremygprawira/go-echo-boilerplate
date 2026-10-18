@@ -93,7 +93,7 @@ func TestUserCreate(t *testing.T) {
 	})
 }
 
-func TestCheckByEmailOrPhoneNumber(t *testing.T) {
+func TestUserExistsByEmailOrPhoneNumber(t *testing.T) {
 	const email, phone = "test@example.com", "123456789"
 	for name, tc := range map[string]struct {
 		rows    *sqlmock.Rows
@@ -114,7 +114,7 @@ func TestCheckByEmailOrPhoneNumber(t *testing.T) {
 				q.WillReturnRows(tc.rows)
 			}
 
-			exists, err := s.CheckByEmailOrPhoneNumber(context.Background(), email, phone)
+			exists, err := s.UserExistsByEmailOrPhoneNumber(context.Background(), email, phone)
 			assert.Equal(t, tc.wantErr, err != nil)
 			assert.Equal(t, tc.want, exists)
 			assert.NoError(t, mock.ExpectationsWereMet())
