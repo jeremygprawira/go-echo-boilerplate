@@ -119,8 +119,8 @@ Each rule has a check that fails on a real past commit. Add a row when you add a
 | A handler that reads its caller mounts only on a bearer route row | `go build` (the `bearerHandler` type of the `bearer` field) | no past violation |
 | Each served route has a Swagger path with the same method, and each Swagger path is served | `make test` (`TestSwaggerPathsMatchServedRoutes`) | no past violation |
 | One rate limiter on many route rows keeps a budget per method, route and client IP | `make test` (`TestRateLimiter_OneInstanceKeepsABudgetPerRoute`, `TestRateLimiter_OneInstanceKeepsABudgetPerMethodOnAPath`) | 1cee85c, 898283f |
-| The rate limiter counts an IPv4 client by its address and an IPv6 client by its /64 | `make test` (`TestRateLimiter_KeysIPv4OnTheAddressAndIPv6OnThe64`) | 5f6f595 |
-| The rate limiter reads the client from the IP extractor it is given, never from `c.RealIP()`, which trusts `X-Forwarded-For` on a bare `echo.New()`. A nil extractor panics. `NewServer` passes the extractor it sets on `e.IPExtractor` | `go build` (the `RateLimiter` signature), and `make test` (`TestRateLimiter_ReadsTheClientFromItsExtractorNotEchoDefaults`, `TestRateLimiter_NilExtractorPanics`, `TestRateLimit_TrustedProxyForwardsClientIP`) | 5f6f595 |
+| The rate limiter counts an IPv4 client by its address and an IPv6 client by its /64 | `make test` (`TestRateLimiter_KeysIPv4OnTheAddressAndIPv6OnThe64`) | cf4df4e |
+| The rate limiter reads the client from the IP extractor it is given, never from `c.RealIP()`, which trusts `X-Forwarded-For` on a bare `echo.New()`. A nil extractor panics. `NewServer` passes the extractor it sets on `e.IPExtractor` | `go build` (the `RateLimiter` signature), and `make test` (`TestRateLimiter_ReadsTheClientFromItsExtractorNotEchoDefaults`, `TestRateLimiter_NilExtractorPanics`, `TestRateLimit_TrustedProxyForwardsClientIP`) | cf4df4e |
 | A lookup with no row returns `models.ErrNotFound`, never `(nil, nil)` or a zero-value struct | `make test` (`TestUserLookups_NoRowIsErrNotFound`). On past trees, which have no `ErrNotFound`, its nil-user half | 701e02d^, dff4183^ |
 | A GORM `Scan` or `Find` whose target is a pointer to a struct (`&row` or a `*T` variable such as `new(models.User)`) happens only in `internal/repository/store.go`, which holds `one`. Scalar and slice targets pass | `make lint` (ruleguard `structScan` in `lint/ruleguard.go`, run by gocritic) | dff4183^ |
 | A unique violation reaches the service as `models.ErrConflict`. `internal/service` never imports the pgx driver | `make test` (`TestCreateUser_UniqueViolationIsErrConflict`), and `make lint` (depguard `service-no-adapters`) | 1c90978, 76d4b1e |
@@ -128,7 +128,7 @@ Each rule has a check that fails on a real past commit. Add a row when you add a
 | Each route under `/api` answers 401 without `X-API-Key`, and 401 with the key only in the `api_key` query string. Each route not on `publicRoutes` answers 401 without a bearer token. Each public route answers 429 within burst+1 calls. No probe answers 5xx, so a handler panic fails | `make test` (`TestRoutes_EveryAPIRouteEnforcesItsControls`, which walks `e.Routes()`) | no past violation. Mutants M4, M6, M10, O3 and O4b |
 | A route outside `/api` is on the per-environment allowlist | `make test` (`TestRoutes_OutsideAPIAreListed`) | no past violation |
 | An unknown path under `/api/v1/users` with an API key answers 404, not 401 | `make test` (`TestRoutes_UnknownUserPathIsNotFound`) | 1c90978 |
-| The wide event's `user.id` comes only from a verified access token. A client `X-User-ID` header sets none | `make test` (`TestLogging_UserIDComesFromTheVerifiedTokenNotTheHeader`) | 5f6f595 |
+| The wide event's `user.id` comes only from a verified access token. A client `X-User-ID` header sets none | `make test` (`TestLogging_UserIDComesFromTheVerifiedTokenNotTheHeader`) | cf4df4e |
 | The refresh cookie that login sets is a refresh token that refreshes | `make test` (`TestLogin_RefreshCookieRotatesTokens`) | no past violation. Mutant M2 |
 | A success envelope has status `OK` | `make test` (`TestSuccess` in `internal/pkg/response`, and `TestRevocation_LogoutAndRotationInvalidateTokens` on the real login response) | no past violation. Mutant M5, which `TestSuccess` already killed |
 | Refresh is never idempotent. A retry with the same `Idempotency-Key` gets 401, not a replay | `make test` (`TestRefresh_IsNeverIdempotent`) | no past tree with a test harness. Mutant M7 |
@@ -140,8 +140,8 @@ Each rule has a check that fails on a real past commit. Add a row when you add a
 | A config that omits `rate_limit` keeps the limiter on. Only `enabled: false` turns it off, and a zero rate, burst or `expires_in` fails startup | `make test` (`TestInitialize_OmittedOrEmptyRateLimitKeepsLimiterOn`, `TestInitialize_ZeroRateLimitFails`) | ab33d3a |
 | `configtest.Valid` carries the same defaults as `config.Initialize` | `make test` (`TestValid_MatchesInitializeDefaults`) | no past violation |
 | A duration written without a unit fails startup and names the key | `make test` (`TestInitialize_RejectsDurationWithoutUnit`) | no past violation |
-| A set `application.timeout` is less than `application.write_timeout`. The example config fails only on its placeholder secrets | `make test` (`TestValidate_TimeoutBelowWriteTimeout`, `TestInitialize_ExampleConfigFailsOnlyOnItsPlaceholders`) | 5f6f595 |
-| An `application.timezone` that `time.LoadLocation` rejects fails startup and names the key | `make test` (`TestValidate_Timezone`) | 5f6f595 |
+| A set `application.timeout` is less than `application.write_timeout`. The example config fails only on its placeholder secrets | `make test` (`TestValidate_TimeoutBelowWriteTimeout`, `TestInitialize_ExampleConfigFailsOnlyOnItsPlaceholders`) | cf4df4e |
+| An `application.timezone` that `time.LoadLocation` rejects fails startup and names the key | `make test` (`TestValidate_Timezone`) | cf4df4e |
 | Login answers an unknown account and a wrong password with the same status and `errorCode` | `make test-integration` (`TestLogin_UnknownAccountAndWrongPasswordLookTheSame`) | dff4183^, 6b1dc3b^ |
 | After logout, the old access token on `/me` and the old refresh token answer 401 | `make test-integration` (`TestLogout_RevokesAccessAndRefreshTokens`) | 6b1dc3b^, 701e02d^ |
 | Concurrent refreshes with one refresh token give exactly one 200, over 5 chained rounds | `make test-integration` (`TestRefresh_ConcurrentUseOfOneTokenMintsOnce`) | e4ac4c3^, dff4183^ |
@@ -150,11 +150,11 @@ Each rule has a check that fails on a real past commit. Add a row when you add a
 | A soft-deleted user logs in like an unknown account, gets 404 from `/me` with an old token, and 401 on refresh | `make test-integration` (`TestSoftDeletedUser_CannotLogInReadMeOrRefresh`) | 206a15f^ |
 | The integration suite refuses a database not named `_test` through the URL path, `dbname`/`database` parameters and `PGDATABASE`, and leaves it intact | `make test-integration` (`TestSetup_RefusesDatabasesNotNamedTest`) | 447a593 |
 | The integration suite passes when rerun and shuffled in one process | `scripts/test-integration.sh -count=2 -shuffle=on` | 447a593 |
-| A refresh whose user lookup fails with anything but `models.ErrNotFound` answers 500 `DATABASE_ERROR` and leaves the refresh token usable | `make test` (`TestUserService_RefreshTokens`) | 5f6f595 |
-| A revocation row expires at the token's own `exp`, not at now plus the configured lifetime | `make test` (`TestUserService_RevocationExpiresWithItsToken`, `TestLogout_StoresTheAccessTokensOwnExpiry`) | 5f6f595 |
+| A refresh whose user lookup fails with anything but `models.ErrNotFound` answers 500 `DATABASE_ERROR` and leaves the refresh token usable | `make test` (`TestUserService_RefreshTokens`) | cf4df4e |
+| A revocation row expires at the token's own `exp`, not at now plus the configured lifetime | `make test` (`TestUserService_RevocationExpiresWithItsToken`, `TestLogout_StoresTheAccessTokensOwnExpiry`) | cf4df4e |
 | Echo's middleware package is imported as `echoMiddleware` | `make lint` (importas) | ab33d3a^ |
 | Every returned error is checked, including `Close` | `make lint` (errcheck) | 1c90978 |
-| Every Go file is gofmt-clean | `make lint` (the gofmt formatter in `.golangci.yml`) | 5f6f595 |
+| Every Go file is gofmt-clean | `make lint` (the gofmt formatter in `.golangci.yml`) | no past violation: PR 6 had already formatted the one offender, so a probe file proves the rule |
 | Every `FROM golang:` image matches the go.mod Go minor version | `scripts/check-repo.sh` | 5180441^, bd3fd72^, f910f52^, e2c4e2d^, 9bf871f |
 | No `config/config.<env>.yaml` is tracked, only the local example | `scripts/check-repo.sh` | 8f86790 |
 | Agent scratch (`.serena/`, `docs/superpowers/`) is never tracked | `scripts/check-repo.sh` | 9bf871f |
