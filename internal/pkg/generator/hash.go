@@ -24,8 +24,7 @@ const (
 	RecommendedCost = 12
 )
 
-// Hash is a package-level convenience function that hashes a password using the default hasher.
-// This allows you to hash passwords without creating a hasher instance first.
+// Hash hashes a password with bcrypt at RecommendedCost.
 //
 // Example:
 //
@@ -33,8 +32,6 @@ const (
 //	if err != nil {
 //	    log.Fatal(err)
 //	}
-//
-// For custom cost factors, use NewBcryptHasherWithCost instead.
 func Hash(password string) (string, error) {
 	if len([]byte(password)) > 72 {
 		return "", fmt.Errorf("password exceeds bcrypt's 72-byte limit")
@@ -49,8 +46,8 @@ func Hash(password string) (string, error) {
 	return string(hashedBytes), nil
 }
 
-// NeedsRehash is a package-level convenience function that checks if a hash needs regeneration.
-// This allows you to check rehash status without creating a hasher instance first.
+// NeedsRehash reports whether a stored hash was made at a cost other than
+// RecommendedCost, or cannot be read, so it should be hashed again at login.
 //
 // Example:
 //

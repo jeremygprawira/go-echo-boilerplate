@@ -28,7 +28,7 @@ Loaded into `jwtc.Configuration` via `jwtc.DefaultConfig(configuration)` in `int
 
 ## Claims
 
-Both token types carry `jwtc.Claims` (`internal/pkg/jwtc/jwtc.go`):
+Both token types carry `jwtc.Claims` (`internal/pkg/jwtc/default.go`):
 
 ```go
 type Claims struct {

@@ -1,6 +1,6 @@
 # Go Echo Boilerplate
 
-![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat&logo=go)
+![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat&logo=go)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 A production-ready, clean-architecture boilerplate for building robust, scalable REST APIs using Golang and the Echo framework.
@@ -8,7 +8,7 @@ A production-ready, clean-architecture boilerplate for building robust, scalable
 ## 🚀 Features
 
 - **Web Framework**: [Echo v4](https://echo.labstack.com/) - High performance, extensible, minimalist Go web framework.
-- **Clean Architecture**: Domain-driven design isolating `monitor`, `repository`, `service`, and `delivery` layers.
+- **Clean Architecture**: Domain-driven design isolating `repository`, `service`, and `delivery` layers.
 - **Database**: PostgreSQL with [GORM](https://gorm.io/) ORM and [Goose](https://github.com/pressly/goose) for migrations.
 - **Authentication**: Secure JWT implementation with Access and Refresh tokens.
 - **Configuration**: Environment-based configuration using [Viper](https://github.com/spf13/viper).
@@ -49,7 +49,7 @@ graph LR
 
 - **Clean Architecture**: Dependencies point inwards. The core business logic (`service`) is independent of the delivery mechanism (`http`) and data source (`repository`).
 - **Wide Events Logging**: Instead of scattered log lines, we emit one "canonical" log line per request containing all rich context (user, business data, errors).
-- **Type Safety**: Heavy usage of strong typing, custom types for context keys, and compile-time checks where possible.
+- **Type Safety**: Heavy usage of strong typing and compile-time checks where possible.
 - **Configuration as Code**: All configuration is structurally defined and validated on startup.
 
 ## 🛠️ Tech Stack
@@ -86,7 +86,7 @@ graph LR
 
 ### Prerequisites
 
-- Go 1.24+
+- Go 1.26+
 - Docker & Docker Compose
 - Make
 
@@ -209,9 +209,7 @@ Distributed under the MIT License. See `LICENSE` for more information.
 ## Future Implementation
 
 - [ ] Add tracing
-- [ ] Add rate limiter
 - [ ] Add circuit breaker
 - [ ] Add metrics
 - [ ] Add monitoring
 - [ ] Add alerting
-- [ ] Add tracing

@@ -6,11 +6,7 @@ import (
 	"fmt"
 )
 
-// ============================================================================
-// Token Generation
-// ============================================================================
-
-// GenerateToken generates a cryptographically secure random token.
+// Token generates a cryptographically secure random token.
 // Useful for password reset tokens, API keys, session tokens, etc.
 //
 // The token is base64 URL-encoded for safe use in URLs and headers.
@@ -23,7 +19,7 @@ import (
 //
 // Example:
 //
-//	token, err := generator.GenerateToken(32)
+//	token, err := generator.Token(32)
 //	if err != nil {
 //	    log.Fatal(err)
 //	}
@@ -45,7 +41,7 @@ func Token(length int) (string, error) {
 	return base64.URLEncoding.EncodeToString(bytes), nil
 }
 
-// GenerateSessionToken generates a standard 32-byte session token.
+// SessionToken generates a standard 32-byte session token.
 // This is a convenience function for the most common token use case.
 //
 // Example:
@@ -55,7 +51,7 @@ func SessionToken() (string, error) {
 	return Token(32)
 }
 
-// GenerateAPIKey generates a high-security 64-byte API key.
+// APIKey generates a high-security 64-byte API key.
 // This is a convenience function for generating long-lived API keys.
 //
 // Example:

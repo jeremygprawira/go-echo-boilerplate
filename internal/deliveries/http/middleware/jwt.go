@@ -26,10 +26,11 @@ type RevocationChecker interface {
 //   - Injects user claims into the context for downstream handlers
 //
 // Context keys set:
-//   - "user_id": int - The authenticated user's ID
-//   - "account_number": string - The user's account number
+//   - "userID": int - The authenticated user's ID
+//   - "accountNumber": string - The user's account number
 //   - "email": string - The user's email address
-//   - "phone_number": string - The user's phone number
+//   - "phoneNumber": string - The user's phone number
+//   - "jti": string - The access token's ID
 func BearerAuthMiddleware(config *jwtc.Configuration, revocation RevocationChecker) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(ctx echo.Context) error {
