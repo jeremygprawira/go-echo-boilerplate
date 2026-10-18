@@ -50,3 +50,11 @@ func BenchmarkValidateAccountNumber(b *testing.B) {
 		_ = AccountNumber(accountNumber)
 	}
 }
+
+func TestLuhn(t *testing.T) {
+	assert.True(t, Luhn([]int{7, 9, 9, 2, 7, 3, 9, 8, 7, 1, 3}), "79927398713 is the reference Luhn number")
+	assert.False(t, Luhn([]int{7, 9, 9, 2, 7, 3, 9, 8, 7, 1, 4}))
+	assert.True(t, Luhn([]int{0}))
+	assert.True(t, Luhn([]int{1, 8}))
+	assert.False(t, Luhn([]int{8, 1}))
+}
