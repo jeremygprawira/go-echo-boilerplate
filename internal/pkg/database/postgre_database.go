@@ -26,7 +26,7 @@ func ConnectToPostgreSQL(config *config.Configuration) (*gorm.DB, error) {
 		DSN:                  connection,
 		PreferSimpleProtocol: true, // disables implicit prepared statement usage
 	}), &gorm.Config{
-		Logger: gormLogger(config, log.New(os.Stdout, "\r\n", log.LstdFlags)),
+		Logger: gormLogger(config.Application.Environment, log.New(os.Stdout, "\r\n", log.LstdFlags)),
 		NowFunc: func() time.Time {
 			loc, err := time.LoadLocation(config.Application.Timezone)
 			if err != nil {
@@ -61,9 +61,9 @@ func ConnectToPostgreSQL(config *config.Configuration) (*gorm.DB, error) {
 // gormLogger silences GORM's built-in logger in production. Elsewhere it logs
 // every statement at Info level, but with placeholders instead of bound
 // values, so password hashes and PII never reach stdout.
-func gormLogger(config *config.Configuration, w logger.Writer) logger.Interface {
+func gormLogger(env config.Environment, w logger.Writer) logger.Interface {
 	level := logger.Info
-	if config.IsProduction() {
+	if env.IsProduction() {
 		level = logger.Silent
 	}
 	return logger.New(w, logger.Config{

@@ -5,7 +5,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"go-echo-boilerplate/internal/config"
 	"go-echo-boilerplate/internal/deliveries/http/middleware"
 	"go-echo-boilerplate/internal/models"
 	"go-echo-boilerplate/internal/pkg/jwtc"
@@ -16,7 +15,7 @@ import (
 
 func TestSwaggerDisabledInProduction(t *testing.T) {
 	e := echo.New()
-	registerDocsRoutes(e, &config.Configuration{Application: config.Application{Environment: "production"}})
+	registerDocsRoutes(e, "production")
 
 	req := httptest.NewRequest(http.MethodGet, "/swagger/index.html", nil)
 	rec := httptest.NewRecorder()
@@ -27,7 +26,7 @@ func TestSwaggerDisabledInProduction(t *testing.T) {
 
 func TestSwaggerEnabledInLocal(t *testing.T) {
 	e := echo.New()
-	registerDocsRoutes(e, &config.Configuration{Application: config.Application{Environment: "local"}})
+	registerDocsRoutes(e, "local")
 
 	req := httptest.NewRequest(http.MethodGet, "/swagger/index.html", nil)
 	rec := httptest.NewRecorder()

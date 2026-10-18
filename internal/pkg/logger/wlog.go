@@ -29,7 +29,7 @@ func NewWlog(configuration *config.Configuration, drain wlog.Drain) (*wlog.Logge
 	}
 	app := configuration.Application
 	return wlog.New(
-		wlog.WithService(app.Name, app.Version, app.Environment),
+		wlog.WithService(app.Name, app.Version, string(app.Environment)),
 		wlog.WithSilent(),
 		wlog.WithDrains(drain),
 		wlog.WithErrorExtractor(wlogherr.Extractor()),

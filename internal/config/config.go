@@ -52,8 +52,8 @@ func Initialize(ctx context.Context) (*Configuration, error) {
 	return &configuration, nil
 }
 
-// decodeHook rejects a bare number for a duration. Viper's weak decoding
-// would otherwise read `read_timeout: 30` as 30ns.
+// mapstructure decodes a bare YAML number into a time.Duration as
+// nanoseconds, so `read_timeout: 30` would mean 30ns.
 var decodeHook = mapstructure.ComposeDecodeHookFunc(
 	func(from, to reflect.Type, data any) (any, error) {
 		if to == reflect.TypeFor[time.Duration]() && from.Kind() != reflect.String {
@@ -61,6 +61,7 @@ var decodeHook = mapstructure.ComposeDecodeHookFunc(
 		}
 		return data, nil
 	},
+	mapstructure.TextUnmarshallerHookFunc(),
 	mapstructure.StringToTimeDurationHookFunc(),
 	mapstructure.StringToSliceHookFunc(","),
 )

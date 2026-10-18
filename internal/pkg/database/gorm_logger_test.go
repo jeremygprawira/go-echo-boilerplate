@@ -22,15 +22,14 @@ const (
 	dummyEmail = "dummy@example.test"
 )
 
-func logCreateUser(t *testing.T, environment string) string {
+func logCreateUser(t *testing.T, env config.Environment) string {
 	t.Helper()
 	sqlDB, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	var buf bytes.Buffer
-	cfg := &config.Configuration{Application: config.Application{Environment: environment}}
-	gdb, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{Logger: gormLogger(cfg, log.New(&buf, "", 0))})
+	gdb, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{Logger: gormLogger(env, log.New(&buf, "", 0))})
 	require.NoError(t, err)
 
 	mock.ExpectBegin()
@@ -43,8 +42,8 @@ func logCreateUser(t *testing.T, environment string) string {
 }
 
 func TestGormLogger_ProductionLogsNothing(t *testing.T) {
-	for _, env := range []string{"prod", "production"} {
-		assert.Empty(t, logCreateUser(t, env), env)
+	for _, env := range []config.Environment{"prod", "production"} {
+		assert.Empty(t, logCreateUser(t, env), string(env))
 	}
 }
 

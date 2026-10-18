@@ -21,7 +21,7 @@ const placeholderMarker = "replace-with-"
 func (c *Configuration) Validate() error {
 	var errs []error
 
-	if !environments[c.environment()] {
+	if !environments[c.Application.Environment] {
 		errs = append(errs, fmt.Errorf("application.environment %q must be one of local, dev, uat, staging, prod, production", c.Application.Environment))
 	}
 

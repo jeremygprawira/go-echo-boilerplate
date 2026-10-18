@@ -53,7 +53,7 @@ func run() error {
 		graceful.WithLogger(logAdapter),
 		graceful.WithStartupHook(func() {
 			logger.Instance.Info(ctx, "All processes started successfully",
-				logger.String("env", config.Application.Environment),
+				logger.String("env", string(config.Application.Environment)),
 				logger.String("addr", port),
 			)
 		}),

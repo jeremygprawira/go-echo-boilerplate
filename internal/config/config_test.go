@@ -69,6 +69,23 @@ func TestInitialize_DecodesDurations(t *testing.T) {
 	assert.Zero(t, c.Application.Timeout, "an empty timeout means no deadline")
 }
 
+func TestInitialize_NormalizesEnvironment(t *testing.T) {
+	c, err := initialize(t, `application: {environment: " PROD "}`+secrets)
+	require.NoError(t, err)
+	assert.Equal(t, Environment("prod"), c.Application.Environment)
+	assert.True(t, c.Application.Environment.IsProduction())
+}
+
+func TestInitialize_RejectsUnknownOrMissingEnvironment(t *testing.T) {
+	for application, want := range map[string]string{
+		"{environment: prd}":  `'application.environment' "prd" must be one of`,
+		"{read_timeout: 15s}": `application.environment "" must be one of`,
+	} {
+		_, err := initialize(t, "application: "+application+"\n"+secrets)
+		assert.ErrorContains(t, err, want, application)
+	}
+}
+
 func TestInitialize_RejectsDurationWithoutUnit(t *testing.T) {
 	for application, want := range map[string]string{
 		"{environment: local, timeout: 30}":        "'application.timeout' 30 is not a duration",

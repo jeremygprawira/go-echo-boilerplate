@@ -18,7 +18,7 @@ type (
 		Name        string        `mapstructure:"name"`
 		Version     string        `mapstructure:"version"`
 		Port        int           `mapstructure:"port"`
-		Environment string        `mapstructure:"environment"`
+		Environment Environment   `mapstructure:"environment"`
 		Host        string        `mapstructure:"host"`
 		Timeout     time.Duration `mapstructure:"timeout"`
 		Timezone    string        `mapstructure:"timezone"`

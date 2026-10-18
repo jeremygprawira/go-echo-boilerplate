@@ -1,21 +1,27 @@
 package config
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
-// environments lists the accepted application.environment values. Validate
-// rejects anything else, so a typo cannot silently run as non-production.
-var environments = map[string]bool{
+// Environment is an application.environment value. Initialize decodes it
+// through UnmarshalText, so a loaded value is lowercase, trimmed and known.
+type Environment string
+
+var environments = map[Environment]bool{
 	"local": true, "dev": true, "uat": true, "staging": true, "prod": true, "production": true,
 }
 
-func (c *Configuration) environment() string {
-	return strings.ToLower(strings.TrimSpace(c.Application.Environment))
+func (e *Environment) UnmarshalText(text []byte) error {
+	v := Environment(strings.ToLower(strings.TrimSpace(string(text))))
+	if !environments[v] {
+		return fmt.Errorf("%q must be one of local, dev, uat, staging, prod, production", text)
+	}
+	*e = v
+	return nil
 }
 
-// IsProduction reports whether the application is running in the production
-// environment. It is the single source of truth for prod-only behavior such as
-// disabling Swagger and silencing verbose logs.
-func (c *Configuration) IsProduction() bool {
-	env := c.environment()
-	return env == "prod" || env == "production"
+func (e Environment) IsProduction() bool {
+	return e == "prod" || e == "production"
 }

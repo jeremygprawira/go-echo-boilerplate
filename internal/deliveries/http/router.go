@@ -69,7 +69,7 @@ func NewServer(
 	e.GET("/", func(ctx echo.Context) error {
 		return ctx.String(http.StatusOK, "This is your Go Echo Boilerplate")
 	})
-	registerDocsRoutes(e, cfg)
+	registerDocsRoutes(e, cfg.Application.Environment)
 	e.GET("/health", healthHandler{health: health}.Check)
 
 	controls := controls{
@@ -108,8 +108,8 @@ func (c controls) mount(api *echo.Group, routes []route) {
 	}
 }
 
-func registerDocsRoutes(eco *echo.Echo, config *config.Configuration) {
-	if config.IsProduction() {
+func registerDocsRoutes(eco *echo.Echo, env config.Environment) {
+	if env.IsProduction() {
 		return
 	}
 	eco.GET("/docs", func(ectx echo.Context) error {

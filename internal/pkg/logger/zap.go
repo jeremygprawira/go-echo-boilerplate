@@ -17,7 +17,7 @@ import (
 // Initialize builds the zap backend, sets Instance for plain startup and shutdown lines,
 // and returns the wlog logger for request events, also set as wlog's default.
 func Initialize(configuration *config.Configuration) (*wlog.Logger, error) {
-	isProduction := configuration.IsProduction()
+	isProduction := configuration.Application.Environment.IsProduction()
 
 	var zapConfig zap.Config
 	if isProduction {
@@ -62,7 +62,7 @@ func Initialize(configuration *config.Configuration) (*wlog.Logger, error) {
 		encoding = "json"
 	}
 	base.Info("Logger initialized",
-		zap.String("environment", configuration.Application.Environment),
+		zap.String("environment", string(configuration.Application.Environment)),
 		zap.String("encoding", encoding),
 		zap.String("log_level", zapConfig.Level.String()),
 	)
