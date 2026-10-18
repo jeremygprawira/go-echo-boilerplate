@@ -5,17 +5,19 @@ This file provides guidance to coding agents (Claude Code, Codex and similar too
 ## Commands
 
 ```bash
+make ci                       # Every check CI runs. Run it before you push
 make dev                      # Hot-reload dev server (air); regenerates Swagger docs first
 make run ENV=local            # Run without hot-reload (ENV=local|dev|uat|prod)
 make build                    # Build binary to bin/server
 make test                     # go test -v -race ./...
 make test-coverage            # Coverage report in coverage/coverage.html
-make lint                     # golangci-lint run ./...
-make lint-fix                 # golangci-lint with auto-fix
+make lint                     # Pinned golangci-lint run ./...
+make lint-fix                 # Pinned golangci-lint with auto-fix
+make security-scan            # Pinned gosec ./...
 make docs                     # Regenerate Swagger docs (swag init -g cmd/http/main.go --output docs)
 make migrate-up ENV=local     # Apply goose migrations (loads .env for DB_DSN)
 make migrate-create NAME=xxx  # New SQL migration in migration/db/postgre
-make install-tools            # Install air, golangci-lint, swag, goose, gosec
+make install-tools            # Install air, swag, goose
 ```
 
 Run a single test:
@@ -25,6 +27,8 @@ go test -v -race ./internal/service/ -run TestUserService_Create
 ```
 
 Notes:
+- `make ci` runs `go mod tidy -diff` for both modules, build, `go test -race`, golangci-lint, gosec, `scripts/check-repo.sh` and `scripts/check-deadcode.sh`. CI runs `make ci` as its one job, plus `scripts/check-pr-base.sh` on pull requests.
+- golangci-lint, gosec and deadcode are pinned in `tools/go.mod` and run as `go tool -modfile=tools/go.mod <tool>`. Change a tool version there, never with `go install ...@latest`. A bare `golangci-lint` on your PATH can be another version with other defaults, so always use `make lint` or `make ci`.
 - The `ENV` env var selects the config file: `config/config.<env>.yaml`, loaded via Viper (`internal/config/config.go`). `make run` fails if the file is missing.
 - `application.environment` must be one of `local`, `dev`, `uat`, `staging`, `prod`, `production` (case and surrounding space ignored), or `Validate` fails. `IsProduction()` is true for `prod` and `production`.
 - Swagger docs are a generated Go package (`docs/docs.go`) imported by the router (`_ "go-echo-boilerplate/docs"`). After changing handler `@` annotations, run `make docs` or the build serves stale docs.
@@ -57,3 +61,20 @@ Adding a feature means touching all four: model → pgsql repository (+ register
 ## Testing conventions
 
 Tests live beside the code (`*_test.go`) using testify; repository tests use go-sqlmock rather than a real database. Handler tests use Echo's httptest helpers.
+
+## Rules and what enforces them
+
+Each rule has a check that fails on a real past commit. Add a row when you add a check.
+
+| Rule | Enforced by | Fails on |
+| --- | --- | --- |
+| `internal/pkg` is a leaf. It never imports `repository`, `service`, `deliveries` or `core` | `make lint` (depguard `pkg-is-leaf`) | 1334145 |
+| `internal/deliveries` never imports `repository` or gorm | `make lint` (depguard `deliveries-no-persistence`) | no past violation |
+| `internal/service` never imports `repository/pgsql` or gorm | `make lint` (depguard `service-no-driver`) | no past violation |
+| Echo's middleware package is imported as `echoMiddleware` | `make lint` (importas) | ab33d3a^ |
+| Every returned error is checked, including `Close` | `make lint` (errcheck) | 1c90978 |
+| Every `FROM golang:` image matches the go.mod Go minor version | `scripts/check-repo.sh` | 5180441^, bd3fd72^, f910f52^, e2c4e2d^, 9bf871f |
+| No `config/config.<env>.yaml` is tracked, only the local example | `scripts/check-repo.sh` | 8f86790 |
+| Agent scratch (`.serena/`, `docs/superpowers/`) is never tracked | `scripts/check-repo.sh` | 9bf871f |
+| A change adds no unreachable func, unless `scripts/deadcode-allow.txt` lists it with a reason | `scripts/check-deadcode.sh` | bfa1c5a, 16476e2 |
+| A PR targets `master` or a branch with an open PR | `scripts/check-pr-base.sh` (CI, pull requests) | PR #12 |
