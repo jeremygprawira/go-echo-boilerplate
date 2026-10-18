@@ -10,7 +10,19 @@ linters:
     - errcheck
     - depguard
     - importas
+    - forbidigo
+  exclusions:
+    rules:
+      - path: ^internal/config/
+        linters: [forbidigo]
+      - path: _test\.go$
+        linters: [forbidigo]
   settings:
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^time\.ParseDuration$
+          msg: make the config field a time.Duration; internal/config decodes durations once, at load
     depguard:
       rules:
         pkg-is-leaf:
