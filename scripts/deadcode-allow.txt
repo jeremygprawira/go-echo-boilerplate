@@ -1,0 +1,4 @@
+# Unreachable funcs that scripts/check-deadcode.sh accepts.
+# This repo is a boilerplate, so a generic helper with no caller yet can stay
+# when it has a test. One line per func, in deadcode's package: Func form:
+#   go-echo-boilerplate/internal/pkg/example: Helper  # why it stays
