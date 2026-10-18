@@ -83,18 +83,30 @@ func (s *rateLimiterStore) removeLocked(el *list.Element) {
 	s.lru.Remove(el)
 }
 
-// clientIP returns c.RealIP() when it is an IP address. Anything else, such as
+// ipv6ClientMask is the prefix one IPv6 client is assumed to hold. An ISP
+// routinely hands a single subscriber a whole /64, so keying on the full
+// address would give that client 2^64 fresh budgets.
+var ipv6ClientMask = net.CIDRMask(64, 128)
+
+// clientIP returns the rate-limit identity for c.RealIP(): an IPv4 address
+// whole, an IPv6 address as its /64. Anything that is not an address, such as
 // a raw header value Echo passed through, falls back to the TCP peer, so a
 // store key is never longer than an address.
 func clientIP(c echo.Context) string {
-	if ip := net.ParseIP(c.RealIP()); ip != nil {
+	ip := net.ParseIP(c.RealIP())
+	if ip == nil {
+		host, _, err := net.SplitHostPort(c.Request().RemoteAddr)
+		if err != nil {
+			return c.Request().RemoteAddr
+		}
+		if ip = net.ParseIP(host); ip == nil {
+			return host
+		}
+	}
+	if ip.To4() != nil {
 		return ip.String()
 	}
-	host, _, err := net.SplitHostPort(c.Request().RemoteAddr)
-	if err != nil {
-		return c.Request().RemoteAddr
-	}
-	return host
+	return ip.Mask(ipv6ClientMask).String() + "/64"
 }
 
 // evictLoop periodically drops identifiers idle longer than expiresIn so the
@@ -121,8 +133,9 @@ func (s *rateLimiterStore) evictLoop() {
 // well-behaved client can back off before being rejected, and a 429 carries
 // Retry-After computed from the token bucket's actual refill delay.
 //
-// A bucket is keyed by the method, the route and c.RealIP(), so one instance
-// mounted on several route rows gives each row its own budget.
+// A bucket is keyed by the method, the route and the client: the IPv4 address
+// or the IPv6 /64 of c.RealIP(). One instance mounted on several route rows
+// gives each row its own budget, and clients that share a /64 share a budget.
 func RateLimiter(cfg appconfig.Validated) echo.MiddlewareFunc {
 	mw, _ := rateLimiter(cfg.Get().RateLimit)
 	return mw

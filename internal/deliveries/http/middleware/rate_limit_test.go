@@ -113,3 +113,25 @@ func TestRateLimiter_DisabledPassesThrough(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, lastCode)
 }
+
+func TestRateLimiter_KeysIPv4OnTheAddressAndIPv6OnThe64(t *testing.T) {
+	e := echo.New()
+	e.Use(limiter(config.RateLimit{Enabled: true, Rate: 0.001, Burst: 1, ExpiresIn: 3 * time.Minute}))
+	e.POST("/login", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
+
+	code := func(remoteAddr string) int {
+		req := httptest.NewRequest(http.MethodPost, "/login", nil)
+		req.RemoteAddr = remoteAddr
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	require.Equal(t, http.StatusOK, code("192.0.2.1:1234"))
+	require.Equal(t, http.StatusTooManyRequests, code("[::ffff:192.0.2.1]:1234"), "an IPv4-mapped address is the IPv4 client")
+	require.Equal(t, http.StatusOK, code("192.0.2.2:1234"), "each IPv4 address has its own budget")
+
+	require.Equal(t, http.StatusOK, code("[2001:db8:1:2::1]:1234"))
+	require.Equal(t, http.StatusTooManyRequests, code("[2001:db8:1:2:ffff:ffff:ffff:fffe]:1234"), "addresses in one /64 share a budget")
+	require.Equal(t, http.StatusOK, code("[2001:db8:1:3::1]:1234"), "another /64 has its own budget")
+}
