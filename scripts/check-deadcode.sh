@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Fails when deadcode finds an unreachable func that scripts/deadcode-allow.txt
-# does not list, when the list names a func that is reachable or gone, or when
-# an entry has no "# reason".
 set -euo pipefail
 export LC_ALL=C
 cd "$(dirname "$0")/.."

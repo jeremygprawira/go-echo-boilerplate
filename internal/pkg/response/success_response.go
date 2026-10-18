@@ -74,7 +74,6 @@ func SuccessList(ctx echo.Context, code int, message string, data interface{}) e
 	})
 }
 
-// SuccessPagination writes a list response with cursor pagination.
 func SuccessPagination(ctx echo.Context, code int, message string, pagination models.PaginationOutput, data interface{}) error {
 	if message == "" {
 		message = defaultMessage

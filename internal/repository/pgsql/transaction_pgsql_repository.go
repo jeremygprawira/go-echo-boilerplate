@@ -8,7 +8,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// TransactionRepository runs a function inside one database transaction.
 type TransactionRepository interface {
 	// Atomic executes a function within a database transaction.
 	// If the function returns an error or panics, the transaction is rolled back.

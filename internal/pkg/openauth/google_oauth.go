@@ -1,6 +1,3 @@
-// Package openauth is optional Google OAuth sign-in. Nothing wires it by
-// default. To use it, build a GoogleOAuth in core.Setup and call it from a
-// handler pair: one that redirects, and one that serves redirect_uri.
 package openauth
 
 import (
@@ -18,10 +15,10 @@ import (
 
 // Google is the sign-in flow. The caller makes a random state for each login
 // (generator.SessionToken works), keeps it in a cookie, and hands both that
-// state and the one on the callback to Fetch.
+// state and the one on the callback to Callback.
 type Google interface {
-	Redirect(state string) string
-	Fetch(ctx context.Context, wantState, gotState, code string) (*GoogleUser, error)
+	AuthURL(state string) string
+	Callback(ctx context.Context, wantState, gotState, code string) (*GoogleUser, error)
 }
 
 var _ Google = (*GoogleOAuth)(nil)
@@ -52,13 +49,11 @@ func newGoogleOAuth(cfg config.Google, endpoint oauth2.Endpoint) (*GoogleOAuth, 
 	}, nil
 }
 
-// Redirect returns the Google consent URL that carries state.
-func (g *GoogleOAuth) Redirect(state string) string {
+func (g *GoogleOAuth) AuthURL(state string) string {
 	return g.config.AuthCodeURL(state)
 }
 
-// Fetch checks the state, trades code for a token, and reads the user profile.
-func (g *GoogleOAuth) Fetch(ctx context.Context, wantState, gotState, code string) (*GoogleUser, error) {
+func (g *GoogleOAuth) Callback(ctx context.Context, wantState, gotState, code string) (*GoogleUser, error) {
 	if wantState == "" || subtle.ConstantTimeCompare([]byte(wantState), []byte(gotState)) != 1 {
 		return nil, errors.New("google oauth: state mismatch")
 	}

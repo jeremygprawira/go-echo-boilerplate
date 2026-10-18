@@ -1,9 +1,3 @@
-# Unreachable funcs that scripts/check-deadcode.sh accepts. Every other
-# unreachable func fails the check, and so does a line here whose func is
-# reachable or gone. This repo is a boilerplate, so a generic helper with no
-# caller yet can stay when it has a behavior test. One line per func, in
-# deadcode's package: Func form, with a reason:
-#   go-echo-boilerplate/internal/pkg/example: Helper  # why it stays
 go-echo-boilerplate/internal/models: ParsePagination  # cursor pagination input for list endpoints
 go-echo-boilerplate/internal/pkg/response: SuccessPagination  # envelope for paginated list endpoints
 go-echo-boilerplate/internal/pkg/boolc: And  # boolean helpers for multi-condition checks
@@ -19,8 +13,8 @@ go-echo-boilerplate/internal/pkg/generator: APIKey  # 64-byte API key preset
 go-echo-boilerplate/internal/pkg/generator: NeedsRehash  # upgrade password hashes after a bcrypt cost change
 go-echo-boilerplate/internal/pkg/openauth: NewGoogleOAuth  # optional Google sign-in, unwired by default
 go-echo-boilerplate/internal/pkg/openauth: newGoogleOAuth  # optional Google sign-in, unwired by default
-go-echo-boilerplate/internal/pkg/openauth: GoogleOAuth.Redirect  # optional Google sign-in, unwired by default
-go-echo-boilerplate/internal/pkg/openauth: GoogleOAuth.Fetch  # optional Google sign-in, unwired by default
+go-echo-boilerplate/internal/pkg/openauth: GoogleOAuth.AuthURL  # optional Google sign-in, unwired by default
+go-echo-boilerplate/internal/pkg/openauth: GoogleOAuth.Callback  # optional Google sign-in, unwired by default
 go-echo-boilerplate/internal/pkg/stringc: TrimAndLowerCase  # pair of TrimAndUpperCase
 go-echo-boilerplate/internal/pkg/validator: AccountNumber  # checks numbers that generator.AccountNumber makes
 go-echo-boilerplate/internal/pkg/validator: Luhn  # check-digit rule behind AccountNumber

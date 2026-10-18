@@ -64,10 +64,10 @@ func TestNewGoogleOAuth_RequiresCredentials(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestGoogleOAuth_Redirect(t *testing.T) {
+func TestGoogleOAuth_AuthURL(t *testing.T) {
 	g := newFakeGoogle(t).client(t)
 
-	u, err := url.Parse(g.Redirect("state-abc"))
+	u, err := url.Parse(g.AuthURL("state-abc"))
 	require.NoError(t, err)
 	require.Equal(t, "/auth", u.Path)
 	q := u.Query()
@@ -78,39 +78,39 @@ func TestGoogleOAuth_Redirect(t *testing.T) {
 	require.Equal(t, "profile email", q.Get("scope"))
 }
 
-func TestGoogleOAuth_RedirectUsesGoogleByDefault(t *testing.T) {
+func TestGoogleOAuth_AuthURLUsesGoogleByDefault(t *testing.T) {
 	g, err := NewGoogleOAuth(config.Google{ClientID: "c", ClientSecret: "s", RedirectURI: "https://app.example.com/cb", UserInfoURL: "https://example.com/u"})
 	require.NoError(t, err)
 
-	u, err := url.Parse(g.Redirect("s1"))
+	u, err := url.Parse(g.AuthURL("s1"))
 	require.NoError(t, err)
 	require.Equal(t, "accounts.google.com", u.Host)
 }
 
-func TestGoogleOAuth_Fetch(t *testing.T) {
+func TestGoogleOAuth_Callback(t *testing.T) {
 	f := newFakeGoogle(t)
 
-	user, err := f.client(t).Fetch(context.Background(), "state-abc", "state-abc", "good-code")
+	user, err := f.client(t).Callback(context.Background(), "state-abc", "state-abc", "good-code")
 	require.NoError(t, err)
 	require.Equal(t, &GoogleUser{Id: "42", Email: "ann@example.com", Verified: true, Name: "Ann Lee"}, user)
 	require.Equal(t, "Bearer access-123", f.gotAuthHeader)
 }
 
-func TestGoogleOAuth_FetchRejectsStateMismatch(t *testing.T) {
+func TestGoogleOAuth_CallbackRejectsStateMismatch(t *testing.T) {
 	for _, tc := range []struct{ name, want, got string }{
 		{"different", "state-abc", "state-xyz"},
 		{"empty", "", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFakeGoogle(t)
-			_, err := f.client(t).Fetch(context.Background(), tc.want, tc.got, "good-code")
+			_, err := f.client(t).Callback(context.Background(), tc.want, tc.got, "good-code")
 			require.Error(t, err)
 			require.Zero(t, f.tokenCalls, "a bad state must not reach the token endpoint")
 		})
 	}
 }
 
-func TestGoogleOAuth_FetchFails(t *testing.T) {
+func TestGoogleOAuth_CallbackFails(t *testing.T) {
 	cases := []struct {
 		name string
 		code string
@@ -132,7 +132,7 @@ func TestGoogleOAuth_FetchFails(t *testing.T) {
 			}
 			f.userInfoCode = tc.resp
 
-			user, err := f.client(t).Fetch(context.Background(), "s", "s", tc.code)
+			user, err := f.client(t).Callback(context.Background(), "s", "s", tc.code)
 			require.Error(t, err)
 			require.Nil(t, user)
 		})

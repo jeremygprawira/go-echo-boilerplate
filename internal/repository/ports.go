@@ -6,8 +6,6 @@ import (
 	"time"
 )
 
-// UserRepository is the storage-neutral port for user persistence. The pgsql
-// adapter implements it, and services depend only on this interface.
 type UserRepository interface {
 	Create(ctx context.Context, user *models.User) error
 	CheckByEmailOrPhoneNumber(ctx context.Context, email string, phoneNumber string) (bool, error)
