@@ -77,11 +77,11 @@ Routes (`userRoutes` in `internal/deliveries/http/user_handler.go`), all under `
 
 `RefreshTokens` and `Logout` both resolve the refresh token the same way (`jwtc.ResolveRefreshToken` in `internal/pkg/jwtc`): an explicit value in the request body wins; otherwise they fall back to the `refresh_token` cookie set by `GetTokens` (login). This lets a browser client rely purely on the httpOnly cookie, a non-browser client pass the token explicitly in the body, and either client call any of the three endpoints without caring which channel the others used.
 
-`middleware.BearerAuthMiddleware` (`internal/deliveries/http/middleware/jwt.go`) does, in order: check `Authorization: Bearer <token>` header present and well-formed → `jwtc.ParseAccessToken` → `revocation.IsRevoked(ctx, claims.ID)` (a `middleware.RevocationChecker`, which `service.TokenService` satisfies) → keep the verified `jwtc.Claims` for `middleware.WithClaims`. A handler that reads its caller has the type `func(echo.Context, jwtc.Claims) error` and goes in a route row's `bearer` field, so it only runs behind this middleware. Putting it in the `public` field does not compile.
+`middleware.BearerAuthMiddleware` (`internal/deliveries/http/middleware/jwt.go`) does, in order: check `Authorization: Bearer <token>` header present and well-formed → `jwtc.ParseAccessToken` → `revocation.IsRevoked(ctx, claims.ID)` (a `middleware.RevocationChecker`, which `service.TokenService` satisfies) → keep the verified `jwtc.Claims` for `middleware.WithClaims` and set the wide event's `user.id` from them. A handler that reads its caller has the type `func(echo.Context, jwtc.Claims) error` and goes in a route row's `bearer` field, so it only runs behind this middleware. Putting it in the `public` field does not compile.
 
 ### Refresh (`UserService.RefreshTokens`)
 
-Validates the refresh token, then **claims** its JTI with `Store.RevokeToken`, which reports whether this call inserted the row. The claim is one `INSERT ... ON CONFLICT (jti) DO NOTHING`, so of several concurrent requests with the same token exactly one inserts the row. That request loads the user and gets a fresh access+refresh pair. Every other request, and any later replay, gets 401 and mints nothing.
+Validates the refresh token and loads its user. A missing user gets 401. Any other lookup error gets 500 `DATABASE_ERROR` and leaves the token unspent, so a client can retry after a database outage. Then it **claims** the JTI with `Store.RevokeToken`, which reports whether this call inserted the row. The claim is one `INSERT ... ON CONFLICT (jti) DO NOTHING`, so of several concurrent requests with the same token exactly one inserts the row and gets a fresh access+refresh pair. Every other request, and any later replay, gets 401 and mints nothing.
 
 ### Logout (`UserService.Logout`)
 
@@ -91,7 +91,7 @@ Revokes the current access token's JTI, and — if a refresh token is also prese
 
 `repository.Store` holds the SQL in `internal/repository/revoked_token_repository.go` (`RevokeToken`, `IsTokenRevoked`, `PurgeExpiredTokens`). It keeps revoked JTIs in the Postgres `revoked_tokens` table (migration `migration/db/postgre/20261014000000_revoked_tokens.sql`). Revocation therefore survives restarts and is shared by every instance. The rules live in `internal/service`.
 
-- `RefreshTokens` and `Logout` store each JTI with an expiry of now plus the token's full lifetime, so the row outlives the token.
+- `RefreshTokens` and `Logout` store each JTI with the token's own `exp` as its expiry, so the purge drops the row once the token could no longer be used anyway.
 - `service.TokenService.IsRevoked` ignores expired rows. A database error is returned as an error, never as "not revoked". The bearer middleware and `RefreshTokens` answer 500 for it, so revocation fails closed.
 - `service.TokenService` runs as a `graceful` process (`token-purge` in `cmd/http/main.go`). It deletes expired rows every hour and stops on shutdown.
 
