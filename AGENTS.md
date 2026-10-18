@@ -105,7 +105,7 @@ Each rule has a check that fails on a real past commit. Add a row when you add a
 
 | Rule | Enforced by | Fails on |
 | --- | --- | --- |
-| `internal/pkg` is a leaf. It never imports `repository`, `service`, `deliveries` or `core` | `make lint` (depguard `pkg-is-leaf`) | 1334145 |
+| `internal/pkg` is a leaf. It never imports `repository`, `service`, `deliveries` or `core` | `make lint` (depguard `pkg-is-leaf`) | 6b1dc3b |
 | `internal/deliveries` never imports `repository`, gorm or `service` | `make lint` (depguard `deliveries-no-persistence`) | 1cee85c |
 | `internal/service` never imports `repository`, gorm, echo or `deliveries` | `make lint` (depguard `service-no-adapters`) | 1cee85c |
 | `internal/repository` never imports `service` or `deliveries` | `make lint` (depguard `repository-no-callers`) | no past violation |
@@ -114,7 +114,7 @@ Each rule has a check that fails on a real past commit. Add a row when you add a
 | One rate limiter on many route rows keeps a budget per method, route and client IP | `make test` (`TestRateLimiter_OneInstanceKeepsABudgetPerRoute`, `TestRateLimiter_OneInstanceKeepsABudgetPerMethodOnAPath`) | 1cee85c, 898283f |
 | A user lookup never returns a soft-deleted user | `make test` (`TestUserLookups_QueryFiltersDeletedAt`) | 1cee85c |
 | `Store.Atomic` runs every query in `fn` on the transaction | `make test` (`TestAtomic_CommitsWritesMadeThroughTheTransaction`) | no past violation |
-| A duration in config is a `time.Duration` field. Only `internal/config` calls `time.ParseDuration` | `make lint` (forbidigo) | b5f5e7c^ |
+| A duration in config is a `time.Duration` field. Only `internal/config` calls `time.ParseDuration` | `make lint` (forbidigo) | 8db11a6^ |
 | A constructor that reads config takes `config.Validated`, never a `*config.Configuration`. Tests build it with `configtest.Valid`, so the end-to-end server runs with the rate limiter on | `go build` (`Validated` has only an unexported field), and `make test` (`TestRateLimiter_ZeroConfigPanics`, `TestRevocation_ServerRunsWithTheRateLimiterOn`) | 1c90978 |
 | A config that omits `rate_limit` keeps the limiter on. Only `enabled: false` turns it off, and a zero rate, burst or `expires_in` fails startup | `make test` (`TestInitialize_OmittedOrEmptyRateLimitKeepsLimiterOn`, `TestInitialize_ZeroRateLimitFails`) | ab33d3a |
 | A duration written without a unit fails startup and names the key | `make test` (`TestInitialize_RejectsDurationWithoutUnit`) | no past violation |
