@@ -100,6 +100,8 @@ func TestGoogleOAuth_CallbackRejectsStateMismatch(t *testing.T) {
 	for _, tc := range []struct{ name, want, got string }{
 		{"different", "state-abc", "state-xyz"},
 		{"empty", "", ""},
+		{"got empty", "state-abc", ""},
+		{"got has extra characters", "state-abc", "state-abcd"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFakeGoogle(t)
