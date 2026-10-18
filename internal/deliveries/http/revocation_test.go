@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"go-echo-boilerplate/internal/pkg/jwtc"
 	"go-echo-boilerplate/internal/service"
 
+	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -83,12 +85,12 @@ func (m *memRevoked) IsTokenRevoked(_ context.Context, jti string, now time.Time
 
 func (m *memRevoked) PurgeExpiredTokens(context.Context, time.Time) error { return nil }
 
-func revocationTestServer(t *testing.T) http.Handler {
+func revocationTestServer(t *testing.T) *echo.Echo {
 	t.Helper()
 	return revocationTestServerWithBarrier(t, nil)
 }
 
-func revocationTestServerWithBarrier(t *testing.T, b *barrier) http.Handler {
+func revocationTestServerWithBarrier(t *testing.T, b *barrier) *echo.Echo {
 	t.Helper()
 	cfg := configtest.Valid()
 
@@ -157,15 +159,14 @@ func TestRevocation_LogoutAndRotationInvalidateTokens(t *testing.T) {
 	code, resp := call(t, h, http.MethodPost, "/api/v1/users/tokens", "",
 		map[string]any{"email": "user@example.test", "password": "Passw0rd!"})
 	require.Equal(t, http.StatusOK, code, "login: %v", resp)
+	assert.Equal(t, "OK", resp["status"], "login envelope status")
 	_, r1 := tokensOf(t, resp)
 
-	code, resp = call(t, h, http.MethodPost, "/api/v1/users/tokens/refresh", "",
-		map[string]any{"refreshToken": r1}, "Idempotency-Key", "retry-1")
+	code, resp = call(t, h, http.MethodPost, "/api/v1/users/tokens/refresh", "", map[string]any{"refreshToken": r1})
 	require.Equal(t, http.StatusOK, code, "first refresh: %v", resp)
 	a2, r2 := tokensOf(t, resp)
 
-	code, _ = call(t, h, http.MethodPost, "/api/v1/users/tokens/refresh", "",
-		map[string]any{"refreshToken": r1}, "Idempotency-Key", "retry-1")
+	code, _ = call(t, h, http.MethodPost, "/api/v1/users/tokens/refresh", "", map[string]any{"refreshToken": r1})
 	assert.Equal(t, http.StatusUnauthorized, code, "replaying an already rotated refresh token")
 
 	code, resp = call(t, h, http.MethodPost, "/api/v1/users/logout", a2, map[string]any{"refreshToken": r2})
@@ -205,4 +206,37 @@ func TestRevocation_ConcurrentRefreshWithOneTokenMintsOnce(t *testing.T) {
 		counts[c]++
 	}
 	assert.Equal(t, map[int]int{http.StatusOK: 1, http.StatusUnauthorized: callers - 1}, counts)
+}
+
+func TestRefresh_IsNeverIdempotent(t *testing.T) {
+	h := revocationTestServer(t)
+	code, resp := call(t, h, http.MethodPost, "/api/v1/users/tokens", "",
+		map[string]any{"email": "user@example.test", "password": "Passw0rd!"})
+	require.Equal(t, http.StatusOK, code, "login: %v", resp)
+	_, refresh := tokensOf(t, resp)
+
+	code, resp = call(t, h, http.MethodPost, "/api/v1/users/tokens/refresh", "",
+		map[string]any{"refreshToken": refresh}, "Idempotency-Key", "retry-1")
+	require.Equal(t, http.StatusOK, code, "first refresh: %v", resp)
+
+	code, resp = call(t, h, http.MethodPost, "/api/v1/users/tokens/refresh", "",
+		map[string]any{"refreshToken": refresh}, "Idempotency-Key", "retry-1")
+	assert.Equal(t, http.StatusUnauthorized, code, "a retry with the same Idempotency-Key must not replay the minted tokens: %v", resp)
+}
+
+func TestLogin_RefreshCookieRotatesTokens(t *testing.T) {
+	h := revocationTestServer(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/users/tokens",
+		strings.NewReader(`{"email":"user@example.test","password":"Passw0rd!"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", configtest.APIKey)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	cookies := rec.Result().Cookies()
+	require.Len(t, cookies, 1)
+
+	code, resp := call(t, h, http.MethodPost, "/api/v1/users/tokens/refresh", "", map[string]any{},
+		"Cookie", cookies[0].Name+"="+cookies[0].Value)
+	assert.Equal(t, http.StatusOK, code, "refresh with only the login cookie: %v", resp)
 }
