@@ -11,6 +11,7 @@ linters:
     - depguard
     - importas
     - forbidigo
+    - gocritic
   exclusions:
     rules:
       - path: ^internal/config/
@@ -18,6 +19,13 @@ linters:
       - path: _test\.go$
         linters: [forbidigo]
   settings:
+    gocritic:
+      disable-all: true
+      enabled-checks: [ruleguard]
+      settings:
+        ruleguard:
+          rules: ${base-path}/lint/ruleguard.go
+          failOn: all
     forbidigo:
       analyze-types: true
       forbid:

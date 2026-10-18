@@ -11,6 +11,7 @@ require (
 	github.com/jeremygprawira/wlog/errors/herr v1.0.0
 	github.com/jeremygprawira/wlog/log/zap v1.0.0
 	github.com/jeremygprawira/wlog/middleware/echo v1.0.0
+	github.com/quasilyte/go-ruleguard/dsl v0.3.23
 	github.com/stretchr/testify v1.12.1
 	github.com/swaggo/swag v1.16.6
 	golang.org/x/sync v0.23.0
