@@ -19,7 +19,7 @@ authorization:
   api_key: api-key-0123456789abcdef0123456789abcdef
 `
 
-func initialize(t *testing.T, yaml string) (*Configuration, error) {
+func initialize(t *testing.T, yaml string) (Configuration, error) {
 	t.Helper()
 	dir := t.TempDir()
 	require.NoError(t, os.Mkdir(filepath.Join(dir, "config"), 0o750))
@@ -28,7 +28,11 @@ func initialize(t *testing.T, yaml string) (*Configuration, error) {
 	t.Setenv("ENV", "test")
 	viper.Reset()
 	t.Cleanup(viper.Reset)
-	return Initialize(context.Background())
+	v, err := Initialize(context.Background())
+	if err != nil {
+		return Configuration{}, err
+	}
+	return v.Get(), nil
 }
 
 func TestInitialize_OmittedOrEmptyRateLimitKeepsLimiterOn(t *testing.T) {
@@ -95,4 +99,25 @@ func TestInitialize_RejectsDurationWithoutUnit(t *testing.T) {
 		_, err := initialize(t, "application: "+application+"\n"+secrets)
 		assert.ErrorContains(t, err, want, application)
 	}
+}
+
+func TestValidated_RejectsInvalidConfiguration(t *testing.T) {
+	c := *validCfg()
+	c.RateLimit.Burst = 0
+	_, err := c.Validated()
+	require.ErrorContains(t, err, "rate_limit.burst must be greater than 0")
+}
+
+func TestValidated_ZeroValuePanicsNamingTheFix(t *testing.T) {
+	assert.PanicsWithValue(t, "config: zero Validated; build it with config.Initialize or Configuration.Validated", func() {
+		Validated{}.Get()
+	})
+}
+
+func TestValidated_GetReturnsACopy(t *testing.T) {
+	v, err := validCfg().Validated()
+	require.NoError(t, err)
+	c := v.Get()
+	c.RateLimit.Enabled = false
+	assert.True(t, v.Get().RateLimit.Enabled)
 }

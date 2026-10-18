@@ -33,12 +33,13 @@ type Configuration struct {
 
 // DefaultJWTConfig returns a default JWT configuration
 // WARNING: You should override SecretKey from environment variables in production
-func DefaultConfig(config *config.Configuration) *Configuration {
+func DefaultConfig(cfg config.Validated) *Configuration {
+	auth := cfg.Get().Authorization
 	return &Configuration{
-		AccessTokenSecret:    config.Authorization.Access.Secret,
-		AccessTokenDuration:  config.Authorization.Access.Duration,
-		RefreshTokenSecret:   config.Authorization.Refresh.Secret,
-		RefreshTokenDuration: config.Authorization.Refresh.Duration,
-		Issuer:               config.Authorization.Issuer,
+		AccessTokenSecret:    auth.Access.Secret,
+		AccessTokenDuration:  auth.Access.Duration,
+		RefreshTokenSecret:   auth.Refresh.Secret,
+		RefreshTokenDuration: auth.Refresh.Duration,
+		Issuer:               auth.Issuer,
 	}
 }

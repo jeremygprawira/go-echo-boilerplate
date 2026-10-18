@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"go-echo-boilerplate/internal/config"
+	"go-echo-boilerplate/internal/config/configtest"
 
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/require"
@@ -14,11 +15,8 @@ import (
 
 func TestRequestTimeout_SlowHandlerCutOff(t *testing.T) {
 	e := echo.New()
-	cfg := &config.Configuration{}
-	cfg.Application.Timeout = time.Second
-	cfg.Application.MaxBodySize = "1M"
-	m := New(e, cfg, nil)
-	m.Default(cfg)
+	m := New(e, configtest.Valid(func(c *config.Configuration) { c.Application.Timeout = time.Second }), nil)
+	m.Default()
 
 	e.GET("/slow", func(c echo.Context) error {
 		select {

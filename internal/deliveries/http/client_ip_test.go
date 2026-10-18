@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"go-echo-boilerplate/internal/config"
+	"go-echo-boilerplate/internal/config/configtest"
 	"go-echo-boilerplate/internal/deliveries/http/middleware"
 
 	"github.com/labstack/echo/v4"
@@ -15,12 +16,12 @@ import (
 
 func limitedServer(t *testing.T, mutate func(*config.Configuration)) *echo.Echo {
 	t.Helper()
-	cfg := &config.Configuration{}
-	cfg.Application.Environment = "local"
-	cfg.RateLimit = config.RateLimit{Enabled: true, Rate: 1, Burst: 1, ExpiresIn: 3 * time.Minute}
-	if mutate != nil {
-		mutate(cfg)
-	}
+	cfg := configtest.Valid(func(c *config.Configuration) {
+		c.RateLimit = config.RateLimit{Enabled: true, Rate: 1, Burst: 1, ExpiresIn: 3 * time.Minute}
+		if mutate != nil {
+			mutate(c)
+		}
+	})
 	e := testServer{cfg: cfg}.build(t)
 	e.POST("/probe", func(c echo.Context) error { return c.NoContent(http.StatusOK) }, middleware.RateLimiter(cfg))
 	return e

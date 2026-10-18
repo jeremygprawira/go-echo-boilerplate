@@ -7,16 +7,26 @@ import (
 	"time"
 
 	"go-echo-boilerplate/internal/config"
+	"go-echo-boilerplate/internal/config/configtest"
 
 	"github.com/labstack/echo/v4"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+func limiter(rl config.RateLimit) echo.MiddlewareFunc {
+	return RateLimiter(configtest.Valid(func(c *config.Configuration) { c.RateLimit = rl }))
+}
+
+func TestRateLimiter_ZeroConfigPanics(t *testing.T) {
+	assert.PanicsWithValue(t, "config: zero Validated; build it with config.Initialize or Configuration.Validated", func() {
+		RateLimiter(config.Validated{})
+	})
+}
+
 func TestRateLimiter_BlocksBurst(t *testing.T) {
 	e := echo.New()
-	cfg := &config.Configuration{}
-	cfg.RateLimit = config.RateLimit{Enabled: true, Rate: 5, Burst: 10, ExpiresIn: 3 * time.Minute}
-	e.Use(RateLimiter(cfg))
+	e.Use(limiter(config.RateLimit{Enabled: true, Rate: 5, Burst: 10, ExpiresIn: 3 * time.Minute}))
 	e.POST("/login", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
 
 	var lastCode int
@@ -33,9 +43,7 @@ func TestRateLimiter_BlocksBurst(t *testing.T) {
 
 func TestRateLimiter_RespectsConfiguredBurst(t *testing.T) {
 	e := echo.New()
-	cfg := &config.Configuration{}
-	cfg.RateLimit = config.RateLimit{Enabled: true, Rate: 1, Burst: 2, ExpiresIn: 3 * time.Minute}
-	e.Use(RateLimiter(cfg))
+	e.Use(limiter(config.RateLimit{Enabled: true, Rate: 1, Burst: 2, ExpiresIn: 3 * time.Minute}))
 	e.POST("/login", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
 
 	codes := make([]int, 3)
@@ -54,9 +62,7 @@ func TestRateLimiter_RespectsConfiguredBurst(t *testing.T) {
 
 func TestRateLimiter_ReportsRemainingQuotaHeaders(t *testing.T) {
 	e := echo.New()
-	cfg := &config.Configuration{}
-	cfg.RateLimit = config.RateLimit{Enabled: true, Rate: 1, Burst: 5, ExpiresIn: 3 * time.Minute}
-	e.Use(RateLimiter(cfg))
+	e.Use(limiter(config.RateLimit{Enabled: true, Rate: 1, Burst: 5, ExpiresIn: 3 * time.Minute}))
 	e.POST("/login", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
 
 	req := httptest.NewRequest(http.MethodPost, "/login", nil)
@@ -71,9 +77,7 @@ func TestRateLimiter_ReportsRemainingQuotaHeaders(t *testing.T) {
 
 func TestRateLimiter_SetsRetryAfterWhenExceeded(t *testing.T) {
 	e := echo.New()
-	cfg := &config.Configuration{}
-	cfg.RateLimit = config.RateLimit{Enabled: true, Rate: 1, Burst: 1, ExpiresIn: 3 * time.Minute}
-	e.Use(RateLimiter(cfg))
+	e.Use(limiter(config.RateLimit{Enabled: true, Rate: 1, Burst: 1, ExpiresIn: 3 * time.Minute}))
 	e.POST("/login", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
 
 	newReq := func() *http.Request {
@@ -95,9 +99,7 @@ func TestRateLimiter_SetsRetryAfterWhenExceeded(t *testing.T) {
 
 func TestRateLimiter_DisabledPassesThrough(t *testing.T) {
 	e := echo.New()
-	cfg := &config.Configuration{}
-	cfg.RateLimit.Enabled = false
-	e.Use(RateLimiter(cfg))
+	e.Use(RateLimiter(configtest.Valid(func(c *config.Configuration) { c.RateLimit.Enabled = false })))
 	e.POST("/login", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
 
 	var lastCode int

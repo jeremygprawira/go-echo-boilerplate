@@ -1,18 +1,17 @@
 package middleware
 
 import (
-	"go-echo-boilerplate/internal/config"
 	"net/http"
 
 	"github.com/labstack/echo/v4"
 	echoMiddleware "github.com/labstack/echo/v4/middleware"
 )
 
-func (m *Middleware) corsMiddleware(config *config.Configuration) echo.MiddlewareFunc {
+func (m *Middleware) corsMiddleware() echo.MiddlewareFunc {
 	echoHeaders := []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept, echo.HeaderAuthorization}
-	headersAllowed := append(echoHeaders, config.CORS.HeadersAllowed...)
+	headersAllowed := append(echoHeaders, m.config.CORS.HeadersAllowed...)
 
-	origins := config.CORS.AllowedOrigins
+	origins := m.config.CORS.AllowedOrigins
 	if len(origins) == 0 {
 		origins = []string{"http://localhost:3000"}
 	}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"go-echo-boilerplate/internal/config"
+	"go-echo-boilerplate/internal/config/configtest"
 	"go-echo-boilerplate/internal/deliveries/http/middleware"
 	"go-echo-boilerplate/internal/pkg/jwtc"
 	"go-echo-boilerplate/internal/pkg/logger"
@@ -17,22 +18,10 @@ import (
 	"go.uber.org/zap"
 )
 
-const testAPIKey = "test-api-key-0123456789abcdef0123456789"
-
 // notRevoked is a RevocationChecker that reports every token as live.
 type notRevoked struct{}
 
 func (notRevoked) IsRevoked(context.Context, string) (bool, error) { return false, nil }
-
-func testConfig() *config.Configuration {
-	cfg := &config.Configuration{}
-	cfg.Application.Environment = "local"
-	cfg.Authorization.Access = config.TokenConfiguration{Secret: "access-secret-0123456789abcdef0123456789", Duration: 15 * time.Minute}
-	cfg.Authorization.Refresh = config.TokenConfiguration{Secret: "refresh-secret-0123456789abcdef012345678", Duration: 168 * time.Hour}
-	cfg.Authorization.APIKey = testAPIKey
-	cfg.Idempotency.TTL = 10 * time.Minute
-	return cfg
-}
 
 func testJWT() *jwtc.Configuration {
 	return &jwtc.Configuration{
@@ -45,7 +34,7 @@ func testJWT() *jwtc.Configuration {
 }
 
 type testServer struct {
-	cfg        *config.Configuration
+	cfg        config.Validated
 	jwt        *jwtc.Configuration
 	revocation middleware.RevocationChecker
 	health     healthService
@@ -54,8 +43,8 @@ type testServer struct {
 
 func (s testServer) build(t *testing.T) *echo.Echo {
 	t.Helper()
-	if s.cfg == nil {
-		s.cfg = testConfig()
+	if s.cfg == (config.Validated{}) {
+		s.cfg = configtest.Valid()
 	}
 	if s.jwt == nil {
 		s.jwt = testJWT()
@@ -70,7 +59,7 @@ func (s testServer) build(t *testing.T) *echo.Echo {
 
 func withAPIKey(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Header.Set("X-API-Key", testAPIKey)
+		r.Header.Set("X-API-Key", configtest.APIKey)
 		h.ServeHTTP(w, r)
 	})
 }

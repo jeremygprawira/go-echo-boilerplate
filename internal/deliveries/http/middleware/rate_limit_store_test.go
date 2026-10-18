@@ -15,9 +15,7 @@ import (
 )
 
 func TestRateLimiter_HeaderSizedIdentifierIsNotStored(t *testing.T) {
-	cfg := &config.Configuration{}
-	cfg.RateLimit = config.RateLimit{Enabled: true, Rate: 1, Burst: 1, ExpiresIn: 3 * time.Minute}
-	mw, store := rateLimiter(cfg)
+	mw, store := rateLimiter(config.RateLimit{Enabled: true, Rate: 1, Burst: 1, ExpiresIn: 3 * time.Minute})
 	e := echo.New()
 	e.POST("/login", func(c echo.Context) error { return c.NoContent(http.StatusOK) }, mw)
 
@@ -37,9 +35,7 @@ func TestRateLimiter_HeaderSizedIdentifierIsNotStored(t *testing.T) {
 }
 
 func TestRateLimiter_OneInstanceKeepsABudgetPerRoute(t *testing.T) {
-	cfg := &config.Configuration{}
-	cfg.RateLimit = config.RateLimit{Enabled: true, Rate: 0.001, Burst: 1, ExpiresIn: 3 * time.Minute}
-	mw := RateLimiter(cfg)
+	mw := limiter(config.RateLimit{Enabled: true, Rate: 0.001, Burst: 1, ExpiresIn: 3 * time.Minute})
 	e := echo.New()
 	ok := func(c echo.Context) error { return c.NoContent(http.StatusOK) }
 	e.POST("/login", ok, mw)
@@ -58,9 +54,7 @@ func TestRateLimiter_OneInstanceKeepsABudgetPerRoute(t *testing.T) {
 }
 
 func TestRateLimiter_OneInstanceKeepsABudgetPerMethodOnAPath(t *testing.T) {
-	cfg := &config.Configuration{}
-	cfg.RateLimit = config.RateLimit{Enabled: true, Rate: 0.001, Burst: 1, ExpiresIn: 3 * time.Minute}
-	mw := RateLimiter(cfg)
+	mw := limiter(config.RateLimit{Enabled: true, Rate: 0.001, Burst: 1, ExpiresIn: 3 * time.Minute})
 	e := echo.New()
 	ok := func(c echo.Context) error { return c.NoContent(http.StatusOK) }
 	e.POST("/tokens", ok, mw)

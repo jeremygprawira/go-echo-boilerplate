@@ -34,7 +34,7 @@ func run() error {
 		return fmt.Errorf("failed to setup application: %w", err)
 	}
 
-	port := fmt.Sprintf(":%d", config.Application.Port)
+	port := fmt.Sprintf(":%d", config.Get().Application.Port)
 
 	// 3. Define processes to manage
 	processes := map[string]graceful.Process{
@@ -53,7 +53,7 @@ func run() error {
 		graceful.WithLogger(logAdapter),
 		graceful.WithStartupHook(func() {
 			logger.Instance.Info(ctx, "All processes started successfully",
-				logger.String("env", string(config.Application.Environment)),
+				logger.String("env", string(config.Get().Application.Environment)),
 				logger.String("addr", port),
 			)
 		}),

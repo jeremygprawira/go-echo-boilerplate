@@ -12,23 +12,24 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-func ConnectToPostgreSQL(config *config.Configuration) (*gorm.DB, error) {
+func ConnectToPostgreSQL(cfg config.Validated) (*gorm.DB, error) {
+	c := cfg.Get()
 	connection := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d sslmode=%s timezone=%s",
-		config.PostgreSQL.Host,
-		config.PostgreSQL.User,
-		config.PostgreSQL.Password,
-		config.PostgreSQL.Name,
-		config.PostgreSQL.Port,
-		config.PostgreSQL.SSLMode,
-		config.Application.Timezone)
+		c.PostgreSQL.Host,
+		c.PostgreSQL.User,
+		c.PostgreSQL.Password,
+		c.PostgreSQL.Name,
+		c.PostgreSQL.Port,
+		c.PostgreSQL.SSLMode,
+		c.Application.Timezone)
 
 	db, err := gorm.Open(postgres.New(postgres.Config{
 		DSN:                  connection,
 		PreferSimpleProtocol: true, // disables implicit prepared statement usage
 	}), &gorm.Config{
-		Logger: gormLogger(config.Application.Environment, log.New(os.Stdout, "\r\n", log.LstdFlags)),
+		Logger: gormLogger(c.Application.Environment, log.New(os.Stdout, "\r\n", log.LstdFlags)),
 		NowFunc: func() time.Time {
-			loc, err := time.LoadLocation(config.Application.Timezone)
+			loc, err := time.LoadLocation(c.Application.Timezone)
 			if err != nil {
 				return time.Now() // Fallback to system default if location loading fails
 			}
@@ -46,10 +47,10 @@ func ConnectToPostgreSQL(config *config.Configuration) (*gorm.DB, error) {
 	}
 
 	// Set connection pool settings
-	sqlDB.SetMaxIdleConns(config.PostgreSQL.MaxIdleConns)
-	sqlDB.SetMaxOpenConns(config.PostgreSQL.MaxOpenConns)
+	sqlDB.SetMaxIdleConns(c.PostgreSQL.MaxIdleConns)
+	sqlDB.SetMaxOpenConns(c.PostgreSQL.MaxOpenConns)
 
-	sqlDB.SetConnMaxLifetime(config.PostgreSQL.ConnMaxLifetime)
+	sqlDB.SetConnMaxLifetime(c.PostgreSQL.ConnMaxLifetime)
 
 	if err := sqlDB.Ping(); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)

@@ -115,11 +115,7 @@ func (s *rateLimiterStore) evictLoop() {
 // RateLimiter returns a per-client-IP rate limiter sized for authentication
 // endpoints (registration, login) to blunt credential brute-forcing. It uses an
 // in-memory store; swap the store for a distributed one when running multiple
-// instances. When cfg.RateLimit.Enabled is false, it returns a no-op middleware
-// so the limiter can be switched off without a code change. This is a
-// deliberate override, not the fail-safe path: config.Initialize defaults
-// rate_limit.enabled to true via viper.SetDefault, so an omitted config key
-// keeps protection on; only an explicit `enabled: false` in YAML disables it.
+// instances. When rate_limit.enabled is false, it returns a no-op middleware.
 //
 // Every response carries X-RateLimit-Limit / X-RateLimit-Remaining so a
 // well-behaved client can back off before being rejected, and a 429 carries
@@ -127,20 +123,20 @@ func (s *rateLimiterStore) evictLoop() {
 //
 // A bucket is keyed by the method, the route and c.RealIP(), so one instance
 // mounted on several route rows gives each row its own budget.
-func RateLimiter(cfg *appconfig.Configuration) echo.MiddlewareFunc {
-	mw, _ := rateLimiter(cfg)
+func RateLimiter(cfg appconfig.Validated) echo.MiddlewareFunc {
+	mw, _ := rateLimiter(cfg.Get().RateLimit)
 	return mw
 }
 
-func rateLimiter(cfg *appconfig.Configuration) (echo.MiddlewareFunc, *rateLimiterStore) {
-	if cfg == nil || !cfg.RateLimit.Enabled {
+func rateLimiter(cfg appconfig.RateLimit) (echo.MiddlewareFunc, *rateLimiterStore) {
+	if !cfg.Enabled {
 		return func(next echo.HandlerFunc) echo.HandlerFunc {
 			return next
 		}, nil
 	}
 
-	store := newRateLimiterStore(rate.Limit(cfg.RateLimit.Rate), cfg.RateLimit.Burst, cfg.RateLimit.ExpiresIn)
-	limitHeader := strconv.Itoa(cfg.RateLimit.Burst)
+	store := newRateLimiterStore(rate.Limit(cfg.Rate), cfg.Burst, cfg.ExpiresIn)
+	limitHeader := strconv.Itoa(cfg.Burst)
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {

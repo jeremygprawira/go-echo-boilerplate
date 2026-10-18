@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"go-echo-boilerplate/internal/config"
+	"go-echo-boilerplate/internal/config/configtest"
 	httpdelivery "go-echo-boilerplate/internal/deliveries/http"
 	"go-echo-boilerplate/internal/deliveries/http/middleware"
 	"go-echo-boilerplate/internal/pkg/errorc"
@@ -25,18 +26,19 @@ import (
 func newObservedServer(t *testing.T) (*echo.Echo, *observer.ObservedLogs) {
 	t.Helper()
 	core, logs := observer.New(zapcore.DebugLevel)
-	cfg := &config.Configuration{}
-	cfg.Application.Name = "boilerplate"
-	cfg.Application.Version = "1.2.3"
-	cfg.Application.Environment = "prod"
-	cfg.Application.MaxBodySize = "1M"
+	cfg := configtest.Valid(func(c *config.Configuration) {
+		c.Application.Name = "boilerplate"
+		c.Application.Version = "1.2.3"
+		c.Application.Environment = "prod"
+		c.Application.MaxBodySize = "1M"
+	})
 	log, err := logger.NewWlog(cfg, wlogzap.Drain(zap.New(core)))
 	require.NoError(t, err)
 
 	e := echo.New()
 	e.HTTPErrorHandler = httpdelivery.ErrorHandler
 	m := middleware.New(e, cfg, log)
-	m.Default(cfg)
+	m.Default()
 
 	e.GET("/ok", func(c echo.Context) error { return c.JSON(http.StatusOK, map[string]string{"status": "ok"}) })
 	e.GET("/missing", func(c echo.Context) error { return errorc.DataNotFound.New().Internal("user 42 not in table") })
@@ -181,14 +183,13 @@ func TestLogging_SkipsHealth(t *testing.T) {
 
 func TestLogging_OversizedBodyStillLogged(t *testing.T) {
 	core, logs := observer.New(zapcore.DebugLevel)
-	cfg := &config.Configuration{}
-	cfg.Application.MaxBodySize = "10B"
+	cfg := configtest.Valid(func(c *config.Configuration) { c.Application.MaxBodySize = "10B" })
 	log, err := logger.NewWlog(cfg, wlogzap.Drain(zap.New(core)))
 	require.NoError(t, err)
 	e := echo.New()
 	e.HTTPErrorHandler = httpdelivery.ErrorHandler
 	m := middleware.New(e, cfg, log)
-	m.Default(cfg)
+	m.Default()
 	e.POST("/x", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
 
 	rec := serve(e, httptest.NewRequest(http.MethodPost, "/x", strings.NewReader("this body is definitely longer than ten bytes")))

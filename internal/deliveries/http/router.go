@@ -44,7 +44,7 @@ type route struct {
 // @schemes http https
 
 func NewServer(
-	cfg *config.Configuration,
+	cfg config.Validated,
 	log *wlog.Logger,
 	jwt *jwtc.Configuration,
 	revocation middleware.RevocationChecker,
@@ -55,29 +55,29 @@ func NewServer(
 	e.HideBanner = true
 	e.HidePort = true
 	e.HTTPErrorHandler = ErrorHandler
-	e.IPExtractor = ipExtractor(cfg.Application.TrustedProxies)
+	app := cfg.Get().Application
+	e.IPExtractor = ipExtractor(app.TrustedProxies)
 
-	app := cfg.Application
 	e.Server.ReadHeaderTimeout = app.ReadHeaderTimeout
 	e.Server.ReadTimeout = app.ReadTimeout
 	e.Server.WriteTimeout = app.WriteTimeout
 	e.Server.IdleTimeout = app.IdleTimeout
 
 	mw := middleware.New(e, cfg, log)
-	mw.Default(cfg)
+	mw.Default()
 
 	e.GET("/", func(ctx echo.Context) error {
 		return ctx.String(http.StatusOK, "This is your Go Echo Boilerplate")
 	})
-	registerDocsRoutes(e, cfg.Application.Environment)
+	registerDocsRoutes(e, app.Environment)
 	e.GET("/health", healthHandler{health: health}.Check)
 
 	controls := controls{
 		rateLimit:   middleware.RateLimiter(cfg),
 		bearer:      middleware.BearerAuthMiddleware(jwt, revocation),
-		idempotency: middleware.Idempotency(cfg.Idempotency.TTL),
+		idempotency: middleware.Idempotency(cfg.Get().Idempotency.TTL),
 	}
-	controls.mount(e.Group("/api", mw.ApiKeyMiddleware(cfg)), slices.Concat(
+	controls.mount(e.Group("/api", mw.ApiKeyMiddleware()), slices.Concat(
 		userRoutes(users),
 	))
 	return e

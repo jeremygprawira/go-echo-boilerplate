@@ -14,7 +14,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-func Setup(cfg *config.Configuration) (server *echo.Echo, tokenPurge graceful.Process, err error) {
+func Setup(cfg config.Validated) (server *echo.Echo, tokenPurge graceful.Process, err error) {
 	log, err := logger.Initialize(cfg)
 	if err != nil {
 		return nil, nil, err

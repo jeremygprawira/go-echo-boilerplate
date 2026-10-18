@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"go-echo-boilerplate/internal/config/configtest"
 	"go-echo-boilerplate/internal/models"
 	"go-echo-boilerplate/internal/pkg/generator"
 	"go-echo-boilerplate/internal/pkg/jwtc"
@@ -89,7 +90,7 @@ func revocationTestServer(t *testing.T) http.Handler {
 
 func revocationTestServerWithBarrier(t *testing.T, b *barrier) http.Handler {
 	t.Helper()
-	cfg := testConfig()
+	cfg := configtest.Valid()
 
 	hash, err := generator.Hash("Passw0rd!")
 	require.NoError(t, err)
@@ -116,7 +117,7 @@ func call(t *testing.T, h http.Handler, method, path, bearer string, body any, h
 	require.NoError(t, err)
 	req := httptest.NewRequest(method, path, bytes.NewReader(raw))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-API-Key", testAPIKey)
+	req.Header.Set("X-API-Key", configtest.APIKey)
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
 	}
@@ -138,6 +139,16 @@ func tokensOf(t *testing.T, resp map[string]any) (access, refresh string) {
 	require.True(t, ok, "response has tokens: %v", resp)
 	require.Len(t, toks, 2)
 	return toks[0].(map[string]any)["token"].(string), toks[1].(map[string]any)["token"].(string)
+}
+
+func TestRevocation_ServerRunsWithTheRateLimiterOn(t *testing.T) {
+	h := revocationTestServer(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/users/tokens", bytes.NewReader([]byte(`{}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", configtest.APIKey)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	assert.Equal(t, "10", rec.Header().Get("X-RateLimit-Limit"))
 }
 
 func TestRevocation_LogoutAndRotationInvalidateTokens(t *testing.T) {

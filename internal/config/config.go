@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-func Initialize(ctx context.Context) (*Configuration, error) {
+func Initialize(ctx context.Context) (Validated, error) {
 	var configuration Configuration
 
 	viper.AutomaticEnv()
@@ -38,18 +38,18 @@ func Initialize(ctx context.Context) (*Configuration, error) {
 	viper.SetConfigType("yaml")
 
 	if err := viper.ReadInConfig(); err != nil {
-		return nil, err
+		return Validated{}, err
 	}
 
 	if err := viper.Unmarshal(&configuration, viper.DecodeHook(decodeHook)); err != nil {
-		return nil, err
+		return Validated{}, err
 	}
 
-	if err := configuration.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid configuration: %w", err)
+	validated, err := configuration.Validated()
+	if err != nil {
+		return Validated{}, fmt.Errorf("invalid configuration: %w", err)
 	}
-
-	return &configuration, nil
+	return validated, nil
 }
 
 // mapstructure decodes a bare YAML number into a time.Duration as
