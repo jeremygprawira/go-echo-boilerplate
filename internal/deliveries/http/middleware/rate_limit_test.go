@@ -15,12 +15,18 @@ import (
 )
 
 func limiter(rl config.RateLimit) echo.MiddlewareFunc {
-	return RateLimiter(configtest.Valid(func(c *config.Configuration) { c.RateLimit = rl }))
+	return RateLimiter(configtest.Valid(func(c *config.Configuration) { c.RateLimit = rl }), echo.ExtractIPDirect())
 }
 
 func TestRateLimiter_ZeroConfigPanics(t *testing.T) {
 	assert.PanicsWithValue(t, "config: zero Validated; build it with config.Initialize or Configuration.Validated", func() {
-		RateLimiter(config.Validated{})
+		RateLimiter(config.Validated{}, echo.ExtractIPDirect())
+	})
+}
+
+func TestRateLimiter_NilExtractorPanics(t *testing.T) {
+	assert.PanicsWithValue(t, "middleware: RateLimiter needs an IP extractor", func() {
+		RateLimiter(configtest.Valid(), nil)
 	})
 }
 
@@ -99,7 +105,7 @@ func TestRateLimiter_SetsRetryAfterWhenExceeded(t *testing.T) {
 
 func TestRateLimiter_DisabledPassesThrough(t *testing.T) {
 	e := echo.New()
-	e.Use(RateLimiter(configtest.Valid(func(c *config.Configuration) { c.RateLimit.Enabled = false })))
+	e.Use(RateLimiter(configtest.Valid(func(c *config.Configuration) { c.RateLimit.Enabled = false }), echo.ExtractIPDirect()))
 	e.POST("/login", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
 
 	var lastCode int
@@ -134,4 +140,23 @@ func TestRateLimiter_KeysIPv4OnTheAddressAndIPv6OnThe64(t *testing.T) {
 	require.Equal(t, http.StatusOK, code("[2001:db8:1:2::1]:1234"))
 	require.Equal(t, http.StatusTooManyRequests, code("[2001:db8:1:2:ffff:ffff:ffff:fffe]:1234"), "addresses in one /64 share a budget")
 	require.Equal(t, http.StatusOK, code("[2001:db8:1:3::1]:1234"), "another /64 has its own budget")
+}
+
+func TestRateLimiter_ReadsTheClientFromItsExtractorNotEchoDefaults(t *testing.T) {
+	e := echo.New()
+	e.Use(limiter(config.RateLimit{Enabled: true, Rate: 0.001, Burst: 1, ExpiresIn: 3 * time.Minute}))
+	e.POST("/login", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
+
+	var codes []int
+	for _, xff := range []string{"198.51.100.2", "198.51.100.3"} {
+		req := httptest.NewRequest(http.MethodPost, "/login", nil)
+		req.RemoteAddr = "192.0.2.1:1234"
+		req.Header.Set(echo.HeaderXForwardedFor, xff)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		codes = append(codes, rec.Code)
+	}
+
+	require.Equal(t, []int{http.StatusOK, http.StatusTooManyRequests}, codes,
+		"with no e.IPExtractor set, Echo trusts X-Forwarded-For; the limiter must not")
 }

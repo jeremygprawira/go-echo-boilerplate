@@ -40,7 +40,8 @@ func NewServer(
 	e.HidePort = true
 	e.HTTPErrorHandler = ErrorHandler
 	app := cfg.Get().Application
-	e.IPExtractor = ipExtractor(app.TrustedProxies)
+	clientIP := ipExtractor(app.TrustedProxies)
+	e.IPExtractor = clientIP
 
 	e.Server.ReadHeaderTimeout = app.ReadHeaderTimeout
 	e.Server.ReadTimeout = app.ReadTimeout
@@ -57,7 +58,7 @@ func NewServer(
 	e.GET("/health", healthHandler{health: health}.Check)
 
 	controls := controls{
-		rateLimit:   middleware.RateLimiter(cfg),
+		rateLimit:   middleware.RateLimiter(cfg, clientIP),
 		bearer:      middleware.BearerAuthMiddleware(jwt, revocation),
 		idempotency: middleware.Idempotency(cfg.Get().Idempotency.TTL),
 	}
@@ -102,9 +103,8 @@ func registerDocsRoutes(eco *echo.Echo, env config.Environment) {
 	eco.GET("/swagger/*", echoSwagger.WrapHandler)
 }
 
-// ipExtractor decides what c.RealIP returns, which keys the rate limiter.
-// With no trusted proxies the TCP peer is the client and client headers are
-// ignored. Otherwise X-Forwarded-For is read right to left, skipping only the
+// ipExtractor returns the TCP peer when no proxies are trusted, and ignores
+// client headers. Otherwise X-Forwarded-For is read right to left, skipping only the
 // listed proxies; Echo's default trust of private and loopback ranges is off.
 func ipExtractor(trustedProxies []string) echo.IPExtractor {
 	if len(trustedProxies) == 0 {

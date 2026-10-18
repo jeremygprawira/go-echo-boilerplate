@@ -15,7 +15,8 @@ import (
 )
 
 func TestRateLimiter_HeaderSizedIdentifierIsNotStored(t *testing.T) {
-	mw, store := rateLimiter(config.RateLimit{Enabled: true, Rate: 1, Burst: 1, ExpiresIn: 3 * time.Minute})
+	fromHeader := func(r *http.Request) string { return r.Header.Get(echo.HeaderXForwardedFor) }
+	mw, store := rateLimiter(config.RateLimit{Enabled: true, Rate: 1, Burst: 1, ExpiresIn: 3 * time.Minute}, fromHeader)
 	e := echo.New()
 	e.POST("/login", func(c echo.Context) error { return c.NoContent(http.StatusOK) }, mw)
 

@@ -88,16 +88,12 @@ func (s *rateLimiterStore) removeLocked(el *list.Element) {
 // address would give that client 2^64 fresh budgets.
 var ipv6ClientMask = net.CIDRMask(64, 128)
 
-// clientIP returns the rate-limit identity for c.RealIP(): an IPv4 address
-// whole, an IPv6 address as its /64. Anything that is not an address, such as
-// a raw header value Echo passed through, falls back to the TCP peer, so a
-// store key is never longer than an address.
-func clientIP(c echo.Context) string {
-	ip := net.ParseIP(c.RealIP())
+func rateLimitKey(extract echo.IPExtractor, r *http.Request) string {
+	ip := net.ParseIP(extract(r))
 	if ip == nil {
-		host, _, err := net.SplitHostPort(c.Request().RemoteAddr)
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
 		if err != nil {
-			return c.Request().RemoteAddr
+			return r.RemoteAddr
 		}
 		if ip = net.ParseIP(host); ip == nil {
 			return host
@@ -134,14 +130,19 @@ func (s *rateLimiterStore) evictLoop() {
 // Retry-After computed from the token bucket's actual refill delay.
 //
 // A bucket is keyed by the method, the route and the client: the IPv4 address
-// or the IPv6 /64 of c.RealIP(). One instance mounted on several route rows
-// gives each row its own budget, and clients that share a /64 share a budget.
-func RateLimiter(cfg appconfig.Validated) echo.MiddlewareFunc {
-	mw, _ := rateLimiter(cfg.Get().RateLimit)
+// or the IPv6 /64 that extract reads. One instance mounted on several route
+// rows gives each row its own budget, and clients that share a /64 share a
+// budget. The limiter never reads c.RealIP(), because Echo without an
+// IPExtractor trusts X-Forwarded-For. A nil extract panics.
+func RateLimiter(cfg appconfig.Validated, extract echo.IPExtractor) echo.MiddlewareFunc {
+	mw, _ := rateLimiter(cfg.Get().RateLimit, extract)
 	return mw
 }
 
-func rateLimiter(cfg appconfig.RateLimit) (echo.MiddlewareFunc, *rateLimiterStore) {
+func rateLimiter(cfg appconfig.RateLimit, extract echo.IPExtractor) (echo.MiddlewareFunc, *rateLimiterStore) {
+	if extract == nil {
+		panic("middleware: RateLimiter needs an IP extractor")
+	}
 	if !cfg.Enabled {
 		return func(next echo.HandlerFunc) echo.HandlerFunc {
 			return next
@@ -153,7 +154,7 @@ func rateLimiter(cfg appconfig.RateLimit) (echo.MiddlewareFunc, *rateLimiterStor
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			limiter := store.getLimiter(c.Request().Method + " " + c.Path() + " " + clientIP(c))
+			limiter := store.getLimiter(c.Request().Method + " " + c.Path() + " " + rateLimitKey(extract, c.Request()))
 
 			reservation := limiter.ReserveN(time.Now(), 1)
 			delay := reservation.Delay()
