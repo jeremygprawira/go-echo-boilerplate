@@ -33,7 +33,7 @@ func TestUserCreate(t *testing.T) {
 		repo := pgsql.NewUserRepository(gormDB)
 
 		return repo, mock, func() {
-			db.Close()
+			_ = db.Close()
 		}
 	}
 
@@ -105,7 +105,7 @@ func TestCheckByEmailOrPhoneNumber(t *testing.T) {
 		repo := pgsql.NewUserRepository(gormDB)
 
 		return repo, mock, func() {
-			db.Close()
+			_ = db.Close()
 		}
 	}
 

@@ -65,7 +65,7 @@ func (g *GoogleOAuth) Fetch(config *config.Configuration, state string, code str
 		return nil, err
 	}
 
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	byteData, err := io.ReadAll(response.Body)
 	if err != nil {

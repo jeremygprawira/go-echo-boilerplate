@@ -14,7 +14,7 @@ func TestConnect(t *testing.T) {
 	// Initialize sqlmock
 	db, mock, err := sqlmock.New(sqlmock.MonitorPingsOption(true))
 	assert.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Helper to create gorm DB with the mock
 	// Note: gorm.Open might trigger a Ping depending on configuration,

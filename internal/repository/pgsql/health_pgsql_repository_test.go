@@ -29,7 +29,7 @@ func TestHealthCheck(t *testing.T) {
 		repo := pgsql.NewHealthRepository(gormDB)
 
 		return repo, mock, func() {
-			db.Close()
+			_ = db.Close()
 		}
 	}
 
