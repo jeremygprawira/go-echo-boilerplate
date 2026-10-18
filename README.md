@@ -105,7 +105,7 @@ graph LR
     make install-tools
     ```
 
-    This installs `air`, `golangci-lint`, `swag`, `goose`, and `gosec`.
+    This installs `air`, `swag`, and `goose`. `golangci-lint`, `gosec`, and `deadcode` are pinned in `tools/go.mod` and run through `go tool -modfile=tools/go.mod`, so they need no install.
 
 3.  **Setup Configuration:**
     `config/config.dev.yaml`, `config.uat.yaml`, and `config.prod.yaml` are gitignored and not shipped in the repo — copy `config/config.local.example.yaml` to the file matching your target environment and fill in real values:
@@ -168,6 +168,8 @@ make docker-logs
 # Stop containers
 make docker-down
 ```
+
+After a Go version bump, rebuild with `docker compose build --pull`. The golang image sets `GOTOOLCHAIN=local`, so a cached `golang:1.26-alpine` older than the `go` directive in `go.mod` fails the build.
 
 ## 🔐 Authentication Flow
 

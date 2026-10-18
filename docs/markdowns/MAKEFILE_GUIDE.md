@@ -175,10 +175,10 @@ make install-tools
 This installs:
 
 - **air**: Hot-reload for Go applications
-- **golangci-lint**: Fast Go linters runner
 - **swag**: Swagger documentation generator
 - **goose**: Database migration tool
-- **gosec**: Security scanner for Go code
+
+`golangci-lint`, `gosec`, and `deadcode` are pinned in `tools/go.mod`. The Makefile runs them with `go tool -modfile=tools/go.mod`, so they need no install.
 
 ## Maintenance
 
