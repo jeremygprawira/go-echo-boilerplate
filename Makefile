@@ -1,4 +1,4 @@
-.PHONY: help ci pr-base hooks unhooks build build-prod run dev clean test test-coverage test-integration docker-up docker-down docker-logs docker-clean docs lint lint-fix tidy migrate-up migrate-down migrate-status migrate-create install-tools security-scan
+.PHONY: help ci pr-base hooks unhooks build build-prod run dev clean test test-coverage test-integration docker-up docker-down docker-logs docker-clean docs docs-check lint lint-fix tidy migrate-up migrate-down migrate-status migrate-create install-tools security-scan
 
 # Default target
 .DEFAULT_GOAL := help
@@ -54,6 +54,7 @@ help:
 	@echo ""
 	@echo "📚 Documentation & Tools:"
 	@echo "  make docs                     - Generate Swagger documentation"
+	@echo "  make docs-check               - Fail if the committed Swagger docs are stale"
 	@echo "  make install-tools            - Install development tools"
 	@echo ""
 	@echo "💡 Examples:"
@@ -119,6 +120,14 @@ ci:
 	$(GO_TOOL) gosec -quiet ./...
 	scripts/check-repo.sh
 	scripts/check-deadcode.sh
+	@$(MAKE) --no-print-directory docs-check
+
+docs-check:
+	@tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
+		$(GO_TOOL) swag init --quiet -g $(MAIN_FILE) --output "$$tmp/docs" && \
+		for f in docs.go swagger.json swagger.yaml; do \
+			diff -u "docs/$$f" "$$tmp/docs/$$f" || { echo "❌ docs/$$f is stale. Run make docs"; exit 1; }; \
+		done
 
 pr-base:
 	@if [ -z "$(PR)" ]; then \
@@ -151,11 +160,7 @@ security-scan:
 
 docs:
 	@echo "📚 Generating Swagger documentation..."
-	@if ! command -v swag > /dev/null; then \
-		echo "⚠️  swag not installed. Installing..."; \
-		go install github.com/swaggo/swag/cmd/swag@latest; \
-	fi
-	@swag init -g $(MAIN_FILE) --output docs
+	@$(GO_TOOL) swag init -g $(MAIN_FILE) --output docs
 	@echo "✅ Swagger docs generated in ./docs"
 
 docker-up:
@@ -229,8 +234,6 @@ install-tools:
 	@echo "🔧 Installing development tools..."
 	@echo "Installing air (hot-reload)..."
 	@go install github.com/air-verse/air@latest
-	@echo "Installing swag (Swagger)..."
-	@go install github.com/swaggo/swag/cmd/swag@latest
 	@echo "Installing goose (migrations)..."
 	@go install github.com/pressly/goose/v3/cmd/goose@latest
 	@echo "✅ All tools installed successfully"
