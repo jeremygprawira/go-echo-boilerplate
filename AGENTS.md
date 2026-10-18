@@ -17,10 +17,11 @@ make test-coverage            # Coverage report in coverage/coverage.html
 make lint                     # Pinned golangci-lint run ./...
 make lint-fix                 # Pinned golangci-lint with auto-fix
 make security-scan            # Pinned gosec ./...
-make docs                     # Regenerate Swagger docs (swag init -g cmd/http/main.go --output docs)
+make docs                     # Regenerate Swagger docs with the pinned swag (swag init -g cmd/http/main.go --output docs)
+make docs-check               # Fail if docs/ differs from what make docs would generate
 make migrate-up ENV=local     # Apply goose migrations (loads .env for DB_DSN)
 make migrate-create NAME=xxx  # New SQL migration in migration/db/postgre
-make install-tools            # Install air, swag, goose
+make install-tools            # Install air, goose
 ```
 
 Run a single test:
@@ -30,11 +31,11 @@ go test -v -race ./internal/service/ -run TestUserService_Create
 ```
 
 Notes:
-- `make ci` runs `go mod tidy -diff` for both modules, build, `go test -race`, golangci-lint, gosec, `scripts/check-repo.sh` and `scripts/check-deadcode.sh`. CI runs `make ci` as its one job, plus `scripts/check-pr-base.sh` on pull requests. Without GitHub Actions, run the same checks locally: `make ci` by hand, `make hooks` for the opt-in pre-push hook in `.githooks/pre-push`, and `make pr-base PR=<number>`.
-- golangci-lint, gosec and deadcode are pinned in `tools/go.mod` and run as `go tool -modfile=tools/go.mod <tool>`. Change a tool version there, never with `go install ...@latest`. A bare `golangci-lint` on your PATH can be another version with other defaults, so always use `make lint` or `make ci`.
+- `make ci` runs `go mod tidy -diff` for both modules, build, `go test -race`, golangci-lint, gosec, `scripts/check-repo.sh`, `scripts/check-deadcode.sh` and `make docs-check`. CI runs `make ci` as its one job, plus `scripts/check-pr-base.sh` on pull requests. Without GitHub Actions, run the same checks locally: `make ci` by hand, `make hooks` for the opt-in pre-push hook in `.githooks/pre-push`, and `make pr-base PR=<number>`.
+- golangci-lint, gosec, deadcode and swag are pinned in `tools/go.mod` and run as `go tool -modfile=tools/go.mod <tool>`. Change a tool version there, never with `go install ...@latest`. A bare `golangci-lint` on your PATH can be another version with other defaults, so always use `make lint` or `make ci`.
 - The `ENV` env var selects the config file: `config/config.<env>.yaml`, loaded via Viper (`internal/config/config.go`). `make run` fails if the file is missing.
 - `application.environment` must be one of `local`, `dev`, `uat`, `staging`, `prod`, `production` (case and surrounding space ignored), or startup fails. It decodes to a `config.Environment`, and `Environment.IsProduction()` is true for `prod` and `production`.
-- Swagger docs are a generated Go package (`docs/docs.go`) imported by the router (`_ "go-echo-boilerplate/docs"`). After changing handler `@` annotations, run `make docs` or the build serves stale docs.
+- Swagger docs are a generated Go package (`docs/docs.go`) imported by the router (`_ "go-echo-boilerplate/docs"`). After changing handler `@` annotations, run `make docs` and commit the result, or `make docs-check` fails. The general info block (`@title`, `@BasePath`, the security definitions) sits on `main` in `cmd/http/main.go`, the file `swag -g` reads. `@BasePath` is `/`, because each `@Router` path already starts with `/api`.
 - Migrations use goose against `migration/db/postgre`; the Makefile exports `.env` before running.
 - `application.trusted_proxies` (list of CIDRs, default empty) sets `e.IPExtractor` in `NewServer` (`internal/deliveries/http/router.go`). Empty means `c.RealIP()` is the TCP peer. Otherwise it is the rightmost `X-Forwarded-For` entry not inside a listed proxy range. The rate limiter keys on it.
 - `application.read_header_timeout`, `read_timeout`, `write_timeout`, `idle_timeout` (defaults 5s/15s/30s/60s) are set on `e.Server` in `NewServer`. `application.timeout` is the per-request deadline, empty for none. Every duration in the config file needs a unit, such as `30s`. A bare number such as `timeout: 30` fails startup with a message that names the key.
@@ -64,6 +65,7 @@ Clean Architecture, written the Go way. Dependencies point inward: `deliveries/h
 4. Add `internal/deliveries/http/note_handler.go`: a `noteService` interface, the handlers with their swag annotations, and `noteRoutes(notes noteService) []route`.
 5. Wire it in three existing files. In `NewServer`, add a `notes noteService` parameter and add `noteRoutes(notes)` to the `slices.Concat` call. In `core.Setup`, add `service.NewNoteService(store)` to the `NewServer` call. In `internal/deliveries/http/server_test.go`, add a `notes` field to `testServer`.
 6. Run `make docs`. `TestSwaggerPathsMatchServedRoutes` fails until each served route has an `@Router` with the same method and path.
+7. A `public` route also goes in `publicRoutes` in `internal/deliveries/http/route_controls_test.go`. Until then `TestRoutes_EveryAPIRouteEnforcesItsControls` fails, because it expects 401 without a bearer token from every other route under `/api`. A route on the root Echo, outside `/api`, skips the API key. `TestRoutes_OutsideAPIAreListed` fails until it is listed there.
 
 If a store method, a service method, a `NewServer` parameter or a `core.Setup` argument is missing, the build fails. If nothing mounts a route function, `make lint` reports it as unused and the feature's server tests get 404.
 
@@ -117,6 +119,14 @@ Each rule has a check that fails on a real past commit. Add a row when you add a
 | A GORM `Scan` or `Find` whose target is a pointer to a struct (`&row` or a `*T` variable such as `new(models.User)`) happens only in `internal/repository/store.go`, which holds `one`. Scalar and slice targets pass | `make lint` (ruleguard `structScan` in `lint/ruleguard.go`, run by gocritic) | dff4183^ |
 | A unique violation reaches the service as `models.ErrConflict`. `internal/service` never imports the pgx driver | `make test` (`TestCreateUser_UniqueViolationIsErrConflict`), and `make lint` (depguard `service-no-adapters`) | 1c90978, 76d4b1e |
 | A user lookup never returns a soft-deleted user | `make test` (`TestUserLookups_QueryFiltersDeletedAt`) | 1cee85c |
+| Each route under `/api` answers 401 without `X-API-Key`. Each route not on `publicRoutes` answers 401 without a bearer token. Each public route answers 429 within burst+1 calls | `make test` (`TestRoutes_EveryAPIRouteEnforcesItsControls`, which walks `e.Routes()`) | no past violation. Mutants M4, M6 and M10 |
+| A route outside `/api` is on the per-environment allowlist | `make test` (`TestRoutes_OutsideAPIAreListed`) | no past violation |
+| An unknown path under `/api/v1/users` with an API key answers 404, not 401 | `make test` (`TestRoutes_UnknownUserPathIsNotFound`) | 1c90978 |
+| The refresh cookie that login sets is a refresh token that refreshes | `make test` (`TestLogin_RefreshCookieRotatesTokens`) | no past violation. Mutant M2 |
+| A success envelope has status `OK` | `make test` (`TestRevocation_LogoutAndRotationInvalidateTokens`) | no past violation. Mutant M5 |
+| Refresh is never idempotent. A retry with the same `Idempotency-Key` gets 401, not a replay | `make test` (`TestRefresh_IsNeverIdempotent`) | no past tree with a test harness. Mutant M7 |
+| The Swagger spec has a title and defines each security scheme an operation names | `make test` (`TestSwaggerSpecDefinesItsInfoAndEverySecurityScheme`) | 1c90978 |
+| `docs/` is what the pinned swag generates from the annotations | `make docs-check` (in `make ci`) | 728d857 |
 | `Store.Atomic` runs every query in `fn` on the transaction | `make test` (`TestAtomic_CommitsWritesMadeThroughTheTransaction`) | no past violation |
 | A duration in config is a `time.Duration` field. Only `internal/config` calls `time.ParseDuration` | `make lint` (forbidigo) | 8db11a6^ |
 | A constructor that reads config takes `config.Validated`, never a `*config.Configuration`. Tests build it with `configtest.Valid`, so the end-to-end server runs with the rate limiter on | `go build` stops code outside `internal/config` from building a `Validated` that skipped `Validate`, because its only field is unexported. It does not stop a new constructor that takes `*config.Configuration`. Review catches that. `make test` (`TestRateLimiter_ZeroConfigPanics`, `TestRevocation_ServerRunsWithTheRateLimiterOn`) | 1c90978 |
