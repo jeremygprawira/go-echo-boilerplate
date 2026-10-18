@@ -2,6 +2,7 @@ package http
 
 import (
 	"encoding/json"
+	"path"
 	"regexp"
 	"strings"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	"go-echo-boilerplate/docs"
 
 	"github.com/labstack/echo/v4"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,14 +23,11 @@ var undocumentedRoutes = map[string]bool{
 var swaggerParam = regexp.MustCompile(`\{([^}]+)\}`)
 
 func TestSwaggerPathsMatchServedRoutes(t *testing.T) {
-	var spec struct {
-		Paths map[string]map[string]json.RawMessage `json:"paths"`
-	}
-	require.NoError(t, json.Unmarshal([]byte(docs.SwaggerInfo.ReadDoc()), &spec))
+	spec := readSpec(t)
 	documented := map[string]bool{}
-	for path, operations := range spec.Paths {
+	for p, operations := range spec.Paths {
 		for method := range operations {
-			documented[strings.ToUpper(method)+" "+swaggerParam.ReplaceAllString(path, ":$1")] = true
+			documented[strings.ToUpper(method)+" "+swaggerParam.ReplaceAllString(path.Join(spec.BasePath, p), ":$1")] = true
 		}
 	}
 
@@ -42,4 +41,36 @@ func TestSwaggerPathsMatchServedRoutes(t *testing.T) {
 	}
 
 	require.Equal(t, documented, served, "each served route needs an @Router annotation that names its method and path. Run make docs after you change one")
+}
+
+func TestSwaggerSpecDefinesItsInfoAndEverySecurityScheme(t *testing.T) {
+	spec := readSpec(t)
+	assert.NotEmpty(t, spec.Info.Title, "the general info block must sit in the file that make docs passes to swag -g")
+	for p, operations := range spec.Paths {
+		for method, op := range operations {
+			for _, requirement := range op.Security {
+				for scheme := range requirement {
+					assert.Contains(t, spec.SecurityDefinitions, scheme, "%s %s names an undefined security scheme", method, p)
+				}
+			}
+		}
+	}
+}
+
+type swaggerSpec struct {
+	Info struct {
+		Title string `json:"title"`
+	} `json:"info"`
+	BasePath            string                     `json:"basePath"`
+	SecurityDefinitions map[string]json.RawMessage `json:"securityDefinitions"`
+	Paths               map[string]map[string]struct {
+		Security []map[string][]string `json:"security"`
+	} `json:"paths"`
+}
+
+func readSpec(t *testing.T) swaggerSpec {
+	t.Helper()
+	var spec swaggerSpec
+	require.NoError(t, json.Unmarshal([]byte(docs.SwaggerInfo.ReadDoc()), &spec))
+	return spec
 }

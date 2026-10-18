@@ -51,6 +51,7 @@ func userRoutes(users userService) []route {
 // @Failure 409 {object} models.Response "User Already Exists (Email or Phone)"
 // @Failure 500 {object} models.Response "Internal Server Error"
 // @Router /api/v1/users [post]
+// @Security ApiKeyAuth
 func (h userHandler) Create(ctx echo.Context) error {
 	var request models.CreateUserRequest
 	if err := ctx.Bind(&request); err != nil {
@@ -82,6 +83,7 @@ func (h userHandler) Create(ctx echo.Context) error {
 // @Failure 404 {object} models.Response "User Not Found"
 // @Failure 500 {object} models.Response "Internal Server Error"
 // @Router /api/v1/users/tokens [post]
+// @Security ApiKeyAuth
 func (h userHandler) GetTokens(ctx echo.Context) error {
 	var request models.GetUserTokenRequest
 	if err := ctx.Bind(&request); err != nil {
@@ -126,6 +128,7 @@ func (h userHandler) GetTokens(ctx echo.Context) error {
 // @Failure 422 {object} models.Response "Validation Failed"
 // @Failure 401 {object} models.Response "Invalid or Revoked Refresh Token"
 // @Router /api/v1/users/tokens/refresh [post]
+// @Security ApiKeyAuth
 func (h userHandler) RefreshTokens(ctx echo.Context) error {
 	var request models.RefreshTokenRequest
 	if err := ctx.Bind(&request); err != nil {
@@ -157,7 +160,7 @@ func (h userHandler) RefreshTokens(ctx echo.Context) error {
 // @Success 200 {object} models.Response "Logged Out Successfully"
 // @Failure 401 {object} models.Response "Unauthorized"
 // @Router /api/v1/users/logout [post]
-// @Security BearerAuth
+// @Security ApiKeyAuth && BearerAuth
 func (h userHandler) Logout(ctx echo.Context, caller jwtc.Claims) error {
 	var request models.LogoutRequest
 	_ = ctx.Bind(&request) // body is optional; the cookie fallback covers callers with none
@@ -192,7 +195,7 @@ func (h userHandler) Logout(ctx echo.Context, caller jwtc.Claims) error {
 // @Failure 404 {object} models.Response "User Not Found"
 // @Failure 500 {object} models.Response "Internal Server Error"
 // @Router /api/v1/users/me [get]
-// @Security BearerAuth
+// @Security ApiKeyAuth && BearerAuth
 func (h userHandler) GetUserByAccessToken(ctx echo.Context, caller jwtc.Claims) error {
 	user, err := h.users.GetByAccountNumber(ctx.Request().Context(), caller.AccountNumber)
 	if err != nil {

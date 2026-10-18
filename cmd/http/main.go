@@ -12,6 +12,19 @@ import (
 	"go-echo-boilerplate/internal/pkg/logger"
 )
 
+// @title GO-ECHO-BOILERPLATE API DOCUMENTATION
+// @version 1.0
+// @description This is a go-echo-boilerplate api docs.
+// @BasePath /
+
+// @securityDefinitions.apikey ApiKeyAuth
+// @in header
+// @name X-API-Key
+
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description Type "Bearer" followed by a space and the access token.
 func main() {
 	// Run the application and handle any startup errors
 	if err := run(); err != nil {
