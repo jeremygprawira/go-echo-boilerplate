@@ -2,6 +2,7 @@ package config
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -10,15 +11,15 @@ import (
 func validCfg() *Configuration {
 	c := &Configuration{}
 	c.Application.Environment = "local"
-	c.Authorization.Access = TokenConfiguration{Secret: "access-secret-0123456789abcdef0123456789", Duration: "15m"}
-	c.Authorization.Refresh = TokenConfiguration{Secret: "refresh-secret-0123456789abcdef012345678", Duration: "168h"}
+	c.Authorization.Access = TokenConfiguration{Secret: "access-secret-0123456789abcdef0123456789", Duration: 15 * time.Minute}
+	c.Authorization.Refresh = TokenConfiguration{Secret: "refresh-secret-0123456789abcdef012345678", Duration: 168 * time.Hour}
 	c.Authorization.APIKey = "api-key-0123456789abcdef0123456789abcdef"
-	c.RateLimit = RateLimit{Enabled: true, Rate: 5, Burst: 10, ExpiresIn: "3m"}
-	c.Idempotency = Idempotency{TTL: "10m"}
-	c.Application.ReadHeaderTimeout = "5s"
-	c.Application.ReadTimeout = "15s"
-	c.Application.WriteTimeout = "30s"
-	c.Application.IdleTimeout = "60s"
+	c.RateLimit = RateLimit{Enabled: true, Rate: 5, Burst: 10, ExpiresIn: 3 * time.Minute}
+	c.Idempotency = Idempotency{TTL: 10 * time.Minute}
+	c.Application.ReadHeaderTimeout = 5 * time.Second
+	c.Application.ReadTimeout = 15 * time.Second
+	c.Application.WriteTimeout = 30 * time.Second
+	c.Application.IdleTimeout = 60 * time.Second
 	return c
 }
 
@@ -44,23 +45,23 @@ func TestValidate_EmptyAPIKey(t *testing.T) {
 	require.Error(t, c.Validate())
 }
 
-func TestValidate_BadDuration(t *testing.T) {
-	c := validCfg()
-	c.Authorization.Access.Duration = "not-a-duration"
-	require.Error(t, c.Validate())
-}
-
-func TestValidate_BadRateLimitExpiresIn(t *testing.T) {
-	c := validCfg()
-	c.RateLimit.ExpiresIn = "not-a-duration"
-	require.Error(t, c.Validate())
-}
-
-func TestValidate_BadIdempotencyTTL(t *testing.T) {
-	for _, ttl := range []string{"not-a-duration", "", "0s", "-1m"} {
-		c := validCfg()
-		c.Idempotency.TTL = ttl
-		require.Error(t, c.Validate(), ttl)
+func TestValidate_NonPositiveDurations(t *testing.T) {
+	setters := map[string]func(*Configuration, time.Duration){
+		"authorization.access.duration":   func(c *Configuration, v time.Duration) { c.Authorization.Access.Duration = v },
+		"authorization.refresh.duration":  func(c *Configuration, v time.Duration) { c.Authorization.Refresh.Duration = v },
+		"rate_limit.expires_in":           func(c *Configuration, v time.Duration) { c.RateLimit.ExpiresIn = v },
+		"idempotency.ttl":                 func(c *Configuration, v time.Duration) { c.Idempotency.TTL = v },
+		"application.read_header_timeout": func(c *Configuration, v time.Duration) { c.Application.ReadHeaderTimeout = v },
+		"application.read_timeout":        func(c *Configuration, v time.Duration) { c.Application.ReadTimeout = v },
+		"application.write_timeout":       func(c *Configuration, v time.Duration) { c.Application.WriteTimeout = v },
+		"application.idle_timeout":        func(c *Configuration, v time.Duration) { c.Application.IdleTimeout = v },
+	}
+	for name, set := range setters {
+		for _, v := range []time.Duration{0, -time.Second} {
+			c := validCfg()
+			set(c, v)
+			assert.ErrorContains(t, c.Validate(), name+" must be greater than 0", "%s = %v", name, v)
+		}
 	}
 }
 
@@ -110,25 +111,9 @@ func TestValidate_RejectsPlaceholderAndShortSecrets(t *testing.T) {
 	}
 }
 
-func TestValidate_ServerTimeouts(t *testing.T) {
-	setters := map[string]func(*Configuration, string){
-		"read_header_timeout": func(c *Configuration, v string) { c.Application.ReadHeaderTimeout = v },
-		"read_timeout":        func(c *Configuration, v string) { c.Application.ReadTimeout = v },
-		"write_timeout":       func(c *Configuration, v string) { c.Application.WriteTimeout = v },
-		"idle_timeout":        func(c *Configuration, v string) { c.Application.IdleTimeout = v },
-	}
-	for name, set := range setters {
-		for _, v := range []string{"", "soon", "0s", "-1s"} {
-			c := validCfg()
-			set(c, v)
-			assert.Error(t, c.Validate(), "%s = %q", name, v)
-		}
-	}
-}
-
 func TestValidate_ApplicationTimeout(t *testing.T) {
 	c := validCfg()
-	c.Application.Timeout = -1
+	c.Application.Timeout = -time.Second
 	require.Error(t, c.Validate())
 
 	c.Application.Timeout = 0

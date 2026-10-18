@@ -3,8 +3,11 @@ package config
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
+	"time"
 
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 )
 
@@ -38,7 +41,7 @@ func Initialize(ctx context.Context) (*Configuration, error) {
 		return nil, err
 	}
 
-	if err := viper.Unmarshal(&configuration); err != nil {
+	if err := viper.Unmarshal(&configuration, viper.DecodeHook(decodeHook)); err != nil {
 		return nil, err
 	}
 
@@ -48,3 +51,16 @@ func Initialize(ctx context.Context) (*Configuration, error) {
 
 	return &configuration, nil
 }
+
+// decodeHook rejects a bare number for a duration. Viper's weak decoding
+// would otherwise read `read_timeout: 30` as 30ns.
+var decodeHook = mapstructure.ComposeDecodeHookFunc(
+	func(from, to reflect.Type, data any) (any, error) {
+		if to == reflect.TypeFor[time.Duration]() && from.Kind() != reflect.String {
+			return nil, fmt.Errorf("%v is not a duration, write it with a unit such as \"30s\"", data)
+		}
+		return data, nil
+	},
+	mapstructure.StringToTimeDurationHookFunc(),
+	mapstructure.StringToSliceHookFunc(","),
+)

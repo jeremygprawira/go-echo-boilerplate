@@ -53,20 +53,6 @@ func (c *Configuration) Validate() error {
 			errs = append(errs, fmt.Errorf("%s still holds the example placeholder", name))
 		}
 	}
-	if _, err := time.ParseDuration(c.Authorization.Access.Duration); err != nil {
-		errs = append(errs, fmt.Errorf("authorization.access.duration is invalid: %w", err))
-	}
-	if _, err := time.ParseDuration(c.Authorization.Refresh.Duration); err != nil {
-		errs = append(errs, fmt.Errorf("authorization.refresh.duration is invalid: %w", err))
-	}
-	if _, err := time.ParseDuration(c.RateLimit.ExpiresIn); err != nil {
-		errs = append(errs, fmt.Errorf("rate_limit.expires_in is invalid: %w", err))
-	}
-	if ttl, err := time.ParseDuration(c.Idempotency.TTL); err != nil {
-		errs = append(errs, fmt.Errorf("idempotency.ttl is invalid: %w", err))
-	} else if ttl <= 0 {
-		errs = append(errs, errors.New("idempotency.ttl must be greater than 0"))
-	}
 	if c.RateLimit.Rate <= 0 {
 		errs = append(errs, errors.New("rate_limit.rate must be greater than 0"))
 	}
@@ -74,15 +60,17 @@ func (c *Configuration) Validate() error {
 		errs = append(errs, errors.New("rate_limit.burst must be greater than 0"))
 	}
 
-	for name, value := range map[string]string{
+	for name, d := range map[string]time.Duration{
+		"authorization.access.duration":   c.Authorization.Access.Duration,
+		"authorization.refresh.duration":  c.Authorization.Refresh.Duration,
+		"rate_limit.expires_in":           c.RateLimit.ExpiresIn,
+		"idempotency.ttl":                 c.Idempotency.TTL,
 		"application.read_header_timeout": c.Application.ReadHeaderTimeout,
 		"application.read_timeout":        c.Application.ReadTimeout,
 		"application.write_timeout":       c.Application.WriteTimeout,
 		"application.idle_timeout":        c.Application.IdleTimeout,
 	} {
-		if d, err := time.ParseDuration(value); err != nil {
-			errs = append(errs, fmt.Errorf("%s is invalid: %w", name, err))
-		} else if d <= 0 {
+		if d <= 0 {
 			errs = append(errs, fmt.Errorf("%s must be greater than 0", name))
 		}
 	}

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"go-echo-boilerplate/internal/config"
 
@@ -14,7 +15,7 @@ import (
 func TestRateLimiter_BlocksBurst(t *testing.T) {
 	e := echo.New()
 	cfg := &config.Configuration{}
-	cfg.RateLimit = config.RateLimit{Enabled: true, Rate: 5, Burst: 10, ExpiresIn: "3m"}
+	cfg.RateLimit = config.RateLimit{Enabled: true, Rate: 5, Burst: 10, ExpiresIn: 3 * time.Minute}
 	e.Use(RateLimiter(cfg))
 	e.POST("/login", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
 
@@ -33,7 +34,7 @@ func TestRateLimiter_BlocksBurst(t *testing.T) {
 func TestRateLimiter_RespectsConfiguredBurst(t *testing.T) {
 	e := echo.New()
 	cfg := &config.Configuration{}
-	cfg.RateLimit = config.RateLimit{Enabled: true, Rate: 1, Burst: 2, ExpiresIn: "3m"}
+	cfg.RateLimit = config.RateLimit{Enabled: true, Rate: 1, Burst: 2, ExpiresIn: 3 * time.Minute}
 	e.Use(RateLimiter(cfg))
 	e.POST("/login", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
 
@@ -51,25 +52,10 @@ func TestRateLimiter_RespectsConfiguredBurst(t *testing.T) {
 	require.Equal(t, http.StatusTooManyRequests, codes[2])
 }
 
-func TestRateLimiter_InvalidExpiresInFallsBackToDefault(t *testing.T) {
-	e := echo.New()
-	cfg := &config.Configuration{}
-	cfg.RateLimit = config.RateLimit{Enabled: true, Rate: 5, Burst: 10, ExpiresIn: "not-a-duration"}
-	e.Use(RateLimiter(cfg))
-	e.POST("/login", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
-
-	req := httptest.NewRequest(http.MethodPost, "/login", nil)
-	req.RemoteAddr = "192.0.2.55:12345"
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-
-	require.Equal(t, http.StatusOK, rec.Code)
-}
-
 func TestRateLimiter_ReportsRemainingQuotaHeaders(t *testing.T) {
 	e := echo.New()
 	cfg := &config.Configuration{}
-	cfg.RateLimit = config.RateLimit{Enabled: true, Rate: 1, Burst: 5, ExpiresIn: "3m"}
+	cfg.RateLimit = config.RateLimit{Enabled: true, Rate: 1, Burst: 5, ExpiresIn: 3 * time.Minute}
 	e.Use(RateLimiter(cfg))
 	e.POST("/login", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
 
@@ -86,7 +72,7 @@ func TestRateLimiter_ReportsRemainingQuotaHeaders(t *testing.T) {
 func TestRateLimiter_SetsRetryAfterWhenExceeded(t *testing.T) {
 	e := echo.New()
 	cfg := &config.Configuration{}
-	cfg.RateLimit = config.RateLimit{Enabled: true, Rate: 1, Burst: 1, ExpiresIn: "3m"}
+	cfg.RateLimit = config.RateLimit{Enabled: true, Rate: 1, Burst: 1, ExpiresIn: 3 * time.Minute}
 	e.Use(RateLimiter(cfg))
 	e.POST("/login", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
 

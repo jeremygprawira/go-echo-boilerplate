@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"slices"
-	"time"
 
 	_ "go-echo-boilerplate/docs"
 
@@ -59,10 +58,10 @@ func NewServer(
 	e.IPExtractor = ipExtractor(cfg.Application.TrustedProxies)
 
 	app := cfg.Application
-	e.Server.ReadHeaderTimeout, _ = time.ParseDuration(app.ReadHeaderTimeout)
-	e.Server.ReadTimeout, _ = time.ParseDuration(app.ReadTimeout)
-	e.Server.WriteTimeout, _ = time.ParseDuration(app.WriteTimeout)
-	e.Server.IdleTimeout, _ = time.ParseDuration(app.IdleTimeout)
+	e.Server.ReadHeaderTimeout = app.ReadHeaderTimeout
+	e.Server.ReadTimeout = app.ReadTimeout
+	e.Server.WriteTimeout = app.WriteTimeout
+	e.Server.IdleTimeout = app.IdleTimeout
 
 	mw := middleware.New(e, cfg, log)
 	mw.Default(cfg)
@@ -73,11 +72,10 @@ func NewServer(
 	registerDocsRoutes(e, cfg)
 	e.GET("/health", healthHandler{health: health}.Check)
 
-	idempotencyTTL, _ := time.ParseDuration(cfg.Idempotency.TTL)
 	controls := controls{
 		rateLimit:   middleware.RateLimiter(cfg),
 		bearer:      middleware.BearerAuthMiddleware(jwt, revocation),
-		idempotency: middleware.Idempotency(idempotencyTTL),
+		idempotency: middleware.Idempotency(cfg.Idempotency.TTL),
 	}
 	controls.mount(e.Group("/api", mw.ApiKeyMiddleware(cfg)), slices.Concat(
 		userRoutes(users),

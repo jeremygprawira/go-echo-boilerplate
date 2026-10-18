@@ -13,7 +13,7 @@ import (
 )
 
 func TestServer_PartialHeaderIsClosed(t *testing.T) {
-	e := limitedServer(t, func(c *config.Configuration) { c.Application.ReadHeaderTimeout = "200ms" })
+	e := limitedServer(t, func(c *config.Configuration) { c.Application.ReadHeaderTimeout = 200 * time.Millisecond })
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	e.Listener = ln
@@ -35,10 +35,10 @@ func TestServer_PartialHeaderIsClosed(t *testing.T) {
 
 func TestServer_TimeoutsComeFromConfig(t *testing.T) {
 	e := limitedServer(t, func(c *config.Configuration) {
-		c.Application.ReadHeaderTimeout = "5s"
-		c.Application.ReadTimeout = "15s"
-		c.Application.WriteTimeout = "30s"
-		c.Application.IdleTimeout = "60s"
+		c.Application.ReadHeaderTimeout = 5 * time.Second
+		c.Application.ReadTimeout = 15 * time.Second
+		c.Application.WriteTimeout = 30 * time.Second
+		c.Application.IdleTimeout = 60 * time.Second
 	})
 
 	require.Equal(t, 5*time.Second, e.Server.ReadHeaderTimeout)

@@ -139,12 +139,7 @@ func rateLimiter(cfg *appconfig.Configuration) (echo.MiddlewareFunc, *rateLimite
 		}, nil
 	}
 
-	expiresIn, err := time.ParseDuration(cfg.RateLimit.ExpiresIn)
-	if err != nil {
-		expiresIn = 3 * time.Minute
-	}
-
-	store := newRateLimiterStore(rate.Limit(cfg.RateLimit.Rate), cfg.RateLimit.Burst, expiresIn)
+	store := newRateLimiterStore(rate.Limit(cfg.RateLimit.Rate), cfg.RateLimit.Burst, cfg.RateLimit.ExpiresIn)
 	limitHeader := strconv.Itoa(cfg.RateLimit.Burst)
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {

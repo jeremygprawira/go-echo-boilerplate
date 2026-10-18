@@ -27,10 +27,10 @@ func (notRevoked) IsRevoked(context.Context, string) (bool, error) { return fals
 func testConfig() *config.Configuration {
 	cfg := &config.Configuration{}
 	cfg.Application.Environment = "local"
-	cfg.Authorization.Access = config.TokenConfiguration{Secret: "access-secret-0123456789abcdef0123456789", Duration: "15m"}
-	cfg.Authorization.Refresh = config.TokenConfiguration{Secret: "refresh-secret-0123456789abcdef012345678", Duration: "168h"}
+	cfg.Authorization.Access = config.TokenConfiguration{Secret: "access-secret-0123456789abcdef0123456789", Duration: 15 * time.Minute}
+	cfg.Authorization.Refresh = config.TokenConfiguration{Secret: "refresh-secret-0123456789abcdef012345678", Duration: 168 * time.Hour}
 	cfg.Authorization.APIKey = testAPIKey
-	cfg.Idempotency.TTL = "10m"
+	cfg.Idempotency.TTL = 10 * time.Minute
 	return cfg
 }
 

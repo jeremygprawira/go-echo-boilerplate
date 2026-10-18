@@ -1,8 +1,6 @@
 package middleware
 
 import (
-	"time"
-
 	"go-echo-boilerplate/internal/config"
 
 	"github.com/labstack/echo/v4"
@@ -29,8 +27,7 @@ func (m *Middleware) Default(config *config.Configuration) {
 	m.e.Use(m.corsMiddleware(config))
 	m.e.Use(echoMiddleware.Secure())
 
-	timeout := time.Duration(config.Application.Timeout) * time.Second
-	if timeout > 0 {
+	if timeout := config.Application.Timeout; timeout > 0 {
 		m.e.Use(echoMiddleware.ContextTimeoutWithConfig(echoMiddleware.ContextTimeoutConfig{
 			Timeout: timeout,
 		}))

@@ -49,13 +49,7 @@ func ConnectToPostgreSQL(config *config.Configuration) (*gorm.DB, error) {
 	sqlDB.SetMaxIdleConns(config.PostgreSQL.MaxIdleConns)
 	sqlDB.SetMaxOpenConns(config.PostgreSQL.MaxOpenConns)
 
-	if config.PostgreSQL.ConnMaxLifetime != "" {
-		lifetime, err := time.ParseDuration(config.PostgreSQL.ConnMaxLifetime)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse conn_max_lifetime: %w", err)
-		}
-		sqlDB.SetConnMaxLifetime(lifetime)
-	}
+	sqlDB.SetConnMaxLifetime(config.PostgreSQL.ConnMaxLifetime)
 
 	if err := sqlDB.Ping(); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)

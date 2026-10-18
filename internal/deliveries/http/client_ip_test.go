@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"go-echo-boilerplate/internal/config"
 	"go-echo-boilerplate/internal/deliveries/http/middleware"
@@ -16,7 +17,7 @@ func limitedServer(t *testing.T, mutate func(*config.Configuration)) *echo.Echo 
 	t.Helper()
 	cfg := &config.Configuration{}
 	cfg.Application.Environment = "local"
-	cfg.RateLimit = config.RateLimit{Enabled: true, Rate: 1, Burst: 1, ExpiresIn: "3m"}
+	cfg.RateLimit = config.RateLimit{Enabled: true, Rate: 1, Burst: 1, ExpiresIn: 3 * time.Minute}
 	if mutate != nil {
 		mutate(cfg)
 	}
