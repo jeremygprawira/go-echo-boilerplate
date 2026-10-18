@@ -214,13 +214,23 @@ func (us *UserService) issueTokens(user *models.User) (*models.GetUserTokenRespo
 	}, nil
 }
 
-// RefreshTokens validates a refresh token, claims its JTI (revoking it), and
-// issues a fresh access+refresh pair. The claim is atomic, so of several
-// concurrent requests with one token only the first mints a pair.
+// RefreshTokens validates a refresh token, looks up its user, claims its JTI
+// (revoking it), and issues a fresh access+refresh pair. The claim is atomic,
+// so of several concurrent requests with one token only the first mints a
+// pair. It runs after the lookup, so a failed lookup leaves the token usable
+// for a retry.
 func (us *UserService) RefreshTokens(ctx context.Context, refreshToken string) (*models.GetUserTokenResponse, error) {
 	claims, err := jwtc.ParseRefreshToken(refreshToken, us.jwt)
 	if err != nil {
 		return nil, errorc.Unauthorized.New().Public(herr.Message("invalid refresh token")).Wrap(err)
+	}
+
+	user, err := us.store.UserByID(ctx, claims.UserID)
+	if errors.Is(err, models.ErrNotFound) {
+		return nil, errorc.Unauthorized.New().Public(herr.Message("invalid refresh token")).Wrap(err)
+	}
+	if err != nil {
+		return nil, errorc.Database.New().Internal("failed to get user").Wrap(err)
 	}
 
 	claimed, err := us.revoke(ctx, claims.ID, us.jwt.RefreshTokenDuration)
@@ -229,11 +239,6 @@ func (us *UserService) RefreshTokens(ctx context.Context, refreshToken string) (
 	}
 	if !claimed {
 		return nil, errorc.Unauthorized.New().Public(herr.Message("refresh token revoked"))
-	}
-
-	user, err := us.store.UserByID(ctx, claims.UserID)
-	if err != nil {
-		return nil, errorc.Unauthorized.New().Public(herr.Message("invalid refresh token")).Wrap(err)
 	}
 
 	return us.issueTokens(user)

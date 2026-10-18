@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -62,6 +63,7 @@ func TestUserService_RefreshTokens(t *testing.T) {
 		refreshToken, err := jwtc.SignRefreshToken(user, testJWTConfig())
 		require.NoError(t, err)
 
+		mockRepo.On("UserByID", mock.Anything, 1).Return(user, nil)
 		store := newMemRevoked()
 
 		claims, err := jwtc.ParseRefreshToken(refreshToken.Token, testJWTConfig())
@@ -108,6 +110,27 @@ func TestUserService_RefreshTokens(t *testing.T) {
 		assert.True(t, errorc.Unauthorized.Is(err))
 
 		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("A failed user lookup is a database error and does not spend the token", func(t *testing.T) {
+		mockRepo := new(MockUserRepository)
+		user := &models.User{ID: 1, AccountNumber: "123456"}
+
+		refreshToken, err := jwtc.SignRefreshToken(user, testJWTConfig())
+		require.NoError(t, err)
+
+		mockRepo.On("UserByID", mock.Anything, 1).Return(nil, errors.New("connection refused")).Once()
+		mockRepo.On("UserByID", mock.Anything, 1).Return(user, nil).Once()
+
+		svc := service.NewUserService(fakeStore{mockRepo, newMemRevoked()}, testJWTConfig())
+
+		resp, err := svc.RefreshTokens(context.Background(), refreshToken.Token)
+		assert.Nil(t, resp)
+		assert.True(t, errorc.Database.Is(err), "got %v", err)
+
+		resp, err = svc.RefreshTokens(context.Background(), refreshToken.Token)
+		require.NoError(t, err, "the retry after the outage refreshes")
+		assert.Len(t, resp.Tokens, 2)
 	})
 }
 
