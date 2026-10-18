@@ -30,9 +30,10 @@ func (ts *TokenService) IsRevoked(ctx context.Context, jti string) (bool, error)
 	return ts.store.IsTokenRevoked(ctx, jti, time.Now())
 }
 
-func (ts *TokenService) Start(ctx context.Context) error {
+func (ts *TokenService) Start(ctx context.Context, ready func()) error {
 	ticker := time.NewTicker(ts.every)
 	defer ticker.Stop()
+	ready()
 	for {
 		select {
 		case <-ctx.Done():

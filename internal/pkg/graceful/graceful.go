@@ -2,112 +2,113 @@ package graceful
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/signal"
+	"sync"
 	"syscall"
-	"time"
-
-	"golang.org/x/sync/errgroup"
 )
 
-// Graceful manages the lifecycle of multiple processes with graceful startup and shutdown.
-// It handles signal catching, concurrent process management, and proper cleanup.
-//
-// Processes are started concurrently and must all start successfully before the startup hook runs.
-// On receiving a termination signal (SIGINT/SIGTERM), all processes are stopped concurrently
-// within the configured timeout.
-func Graceful(processes map[string]Process, opts ...Option) {
+// Graceful runs processes under the Process contract until SIGINT, SIGTERM or
+// the first process failure, and returns that failure joined with any stop
+// error. It starts them one at a time in slice order, each once the one before
+// it is ready, and runs the startup hook once all are ready. At shutdown it
+// runs the shutdown hook and stops the ready processes in reverse order.
+func Graceful(processes []NamedProcess, opts ...Option) error {
 	o := defaultOptions()
 	for _, opt := range opts {
 		opt(&o)
 	}
 
-	// Setup signal handling for graceful shutdown
-	ctx, cancel := signal.NotifyContext(
-		context.Background(),
-		syscall.SIGINT,
-		syscall.SIGTERM,
-	)
+	signalCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stopSignals()
+	ctx, cancel := context.WithCancel(signalCtx)
 	defer cancel()
 
-	// Start all processes concurrently
-	startgroup, ctx := errgroup.WithContext(ctx)
-
-	for name, process := range processes {
-		name, process := name, process // Capture loop variables
-		startgroup.Go(func() error {
-			o.logger.Infof("starting %s", name)
-			if err := process.Start(ctx); err != nil {
-				return fmt.Errorf("failed to start %s: %w", name, err)
-			}
-			return nil
-		})
-	}
-
-	// Wait for all processes to start
-	if err := startgroup.Wait(); err != nil {
-		o.logger.Errorf("error starting processes: %v", err)
-		return // Exit immediately on startup failure
-	}
-
-	// Execute startup hook only if all processes started successfully
-	if hook := o.startupHook; hook != nil {
-		o.logger.Debugf("executing startup hook")
-		hook()
-	}
-
-	// Block until shutdown signal received
-	<-ctx.Done()
-
-	// Execute shutdown hook before beginning shutdown
-	if hook := o.shutdownHook; hook != nil {
-		o.logger.Debugf("executing shutdown hook")
-		hook()
-	}
-
-	o.logger.Infof("received termination signal, shutting down...")
-
-	// Setup periodic logging during shutdown for observability
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
-	done := make(chan struct{})
-	defer close(done)
-
-	go func() {
-		for {
-			select {
-			case <-ticker.C:
-				o.logger.Infof("waiting for graceful shutdown...")
-			case <-done:
-				return
-			}
+	exits := make(chan error, len(processes))
+	var started []running
+	for _, p := range processes {
+		if ctx.Err() != nil {
+			break
 		}
-	}()
+		o.logger.Infof("starting %s", p.Name)
+		r := start(ctx, p, exits)
+		started = append(started, r)
+		select {
+		case <-r.ready:
+		case <-r.exited:
+			cancel()
+		}
+	}
 
-	// Create shutdown context with timeout
+	var exitErrs []error
+	if ctx.Err() == nil {
+		o.startupHook()
+		select {
+		case <-ctx.Done():
+		case err := <-exits:
+			exitErrs = append(exitErrs, err)
+		}
+	}
+	cancel()
+	o.shutdownHook()
+
 	stopCtx, stopCancel := context.WithTimeout(context.Background(), o.timeout)
 	defer stopCancel()
-
-	// Stop all processes concurrently
-	stopgroup, stopCtx := errgroup.WithContext(stopCtx)
-
-	for name, process := range processes {
-		name, process := name, process // Capture loop variables
-		stopgroup.Go(func() error {
-			o.logger.Infof("stopping %s", name)
-			if err := process.Stop(stopCtx); err != nil {
-				return fmt.Errorf("failed to stop %s: %w", name, err)
-			}
-			o.logger.Infof("stopped %s successfully", name)
-			return nil
-		})
+	var stopErrs []error
+	for i := len(started) - 1; i >= 0; i-- {
+		r := started[i]
+		if !r.isReady() {
+			continue
+		}
+		o.logger.Infof("stopping %s", r.Name)
+		if err := r.Process.Stop(stopCtx); err != nil {
+			stopErrs = append(stopErrs, fmt.Errorf("stop %s: %w", r.Name, err))
+		}
 	}
-
-	// Wait for all processes to stop
-	if err := stopgroup.Wait(); err != nil {
-		o.logger.Errorf("error stopping processes: %v", err)
+	for pending := len(started) - len(exitErrs); pending > 0; pending-- {
+		select {
+		case err := <-exits:
+			exitErrs = append(exitErrs, err)
+		case <-stopCtx.Done():
+			stopErrs = append(stopErrs, fmt.Errorf("%d processes still running after %s: %w", pending, o.timeout, stopCtx.Err()))
+			return errors.Join(append(exitErrs, stopErrs...)...)
+		}
 	}
-
 	o.logger.Infof("shutdown complete")
+	return errors.Join(append(exitErrs, stopErrs...)...)
+}
+
+type running struct {
+	NamedProcess
+	ready, exited chan struct{}
+}
+
+func (r running) isReady() bool {
+	select {
+	case <-r.ready:
+		return true
+	default:
+		return false
+	}
+}
+
+func start(ctx context.Context, p NamedProcess, exits chan<- error) running {
+	r := running{NamedProcess: p, ready: make(chan struct{}), exited: make(chan struct{})}
+	go func() {
+		err := p.Process.Start(ctx, sync.OnceFunc(func() { close(r.ready) }))
+		exits <- exitError(ctx, p.Name, err)
+		close(r.exited)
+	}()
+	return r
+}
+
+func exitError(ctx context.Context, name string, err error) error {
+	switch {
+	case err != nil:
+		return fmt.Errorf("%s: %w", name, err)
+	case ctx.Err() == nil:
+		return fmt.Errorf("%s: exited before shutdown", name)
+	}
+	return nil
 }

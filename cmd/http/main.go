@@ -26,7 +26,6 @@ import (
 // @name Authorization
 // @description Type "Bearer" followed by a space and the access token.
 func main() {
-	// Run the application and handle any startup errors
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Application failed: %v\n", err)
 		os.Exit(1)
@@ -34,36 +33,27 @@ func main() {
 }
 
 func run() error {
-	// 1. Initialize configuration first (before any dependencies)
 	ctx := context.Background()
 	config, err := config.Initialize(ctx)
 	if err != nil {
 		panic(fmt.Errorf("failed to initialize configuration: %w", err))
 	}
 
-	// 2. Setup application core, from logger, to echo server, database, etc.
 	e, tokenPurge, err := core.Setup(config)
 	if err != nil {
 		return fmt.Errorf("failed to setup application: %w", err)
 	}
 
 	port := fmt.Sprintf(":%d", config.Get().Application.Port)
-
-	// 3. Define processes to manage
-	processes := map[string]graceful.Process{
-		"http-server": graceful.NewEchoProcess(e, port),
-		"token-purge": tokenPurge,
-		"cleanup":     graceful.NewFuncProcess(core.Teardown),
-	}
-
-	// 4. Configure graceful shutdown
 	shutdownTimeout := 10 * time.Second
-	logAdapter := graceful.NewLoggerAdapter(logger.Instance, ctx)
 
-	// 5. Run with graceful lifecycle management
-	graceful.Graceful(processes,
+	return graceful.Graceful([]graceful.NamedProcess{
+		{Name: "cleanup", Process: graceful.NewFuncProcess(core.Teardown)},
+		{Name: "token-purge", Process: tokenPurge},
+		{Name: "http-server", Process: graceful.NewEchoProcess(e, port)},
+	},
 		graceful.WithTimeout(shutdownTimeout),
-		graceful.WithLogger(logAdapter),
+		graceful.WithLogger(graceful.NewLoggerAdapter(logger.Instance, ctx)),
 		graceful.WithStartupHook(func() {
 			logger.Instance.Info(ctx, "All processes started successfully",
 				logger.String("env", string(config.Get().Application.Environment)),
@@ -76,7 +66,4 @@ func run() error {
 			)
 		}),
 	)
-
-	logger.Instance.Info(ctx, "Server shutdown completed successfully")
-	return nil
 }

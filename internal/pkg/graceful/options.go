@@ -25,19 +25,17 @@ func defaultOptions() options {
 	}
 }
 
-// Option is a functional option for configuring graceful shutdown.
 type Option func(*options)
 
-// WithStartupHook sets a hook function to be called after all processes have started successfully.
-// This is useful for tasks like registering with service discovery or sending startup metrics.
+// WithStartupHook sets a hook that runs once every process has called ready.
 func WithStartupHook(hook func()) Option {
 	return func(o *options) {
 		o.startupHook = hook
 	}
 }
 
-// WithShutdownHook sets a hook function to be called before shutdown begins.
-// This is useful for tasks like deregistering from service discovery or sending shutdown metrics.
+// WithShutdownHook sets a hook that runs once shutdown begins: after Start's
+// ctx is cancelled and before the first Stop.
 func WithShutdownHook(hook func()) Option {
 	return func(o *options) {
 		o.shutdownHook = hook
@@ -45,7 +43,7 @@ func WithShutdownHook(hook func()) Option {
 }
 
 // WithTimeout sets the graceful shutdown timeout.
-// Processes must complete shutdown within this duration or they will be forcefully terminated.
+// Stop calls share it, and Graceful returns an error for processes still running after it.
 func WithTimeout(timeout time.Duration) Option {
 	return func(o *options) {
 		o.timeout = timeout

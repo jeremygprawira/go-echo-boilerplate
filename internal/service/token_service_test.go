@@ -78,7 +78,7 @@ func TestTokenService_StartPurgesUntilCancelled(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- ts.Start(ctx) }()
+	go func() { done <- ts.Start(ctx, func() {}) }()
 
 	require.Eventually(t, func() bool { return mock.ExpectationsWereMet() == nil }, time.Second, 5*time.Millisecond)
 	cancel()
