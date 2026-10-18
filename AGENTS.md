@@ -33,17 +33,19 @@ Notes:
 - `make ci` runs `go mod tidy -diff` for both modules, build, `go test -race`, golangci-lint, gosec, `scripts/check-repo.sh` and `scripts/check-deadcode.sh`. CI runs `make ci` as its one job, plus `scripts/check-pr-base.sh` on pull requests. Without GitHub Actions, run the same checks locally: `make ci` by hand, `make hooks` for the opt-in pre-push hook in `.githooks/pre-push`, and `make pr-base PR=<number>`.
 - golangci-lint, gosec and deadcode are pinned in `tools/go.mod` and run as `go tool -modfile=tools/go.mod <tool>`. Change a tool version there, never with `go install ...@latest`. A bare `golangci-lint` on your PATH can be another version with other defaults, so always use `make lint` or `make ci`.
 - The `ENV` env var selects the config file: `config/config.<env>.yaml`, loaded via Viper (`internal/config/config.go`). `make run` fails if the file is missing.
-- `application.environment` must be one of `local`, `dev`, `uat`, `staging`, `prod`, `production` (case and surrounding space ignored), or `Validate` fails. `IsProduction()` is true for `prod` and `production`.
+- `application.environment` must be one of `local`, `dev`, `uat`, `staging`, `prod`, `production` (case and surrounding space ignored), or startup fails. It decodes to a `config.Environment`, and `Environment.IsProduction()` is true for `prod` and `production`.
 - Swagger docs are a generated Go package (`docs/docs.go`) imported by the router (`_ "go-echo-boilerplate/docs"`). After changing handler `@` annotations, run `make docs` or the build serves stale docs.
 - Migrations use goose against `migration/db/postgre`; the Makefile exports `.env` before running.
 - `application.trusted_proxies` (list of CIDRs, default empty) sets `e.IPExtractor` in `NewServer` (`internal/deliveries/http/router.go`). Empty means `c.RealIP()` is the TCP peer. Otherwise it is the rightmost `X-Forwarded-For` entry not inside a listed proxy range. The rate limiter keys on it.
-- `application.read_header_timeout`, `read_timeout`, `write_timeout`, `idle_timeout` (Go durations, defaults 5s/15s/30s/60s) are set on `e.Server` in `NewServer`. `Validate` requires each to be positive and rejects a negative `application.timeout`.
+- `application.read_header_timeout`, `read_timeout`, `write_timeout`, `idle_timeout` (defaults 5s/15s/30s/60s) are set on `e.Server` in `NewServer`. `application.timeout` is the per-request deadline, empty for none. Every duration in the config file needs a unit, such as `30s`. A bare number such as `timeout: 30` fails startup with a message that names the key.
 
 ## Architecture
 
 Clean Architecture, written the Go way. Dependencies point inward: `deliveries/http` calls `service`, and `service` uses `models`. The Postgres adapter in `internal/repository` satisfies the small interfaces that each service declares. Only `internal/core` and `cmd/http` import both sides. depguard enforces the direction (see the rule table).
 
 **Startup flow** (`cmd/http/main.go`): `config.Initialize`, then `core.Setup` (`internal/core/setup.go`). `core.Setup` starts the logger, connects the database, builds one `repository.Store`, builds each service on that store, and passes each service to `deliveryhttp.NewServer` as its own argument. `internal/pkg/graceful` runs the HTTP server, the token purge loop and the cleanup, and shuts them down on a signal.
+
+**Configuration.** `config.Initialize` reads `config/config.<env>.yaml`, decodes it and validates it. Each duration is a `time.Duration` field and the environment is a `config.Environment`, so no other package parses a config string. `Initialize` returns a `config.Validated`. Every constructor that reads config takes one: `core.Setup`, `NewServer`, `middleware.New`, `middleware.RateLimiter`, `logger.Initialize`, `logger.NewWlog`, `database.Connect` and `jwtc.DefaultConfig`. Only `Initialize` and `Configuration.Validated()` build a `Validated`, so a nil or hand-built config cannot reach a constructor, and a zero `Validated` panics on use. Read the values with `Get()`. It returns a copy of the struct, but the slices in it are shared, so treat them as read-only. A new config value gets its default with `viper.SetDefault` in `Initialize`, its check in `Validate`, and a field in the constructor that reads it. Never add a fallback in the reader.
 
 **Layers:**
 - `internal/repository` has one type, `Store`. Every query is a method on it, such as `CreateUser`, `UserByID` or `RevokeToken`, with its SQL in an unexported const in the same file. `Atomic(ctx, fn func(tx *Store) error)` runs `fn` in one transaction on a `Store` bound to it, so the transaction has every query. The package declares no interfaces.
@@ -95,7 +97,7 @@ If `Store` lacks a method that `OrderTx` lists, `core.Setup` fails to build.
 
 ## Testing conventions
 
-Tests live beside the code (`*_test.go`) and use testify. Repository tests use go-sqlmock, not a real database. Handler tests drive the real server: `testServer{users: fake}.build(t)` in `internal/deliveries/http/server_test.go` calls `NewServer` with test config and only the services that the test sets.
+Tests live beside the code (`*_test.go`) and use testify. Repository tests use go-sqlmock, not a real database. Handler tests drive the real server: `testServer{users: fake}.build(t)` in `internal/deliveries/http/server_test.go` calls `NewServer` with test config and only the services that the test sets. Build test config with `configtest.Valid(mutate...)` (`internal/config/configtest`). It carries the `Initialize` defaults, so tests run with the rate limiter and the other controls on.
 
 ## Rules and what enforces them
 
@@ -112,6 +114,10 @@ Each rule has a check that fails on a real past commit. Add a row when you add a
 | One rate limiter on many route rows keeps a budget per method, route and client IP | `make test` (`TestRateLimiter_OneInstanceKeepsABudgetPerRoute`, `TestRateLimiter_OneInstanceKeepsABudgetPerMethodOnAPath`) | 1cee85c, 898283f |
 | A user lookup never returns a soft-deleted user | `make test` (`TestUserLookups_QueryFiltersDeletedAt`) | 1cee85c |
 | `Store.Atomic` runs every query in `fn` on the transaction | `make test` (`TestAtomic_CommitsWritesMadeThroughTheTransaction`) | no past violation |
+| A duration in config is a `time.Duration` field. Only `internal/config` calls `time.ParseDuration` | `make lint` (forbidigo) | b5f5e7c^ |
+| A constructor that reads config takes `config.Validated`, never a `*config.Configuration`. Tests build it with `configtest.Valid`, so the end-to-end server runs with the rate limiter on | `go build` (`Validated` has only an unexported field), and `make test` (`TestRateLimiter_ZeroConfigPanics`, `TestRevocation_ServerRunsWithTheRateLimiterOn`) | 1c90978 |
+| A config that omits `rate_limit` keeps the limiter on. Only `enabled: false` turns it off, and a zero rate, burst or `expires_in` fails startup | `make test` (`TestInitialize_OmittedOrEmptyRateLimitKeepsLimiterOn`, `TestInitialize_ZeroRateLimitFails`) | ab33d3a |
+| A duration written without a unit fails startup and names the key | `make test` (`TestInitialize_RejectsDurationWithoutUnit`) | no past violation |
 | Echo's middleware package is imported as `echoMiddleware` | `make lint` (importas) | ab33d3a^ |
 | Every returned error is checked, including `Close` | `make lint` (errcheck) | 1c90978 |
 | Every `FROM golang:` image matches the go.mod Go minor version | `scripts/check-repo.sh` | 5180441^, bd3fd72^, f910f52^, e2c4e2d^, 9bf871f |
