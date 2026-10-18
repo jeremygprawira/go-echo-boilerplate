@@ -2,3 +2,23 @@
 # This repo is a boilerplate, so a generic helper with no caller yet can stay
 # when it has a test. One line per func, in deadcode's package: Func form:
 #   go-echo-boilerplate/internal/pkg/example: Helper  # why it stays
+go-echo-boilerplate/internal/models: ParsePagination  # cursor pagination input for list endpoints
+go-echo-boilerplate/internal/pkg/response: SuccessPagination  # envelope for paginated list endpoints
+go-echo-boilerplate/internal/pkg/boolc: And  # boolean helpers for multi-condition checks
+go-echo-boilerplate/internal/pkg/boolc: Nand  # boolean helpers for multi-condition checks
+go-echo-boilerplate/internal/pkg/boolc: Nor  # boolean helpers for multi-condition checks
+go-echo-boilerplate/internal/pkg/boolc: Not  # boolean helpers for multi-condition checks
+go-echo-boilerplate/internal/pkg/boolc: Or  # boolean helpers for multi-condition checks
+go-echo-boilerplate/internal/pkg/boolc: Xnor  # boolean helpers for multi-condition checks
+go-echo-boilerplate/internal/pkg/boolc: Xor  # boolean helpers for multi-condition checks
+go-echo-boilerplate/internal/pkg/generator: Token  # random tokens for reset links, OAuth state, sessions
+go-echo-boilerplate/internal/pkg/generator: SessionToken  # 32-byte token preset
+go-echo-boilerplate/internal/pkg/generator: APIKey  # 64-byte API key preset
+go-echo-boilerplate/internal/pkg/generator: NeedsRehash  # upgrade password hashes after a bcrypt cost change
+go-echo-boilerplate/internal/pkg/openauth: NewGoogleOAuth  # optional Google sign-in, unwired by default
+go-echo-boilerplate/internal/pkg/openauth: newGoogleOAuth  # optional Google sign-in, unwired by default
+go-echo-boilerplate/internal/pkg/openauth: GoogleOAuth.Redirect  # optional Google sign-in, unwired by default
+go-echo-boilerplate/internal/pkg/openauth: GoogleOAuth.Fetch  # optional Google sign-in, unwired by default
+go-echo-boilerplate/internal/pkg/stringc: TrimAndLowerCase  # pair of TrimAndUpperCase
+go-echo-boilerplate/internal/pkg/validator: AccountNumber  # checks numbers that generator.AccountNumber makes
+go-echo-boilerplate/internal/pkg/validator: Luhn  # check-digit rule behind AccountNumber
