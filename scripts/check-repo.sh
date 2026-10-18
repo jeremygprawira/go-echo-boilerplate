@@ -33,9 +33,25 @@ check_no_tracked_agent_files() {
 	return 1
 }
 
+check_rule_table_commits() {
+	local row cell sha full rc=0
+	while IFS= read -r row; do
+		cell=$(awk -F'|' '{print $(NF-1)}' <<<"$row")
+		for sha in $(grep -oE '\b[0-9a-f]{7,40}\b' <<<"$cell"); do
+			full=$(git rev-parse -q --verify "$sha^{commit}")
+			if [ -z "$full" ] || ! git merge-base --is-ancestor "$full" HEAD; then
+				echo "rule table cites $sha, which is not an ancestor of HEAD: $row"
+				rc=1
+			fi
+		done
+	done < <(awk '/^## Rules and what enforces them/{on=1; next} /^## /{on=0} on && /^\| / && !/^\| (Rule|---) /' AGENTS.md)
+	return "$rc"
+}
+
 fail=0
 check_docker_go_version || fail=1
 check_no_tracked_env_config || fail=1
 check_no_tracked_agent_files || fail=1
+check_rule_table_commits || fail=1
 [ "$fail" = 0 ] && echo "check-repo: ok"
 exit "$fail"

@@ -123,6 +123,7 @@ Each rule has a check that fails on a real past commit. Add a row when you add a
 | Every `FROM golang:` image matches the go.mod Go minor version | `scripts/check-repo.sh` | 5180441^, bd3fd72^, f910f52^, e2c4e2d^, 9bf871f |
 | No `config/config.<env>.yaml` is tracked, only the local example | `scripts/check-repo.sh` | 8f86790 |
 | Agent scratch (`.serena/`, `docs/superpowers/`) is never tracked | `scripts/check-repo.sh` | 9bf871f |
+| Every commit in the "Fails on" column of this table is an ancestor of HEAD | `scripts/check-repo.sh` | 42a7d1f^, 76d4b1e |
 | This repo is a boilerplate. A generic helper with no caller stays when it has a behavior test and a line in `scripts/deadcode-allow.txt` that says why. Duplicates and speculative infrastructure get deleted | `scripts/check-deadcode.sh` for the line. Review for the test | 1c90978 |
 | `scripts/deadcode-allow.txt` lists exactly the unreachable funcs, each with a `# reason` | `scripts/check-deadcode.sh` | 8595540, bfa1c5a, 16476e2 |
 | A PR targets `master` or a branch with an open PR | `scripts/check-pr-base.sh` (CI, pull requests), or `make pr-base PR=<number>` locally | PR #12 |
