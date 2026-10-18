@@ -11,6 +11,7 @@ import (
 	"go-echo-boilerplate/internal/pkg/jwtc"
 	"go-echo-boilerplate/internal/service"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -34,6 +35,10 @@ func (m *memRevoked) IsTokenRevoked(_ context.Context, jti string, now time.Time
 }
 
 func (m *memRevoked) PurgeExpiredTokens(context.Context, time.Time) error { return nil }
+
+func accessClaims(jti string) jwtc.Claims {
+	return jwtc.Claims{RegisteredClaims: jwt.RegisteredClaims{ID: jti, ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute))}}
+}
 
 func TestUserService_RefreshTokens(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
@@ -141,7 +146,7 @@ func TestUserService_Logout(t *testing.T) {
 
 		svc := service.NewUserService(fakeStore{mockRepo, store}, testJWTConfig())
 
-		require.NoError(t, svc.Logout(context.Background(), "some-jti", ""))
+		require.NoError(t, svc.Logout(context.Background(), accessClaims("some-jti"), ""))
 
 		revoked, err := store.IsTokenRevoked(context.Background(), "some-jti", time.Now())
 		require.NoError(t, err)
@@ -161,7 +166,7 @@ func TestUserService_Logout(t *testing.T) {
 
 		svc := service.NewUserService(fakeStore{mockRepo, store}, testJWTConfig())
 
-		require.NoError(t, svc.Logout(context.Background(), "some-jti", refreshToken.Token))
+		require.NoError(t, svc.Logout(context.Background(), accessClaims("some-jti"), refreshToken.Token))
 
 		accessRevoked, err := store.IsTokenRevoked(context.Background(), "some-jti", time.Now())
 		require.NoError(t, err)
@@ -178,10 +183,49 @@ func TestUserService_Logout(t *testing.T) {
 
 		svc := service.NewUserService(fakeStore{mockRepo, store}, testJWTConfig())
 
-		require.NoError(t, svc.Logout(context.Background(), "some-jti", "not-a-real-token"))
+		require.NoError(t, svc.Logout(context.Background(), accessClaims("some-jti"), "not-a-real-token"))
 
 		revoked, err := store.IsTokenRevoked(context.Background(), "some-jti", time.Now())
 		require.NoError(t, err)
 		assert.True(t, revoked)
+	})
+}
+
+func TestUserService_RevocationExpiresWithItsToken(t *testing.T) {
+	user := &models.User{ID: 1, AccountNumber: "123456"}
+	issued := testJWTConfig()
+	issued.RefreshTokenDuration = time.Hour
+	signed := func() (string, *jwtc.Claims) {
+		tok, err := jwtc.SignRefreshToken(user, issued)
+		require.NoError(t, err)
+		claims, err := jwtc.ParseRefreshToken(tok.Token, issued)
+		require.NoError(t, err)
+		return tok.Token, claims
+	}
+
+	t.Run("Logout", func(t *testing.T) {
+		store := newMemRevoked()
+		svc := service.NewUserService(fakeStore{new(MockUserRepository), store}, testJWTConfig())
+		token, claims := signed()
+		access := accessClaims("access-jti")
+		access.ExpiresAt = jwt.NewNumericDate(time.Now().Add(time.Minute))
+
+		require.NoError(t, svc.Logout(context.Background(), access, token))
+
+		assert.Equal(t, access.ExpiresAt.Time, store.rows["access-jti"])
+		assert.Equal(t, claims.ExpiresAt.Time, store.rows[claims.ID])
+	})
+
+	t.Run("Refresh", func(t *testing.T) {
+		mockRepo := new(MockUserRepository)
+		mockRepo.On("UserByID", mock.Anything, 1).Return(user, nil)
+		store := newMemRevoked()
+		svc := service.NewUserService(fakeStore{mockRepo, store}, testJWTConfig())
+		token, claims := signed()
+
+		_, err := svc.RefreshTokens(context.Background(), token)
+		require.NoError(t, err)
+
+		assert.Equal(t, claims.ExpiresAt.Time, store.rows[claims.ID])
 	})
 }

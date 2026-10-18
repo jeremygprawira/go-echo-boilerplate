@@ -233,7 +233,7 @@ func (us *UserService) RefreshTokens(ctx context.Context, refreshToken string) (
 		return nil, errorc.Database.New().Internal("failed to get user").Wrap(err)
 	}
 
-	claimed, err := us.revoke(ctx, claims.ID, us.jwt.RefreshTokenDuration)
+	claimed, err := us.revoke(ctx, claims, us.jwt.RefreshTokenDuration)
 	if err != nil {
 		return nil, errorc.Internal.New().Internal("failed to revoke refresh token").Wrap(err)
 	}
@@ -244,21 +244,21 @@ func (us *UserService) RefreshTokens(ctx context.Context, refreshToken string) (
 	return us.issueTokens(user)
 }
 
-// Logout ends the caller's session: it revokes the access-token JTI so the
-// access token stops being accepted before its natural expiry, and — when a
-// refresh token is presented — revokes the refresh token's JTI too so it can
-// no longer mint new access tokens. An unparseable/expired refresh token is
-// ignored: it cannot be used anyway, and logout must stay idempotent.
-func (us *UserService) Logout(ctx context.Context, accessJTI string, refreshToken string) error {
-	if accessJTI != "" {
-		if _, err := us.revoke(ctx, accessJTI, us.jwt.AccessTokenDuration); err != nil {
+// Logout ends the caller's session: it revokes the access token so it stops
+// being accepted before its natural expiry, and — when a refresh token is
+// presented — revokes the refresh token too so it can no longer mint new
+// access tokens. An unparseable/expired refresh token is ignored: it cannot
+// be used anyway, and logout must stay idempotent.
+func (us *UserService) Logout(ctx context.Context, access jwtc.Claims, refreshToken string) error {
+	if access.ID != "" {
+		if _, err := us.revoke(ctx, &access, us.jwt.AccessTokenDuration); err != nil {
 			return errorc.Internal.New().Internal("failed to revoke access token").Wrap(err)
 		}
 	}
 
 	if refreshToken != "" {
 		if claims, err := jwtc.ParseRefreshToken(refreshToken, us.jwt); err == nil {
-			if _, err := us.revoke(ctx, claims.ID, us.jwt.RefreshTokenDuration); err != nil {
+			if _, err := us.revoke(ctx, claims, us.jwt.RefreshTokenDuration); err != nil {
 				return errorc.Internal.New().Internal("failed to revoke refresh token").Wrap(err)
 			}
 		}
@@ -284,9 +284,10 @@ func (us *UserService) GetByAccountNumber(ctx context.Context, accountNumber str
 	return user, nil
 }
 
-// revoke keeps jti revoked for ttl, which callers set to the token's full
-// lifetime so the row outlives the token. It reports whether this call
-// revoked jti first, so a single-use token can be spent only once.
-func (us *UserService) revoke(ctx context.Context, jti string, ttl time.Duration) (bool, error) {
-	return us.store.RevokeToken(ctx, jti, time.Now().Add(ttl))
+func (us *UserService) revoke(ctx context.Context, claims *jwtc.Claims, lifetime time.Duration) (first bool, err error) {
+	expiresAt := time.Now().Add(lifetime)
+	if claims.ExpiresAt != nil {
+		expiresAt = claims.ExpiresAt.Time
+	}
+	return us.store.RevokeToken(ctx, claims.ID, expiresAt)
 }

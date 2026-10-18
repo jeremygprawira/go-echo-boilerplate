@@ -65,8 +65,8 @@ func (m *MockUserService) RefreshTokens(ctx context.Context, refreshToken string
 	return args.Get(0).(*models.GetUserTokenResponse), args.Error(1)
 }
 
-func (m *MockUserService) Logout(ctx context.Context, accessJTI string, refreshToken string) error {
-	args := m.Called(ctx, accessJTI, refreshToken)
+func (m *MockUserService) Logout(ctx context.Context, access jwtc.Claims, refreshToken string) error {
+	args := m.Called(ctx, access, refreshToken)
 	return args.Error(0)
 }
 

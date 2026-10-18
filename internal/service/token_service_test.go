@@ -12,6 +12,7 @@ import (
 	"go-echo-boilerplate/internal/repository"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -34,13 +35,15 @@ func (m timeNear) Match(v driver.Value) bool {
 	return ok && got.Sub(m.want).Abs() < 5*time.Second
 }
 
-func TestLogout_StoresExpiryFromTTL(t *testing.T) {
+func TestLogout_StoresTheAccessTokensOwnExpiry(t *testing.T) {
+	exp := time.Now().Add(5 * time.Minute)
 	store, mock := newMockStore(t)
 	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO revoked_tokens (jti, expires_at) VALUES ($1, $2)")).
-		WithArgs("jti-1", timeNear{time.Now().Add(15 * time.Minute)}).
+		WithArgs("jti-1", timeNear{exp}).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	require.NoError(t, NewUserService(store, &jwtc.Configuration{AccessTokenDuration: 15 * time.Minute}).Logout(context.Background(), "jti-1", ""))
+	access := jwtc.Claims{RegisteredClaims: jwt.RegisteredClaims{ID: "jti-1", ExpiresAt: jwt.NewNumericDate(exp)}}
+	require.NoError(t, NewUserService(store, &jwtc.Configuration{AccessTokenDuration: 15 * time.Minute}).Logout(context.Background(), access, ""))
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

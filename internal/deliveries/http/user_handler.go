@@ -19,7 +19,7 @@ type userService interface {
 	GetTokens(ctx context.Context, request *models.GetUserTokenRequest) (*models.GetUserTokenResponse, error)
 	GetByAccountNumber(ctx context.Context, accountNumber string) (*models.User, error)
 	RefreshTokens(ctx context.Context, refreshToken string) (*models.GetUserTokenResponse, error)
-	Logout(ctx context.Context, accessJTI string, refreshToken string) error
+	Logout(ctx context.Context, access jwtc.Claims, refreshToken string) error
 }
 
 type userHandler struct {
@@ -167,7 +167,7 @@ func (h userHandler) Logout(ctx echo.Context, caller jwtc.Claims) error {
 
 	refreshToken := jwtc.ResolveRefreshToken(ctx.Request(), request.RefreshToken)
 
-	if err := h.users.Logout(ctx.Request().Context(), caller.ID, refreshToken); err != nil {
+	if err := h.users.Logout(ctx.Request().Context(), caller, refreshToken); err != nil {
 		return err
 	}
 
