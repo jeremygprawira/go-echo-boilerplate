@@ -254,19 +254,25 @@ func registerEmailOrPhoneField() {
 	if err := valid.RegisterValidation(TagEmailOrPhoneField, func(fl v10.FieldLevel) bool {
 		parent := fl.Parent()
 
-		// Safely get Email field
 		emailField := parent.FieldByName("Email")
 		if !emailField.IsValid() {
 			return false
 		}
 		email := emailField.String()
 
-		// Safely get PhoneNumber field
 		phoneField := parent.FieldByName("PhoneNumber")
 		if !phoneField.IsValid() {
 			return false
 		}
-		phone := phoneField.String()
+		var phone string
+		switch v := phoneField.Interface().(type) {
+		case models.PhoneNumber:
+			phone = v.Number
+		case string:
+			phone = v
+		default:
+			return false
+		}
 
 		return (email != "") != (phone != "")
 	}); err != nil {

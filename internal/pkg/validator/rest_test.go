@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"go-echo-boilerplate/internal/models"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -82,6 +84,38 @@ func TestEmailOrPhoneField(t *testing.T) {
 		{"phone only", contact{PhoneNumber: "+6281234567890"}, true},
 		{"neither", contact{}, false},
 		{"both", contact{Email: "john@example.com", PhoneNumber: "+6281234567890"}, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := Input(tc.input)
+			if tc.ok {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+		})
+	}
+}
+
+func TestEmailOrPhoneField_PhoneNumberStruct(t *testing.T) {
+	type contact struct {
+		Email       string
+		PhoneNumber models.PhoneNumber
+		Check       string `validate:"emailOrPhoneField"`
+	}
+	phone := models.PhoneNumber{CountryCode: "ID", Number: "6281234567890"}
+
+	cases := []struct {
+		name  string
+		input contact
+		ok    bool
+	}{
+		{"email only", contact{Email: "john@example.com"}, true},
+		{"phone only", contact{PhoneNumber: phone}, true},
+		{"neither", contact{}, false},
+		{"country code only", contact{PhoneNumber: models.PhoneNumber{CountryCode: "ID"}}, false},
+		{"both", contact{Email: "john@example.com", PhoneNumber: phone}, false},
 	}
 
 	for _, tc := range cases {
