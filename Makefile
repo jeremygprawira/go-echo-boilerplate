@@ -1,4 +1,4 @@
-.PHONY: help ci build build-prod run dev clean test test-coverage test-integration docker-up docker-down docker-logs docker-clean docs lint lint-fix tidy migrate-up migrate-down migrate-status migrate-create check-config install-tools security-scan run-local run-dev run-uat run-prod
+.PHONY: help ci pr-base hooks unhooks build build-prod run dev clean test test-coverage test-integration docker-up docker-down docker-logs docker-clean docs lint lint-fix tidy migrate-up migrate-down migrate-status migrate-create check-config install-tools security-scan run-local run-dev run-uat run-prod
 
 # Default target
 .DEFAULT_GOAL := help
@@ -67,6 +67,9 @@ help:
 	@echo ""
 	@echo "🧪 Testing & Quality:"
 	@echo "  make ci                       - Run every check CI runs"
+	@echo "  make pr-base PR=<number>      - Check a PR's base branch (needs gh)"
+	@echo "  make hooks                    - Run make ci before every git push"
+	@echo "  make unhooks                  - Turn the pre-push hook off"
 	@echo "  make test                     - Run all tests"
 	@echo "  make test-coverage            - Run tests with coverage report"
 	@echo "  make test-integration         - Run integration tests"
@@ -181,6 +184,22 @@ ci:
 	$(GO_TOOL) gosec -quiet ./...
 	scripts/check-repo.sh
 	scripts/check-deadcode.sh
+
+pr-base:
+	@if [ -z "$(PR)" ]; then \
+		echo "❌ ERROR: Please specify PR=<number>"; \
+		echo "Example: make pr-base PR=14"; \
+		exit 1; \
+	fi
+	scripts/check-pr-base.sh "$(PR)"
+
+hooks:
+	git config core.hooksPath .githooks
+	@echo "✅ git push now runs make ci first. Skip once with git push --no-verify"
+
+unhooks:
+	git config --unset core.hooksPath || true
+	@echo "✅ Pre-push hook off"
 
 lint:
 	@echo "🔍 Running linter..."
