@@ -10,11 +10,11 @@ created=$(read_json .createdAt)
 default=$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name)
 [ "$base" = "$default" ] && { echo "pr-base: #$pr targets $default, ok"; exit 0; }
 if [ "${2:-}" = "--at-creation" ]; then
-	q='[.[] | select(.state=="OPEN" or (.mergedAt // "9999") > "'"$created"'")] | length'
+	q='[.[] | select(.createdAt <= "'"$created"'" and (.state=="OPEN" or .mergedAt > "'"$created"'"))] | length'
 else
 	q='[.[] | select(.state=="OPEN")] | length'
 fi
-live=$(gh pr list --state all --head "$base" --json state,mergedAt -q "$q")
+live=$(gh pr list --state all --head "$base" --json state,createdAt,mergedAt -q "$q")
 if [ "$live" -eq 0 ]; then
 	echo "pr-base: #$pr targets $base, which has no open PR. Retarget it to $default." >&2
 	exit 1
