@@ -31,13 +31,24 @@ linters:
               desc: handlers and middleware call internal/service, never the repository
             - pkg: gorm.io
               desc: handlers and middleware call internal/service, never gorm
-        service-no-driver:
+        service-no-adapters:
           files: ["**/internal/service/**", "!$test"]
           deny:
-            - pkg: go-echo-boilerplate/internal/repository/pgsql
-              desc: services depend on the repository ports in internal/repository, not the pgsql implementation
+            - pkg: go-echo-boilerplate/internal/repository
+              desc: a service declares the store methods it calls as a small interface, and core.Setup passes the repository.Store
             - pkg: gorm.io
-              desc: services depend on the repository ports, not gorm
+              desc: a service declares the store methods it calls as a small interface; gorm stays in internal/repository
+            - pkg: github.com/labstack/echo
+              desc: a service knows nothing about HTTP; handlers in internal/deliveries/http call it
+            - pkg: go-echo-boilerplate/internal/deliveries
+              desc: dependencies point inward; handlers call services, never the reverse
+        repository-no-callers:
+          files: ["**/internal/repository/**", "!$test"]
+          deny:
+            - pkg: go-echo-boilerplate/internal/service
+              desc: the repository is called by services; it never calls them
+            - pkg: go-echo-boilerplate/internal/deliveries
+              desc: the repository is called by services; it never reaches the HTTP layer
     importas:
       no-unaliased: true
       alias:
