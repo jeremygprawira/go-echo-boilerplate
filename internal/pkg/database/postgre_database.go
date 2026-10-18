@@ -23,18 +23,17 @@ func ConnectToPostgreSQL(cfg config.Validated) (*gorm.DB, error) {
 		c.PostgreSQL.SSLMode,
 		c.Application.Timezone)
 
+	loc, err := time.LoadLocation(c.Application.Timezone)
+	if err != nil {
+		return nil, fmt.Errorf("application.timezone: %w", err)
+	}
+
 	db, err := gorm.Open(postgres.New(postgres.Config{
 		DSN:                  connection,
 		PreferSimpleProtocol: true, // disables implicit prepared statement usage
 	}), &gorm.Config{
-		Logger: gormLogger(c.Application.Environment, log.New(os.Stdout, "\r\n", log.LstdFlags)),
-		NowFunc: func() time.Time {
-			loc, err := time.LoadLocation(c.Application.Timezone)
-			if err != nil {
-				return time.Now() // Fallback to system default if location loading fails
-			}
-			return time.Now().In(loc)
-		},
+		Logger:  gormLogger(c.Application.Environment, log.New(os.Stdout, "\r\n", log.LstdFlags)),
+		NowFunc: func() time.Time { return time.Now().In(loc) },
 	})
 
 	if err != nil {

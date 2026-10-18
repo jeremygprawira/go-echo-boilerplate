@@ -128,3 +128,15 @@ func TestValidate_TimeoutBelowWriteTimeout(t *testing.T) {
 	c.Application.Timeout = c.Application.WriteTimeout - time.Second
 	require.NoError(t, c.Validate())
 }
+
+func TestValidate_Timezone(t *testing.T) {
+	for _, zone := range []string{"", "UTC", "Asia/Jakarta"} {
+		c := validCfg()
+		c.Application.Timezone = zone
+		assert.NoError(t, c.Validate(), "timezone %q", zone)
+	}
+
+	c := validCfg()
+	c.Application.Timezone = "Asia/Jakart"
+	require.ErrorContains(t, c.Validate(), `application.timezone "Asia/Jakart" is not a time zone`)
+}

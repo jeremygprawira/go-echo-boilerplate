@@ -82,6 +82,9 @@ func (c *Configuration) Validate() error {
 	if c.Application.Timeout > 0 && c.Application.Timeout >= c.Application.WriteTimeout {
 		errs = append(errs, fmt.Errorf("application.timeout (%s) must be less than application.write_timeout (%s)", c.Application.Timeout, c.Application.WriteTimeout))
 	}
+	if _, err := time.LoadLocation(c.Application.Timezone); err != nil {
+		errs = append(errs, fmt.Errorf("application.timezone %q is not a time zone: %w", c.Application.Timezone, err))
+	}
 	for _, cidr := range c.Application.TrustedProxies {
 		if _, _, err := net.ParseCIDR(cidr); err != nil {
 			errs = append(errs, fmt.Errorf("application.trusted_proxies entry %q is not a CIDR: %w", cidr, err))
