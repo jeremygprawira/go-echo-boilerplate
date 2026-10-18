@@ -47,7 +47,7 @@ help:
 	@echo "  make unhooks                  - Turn the pre-push hook off"
 	@echo "  make test                     - Run all tests"
 	@echo "  make test-coverage            - Run tests with coverage report"
-	@echo "  make test-integration         - Run integration tests"
+	@echo "  make test-integration         - Run the integration suite on a throwaway Postgres (needs Docker)"
 	@echo "  make lint                     - Run linter (golangci-lint)"
 	@echo "  make lint-fix                 - Run linter and auto-fix issues"
 	@echo "  make security-scan            - Run security vulnerability scan"
@@ -108,8 +108,7 @@ test-coverage:
 	@go tool cover -func=coverage/coverage.out | grep total
 
 test-integration:
-	@echo "🧪 Running integration tests..."
-	@go test -v -race -tags=integration ./tests/...
+	@scripts/test-integration.sh
 
 ci:
 	go mod tidy -diff
