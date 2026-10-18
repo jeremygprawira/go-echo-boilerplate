@@ -138,9 +138,9 @@ graph LR
 
 Detailed documentation is available in the `docs/` directory:
 
-- **[Makefile Guide](docs/markdowns/MAKEFILE_GUIDE.md)**: Reference for all available make commands.
+- **`make help`**: Lists every make command.
 - **[JWT Usage](docs/markdowns/JWT_USAGE.md)**: Guide on token generation, validation, and rotation.
-- **[Logging Guide](docs/markdowns/Logging.md)**: Explanation of the canonical logging pattern, wide events, and credential masking.
+- **[Logging Guide](docs/markdowns/LOGGING.md)**: Explanation of the canonical logging pattern, wide events, and credential masking.
 
 ## 🧪 Testing
 
