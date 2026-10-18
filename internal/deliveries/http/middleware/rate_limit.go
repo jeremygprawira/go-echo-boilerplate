@@ -125,9 +125,10 @@ func (s *rateLimiterStore) evictLoop() {
 // well-behaved client can back off before being rejected, and a 429 carries
 // Retry-After computed from the token bucket's actual refill delay.
 //
-// The client identity is c.RealIP(). core.BuildHTTPServer sets e.IPExtractor
-// from application.trusted_proxies, so a client cannot pick its own bucket by
-// sending X-Forwarded-For or X-Real-IP.
+// A bucket is keyed by the route and c.RealIP(), so one instance mounted on
+// several routes gives each route its own budget. core.BuildHTTPServer sets
+// e.IPExtractor from application.trusted_proxies, so a client cannot pick its
+// own bucket by sending X-Forwarded-For or X-Real-IP.
 func RateLimiter(cfg *appconfig.Configuration) echo.MiddlewareFunc {
 	mw, _ := rateLimiter(cfg)
 	return mw
@@ -150,7 +151,7 @@ func rateLimiter(cfg *appconfig.Configuration) (echo.MiddlewareFunc, *rateLimite
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			limiter := store.getLimiter(clientIP(c))
+			limiter := store.getLimiter(c.Path() + " " + clientIP(c))
 
 			reservation := limiter.ReserveN(time.Now(), 1)
 			delay := reservation.Delay()

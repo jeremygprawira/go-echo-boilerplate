@@ -33,7 +33,28 @@ func TestRateLimiter_HeaderSizedIdentifierIsNotStored(t *testing.T) {
 
 	require.Equal(t, []int{http.StatusOK, http.StatusTooManyRequests}, codes)
 	require.Len(t, store.visitors, 1)
-	require.Contains(t, store.visitors, "192.0.2.1")
+	require.Contains(t, store.visitors, "/login 192.0.2.1")
+}
+
+func TestRateLimiter_OneInstanceKeepsABudgetPerRoute(t *testing.T) {
+	cfg := &config.Configuration{}
+	cfg.RateLimit = config.RateLimit{Enabled: true, Rate: 0.001, Burst: 1, ExpiresIn: "3m"}
+	mw := RateLimiter(cfg)
+	e := echo.New()
+	ok := func(c echo.Context) error { return c.NoContent(http.StatusOK) }
+	e.POST("/login", ok, mw)
+	e.POST("/refresh", ok, mw)
+
+	var codes []int
+	for _, path := range []string{"/login", "/login", "/refresh", "/refresh"} {
+		req := httptest.NewRequest(http.MethodPost, path, nil)
+		req.RemoteAddr = "192.0.2.1:1234"
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		codes = append(codes, rec.Code)
+	}
+
+	require.Equal(t, []int{http.StatusOK, http.StatusTooManyRequests, http.StatusOK, http.StatusTooManyRequests}, codes)
 }
 
 func TestRateLimiterStore_IsCapped(t *testing.T) {
