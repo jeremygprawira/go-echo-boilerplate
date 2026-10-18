@@ -1,4 +1,4 @@
-.PHONY: help build build-prod run dev clean test test-coverage test-integration docker-up docker-down docker-logs docker-clean docs lint lint-fix tidy migrate-up migrate-down migrate-status migrate-create check-config install-tools security-scan run-local run-dev run-uat run-prod
+.PHONY: help ci build build-prod run dev clean test test-coverage test-integration docker-up docker-down docker-logs docker-clean docs lint lint-fix tidy migrate-up migrate-down migrate-status migrate-create check-config install-tools security-scan run-local run-dev run-uat run-prod
 
 # Default target
 .DEFAULT_GOAL := help
@@ -66,6 +66,7 @@ help:
 	@echo "  make migrate-create NAME=xxx  - Create new migration file"
 	@echo ""
 	@echo "🧪 Testing & Quality:"
+	@echo "  make ci                       - Run every check CI runs"
 	@echo "  make test                     - Run all tests"
 	@echo "  make test-coverage            - Run tests with coverage report"
 	@echo "  make test-integration         - Run integration tests"
@@ -171,6 +172,16 @@ test-integration:
 # ============================================================================
 # Code Quality
 # ============================================================================
+ci:
+	go mod tidy -diff
+	cd tools && go mod tidy -diff
+	go build ./...
+	go test -race ./...
+	$(GO_TOOL) golangci-lint run ./...
+	$(GO_TOOL) gosec -quiet ./...
+	scripts/check-repo.sh
+	scripts/check-deadcode.sh
+
 lint:
 	@echo "🔍 Running linter..."
 	@$(GO_TOOL) golangci-lint run ./...
