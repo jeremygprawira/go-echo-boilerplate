@@ -28,9 +28,11 @@ linters:
           files: ["**/internal/deliveries/**", "!$test"]
           deny:
             - pkg: go-echo-boilerplate/internal/repository
-              desc: handlers and middleware call internal/service, never the repository
+              desc: handlers and middleware reach data through a service, never the repository
             - pkg: gorm.io
-              desc: handlers and middleware call internal/service, never gorm
+              desc: handlers and middleware reach data through a service, never gorm
+            - pkg: go-echo-boilerplate/internal/service
+              desc: a handler declares the service methods it calls as a small interface, and core.Setup passes the service
         service-no-adapters:
           files: ["**/internal/service/**", "!$test"]
           deny:
