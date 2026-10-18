@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"go-echo-boilerplate/internal/config"
 	"go-echo-boilerplate/internal/config/configtest"
@@ -118,6 +119,7 @@ type reply struct {
 		Tokens []struct {
 			Token string `json:"token"`
 		} `json:"tokens"`
+		CreatedAt time.Time `json:"createdAt"`
 	} `json:"data"`
 }
 
@@ -147,10 +149,11 @@ func do(t *testing.T, method, path, bearer string, body any) (int, reply) {
 
 const password = "Passw0rd!"
 
-func register(t *testing.T, email string) {
+func register(t *testing.T, email string) reply {
 	t.Helper()
 	code, out := post(t, "/api/v1/users", "", map[string]any{"name": "Integration", "email": email, "password": password})
 	require.Equal(t, http.StatusCreated, code, "register %s: %+v", email, out)
+	return out
 }
 
 func login(t *testing.T, email string) (access, refresh string) {
@@ -228,4 +231,14 @@ func TestRefresh_FailsAfterUserRowIsDeleted(t *testing.T) {
 
 	code, _ := post(t, "/api/v1/users/tokens/refresh", "", map[string]any{"refreshToken": refresh})
 	assert.Equal(t, http.StatusUnauthorized, code, "refresh for a deleted user")
+}
+
+func TestMe_ReturnsTheCreatedAtThatRegisterReturned(t *testing.T) {
+	registered := register(t, "clock@example.test")
+	access, _ := login(t, "clock@example.test")
+
+	code, me := do(t, http.MethodGet, "/api/v1/users/me", access, nil)
+	require.Equal(t, http.StatusOK, code)
+	assert.WithinDuration(t, registered.Data.CreatedAt, me.Data.CreatedAt, time.Millisecond,
+		"/me returns the instant that register returned, with application.timezone Asia/Jakarta")
 }
