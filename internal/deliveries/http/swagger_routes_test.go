@@ -48,6 +48,9 @@ func TestSwaggerSpecDefinesItsInfoAndEverySecurityScheme(t *testing.T) {
 	assert.NotEmpty(t, spec.Info.Title, "the general info block must sit in the file that make docs passes to swag -g")
 	for p, operations := range spec.Paths {
 		for method, op := range operations {
+			if underAPI(path.Join(spec.BasePath, p)) {
+				assert.NotEmpty(t, op.Security, "%s %s names no security scheme, so Swagger UI sends no X-API-Key. Add @Security ApiKeyAuth", method, p)
+			}
 			for _, requirement := range op.Security {
 				for scheme := range requirement {
 					assert.Contains(t, spec.SecurityDefinitions, scheme, "%s %s names an undefined security scheme", method, p)
