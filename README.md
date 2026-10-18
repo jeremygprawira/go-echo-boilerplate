@@ -154,6 +154,16 @@ make test
 make test-coverage
 ```
 
+### Run the checks locally or in CI
+
+`make ci` runs every check: module tidiness, build, tests with the race detector, golangci-lint, gosec, the repo rules and the dead-code check. You do not need GitHub Actions to use it. Pick one or more of these options:
+
+- Run `make ci` by hand before you push.
+- Run `make hooks` once. After that, every `git push` runs `make ci` first and stops the push if a check fails. To skip it for one push, use `git push --no-verify`. To turn it off, run `make unhooks`.
+- Rely on CI. The GitHub Actions workflow runs the same `make ci`.
+
+On pull requests, CI also checks that the PR targets `master` or a branch with an open PR. To run that check locally, use `make pr-base PR=<number>`. It needs the `gh` CLI, logged in.
+
 ## 🐳 Docker Support
 
 Run the application fully containerized:

@@ -6,6 +6,9 @@ This file provides guidance to coding agents (Claude Code, Codex and similar too
 
 ```bash
 make ci                       # Every check CI runs. Run it before you push
+make hooks                    # Opt in: git push runs make ci first (skip once: git push --no-verify)
+make unhooks                  # Turn the pre-push hook off
+make pr-base PR=<number>      # The CI PR base check, run locally (needs an authenticated gh)
 make dev                      # Hot-reload dev server (air); regenerates Swagger docs first
 make run ENV=local            # Run without hot-reload (ENV=local|dev|uat|prod)
 make build                    # Build binary to bin/server
@@ -27,7 +30,7 @@ go test -v -race ./internal/service/ -run TestUserService_Create
 ```
 
 Notes:
-- `make ci` runs `go mod tidy -diff` for both modules, build, `go test -race`, golangci-lint, gosec, `scripts/check-repo.sh` and `scripts/check-deadcode.sh`. CI runs `make ci` as its one job, plus `scripts/check-pr-base.sh` on pull requests.
+- `make ci` runs `go mod tidy -diff` for both modules, build, `go test -race`, golangci-lint, gosec, `scripts/check-repo.sh` and `scripts/check-deadcode.sh`. CI runs `make ci` as its one job, plus `scripts/check-pr-base.sh` on pull requests. Without GitHub Actions, run the same checks locally: `make ci` by hand, `make hooks` for the opt-in pre-push hook in `.githooks/pre-push`, and `make pr-base PR=<number>`.
 - golangci-lint, gosec and deadcode are pinned in `tools/go.mod` and run as `go tool -modfile=tools/go.mod <tool>`. Change a tool version there, never with `go install ...@latest`. A bare `golangci-lint` on your PATH can be another version with other defaults, so always use `make lint` or `make ci`.
 - The `ENV` env var selects the config file: `config/config.<env>.yaml`, loaded via Viper (`internal/config/config.go`). `make run` fails if the file is missing.
 - `application.environment` must be one of `local`, `dev`, `uat`, `staging`, `prod`, `production` (case and surrounding space ignored), or `Validate` fails. `IsProduction()` is true for `prod` and `production`.
@@ -77,4 +80,4 @@ Each rule has a check that fails on a real past commit. Add a row when you add a
 | No `config/config.<env>.yaml` is tracked, only the local example | `scripts/check-repo.sh` | 8f86790 |
 | Agent scratch (`.serena/`, `docs/superpowers/`) is never tracked | `scripts/check-repo.sh` | 9bf871f |
 | A change adds no unreachable func, unless `scripts/deadcode-allow.txt` lists it with a reason | `scripts/check-deadcode.sh` | bfa1c5a, 16476e2 |
-| A PR targets `master` or a branch with an open PR | `scripts/check-pr-base.sh` (CI, pull requests) | PR #12 |
+| A PR targets `master` or a branch with an open PR | `scripts/check-pr-base.sh` (CI, pull requests), or `make pr-base PR=<number>` locally | PR #12 |
