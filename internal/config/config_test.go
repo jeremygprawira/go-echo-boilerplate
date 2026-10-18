@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -57,10 +58,10 @@ func TestInitialize_OnlyExplicitFalseDisablesRateLimit(t *testing.T) {
 }
 
 func TestInitialize_DecodesDurations(t *testing.T) {
-	c, err := initialize(t, "application: {environment: local, timeout: 30s, read_timeout: 20s}\n"+secrets+
+	c, err := initialize(t, "application: {environment: local, timeout: 25s, read_timeout: 20s}\n"+secrets+
 		"idempotency: {ttl: 2m}\npostgresql: {conn_max_lifetime: 1h}\n")
 	require.NoError(t, err)
-	assert.Equal(t, 30*time.Second, c.Application.Timeout)
+	assert.Equal(t, 25*time.Second, c.Application.Timeout)
 	assert.Equal(t, 20*time.Second, c.Application.ReadTimeout)
 	assert.Equal(t, 60*time.Second, c.Application.IdleTimeout, "default")
 	assert.Equal(t, 15*time.Minute, c.Authorization.Access.Duration)
@@ -120,4 +121,16 @@ func TestValidated_GetReturnsACopy(t *testing.T) {
 	c := v.Get()
 	c.RateLimit.Enabled = false
 	assert.True(t, v.Get().RateLimit.Enabled)
+}
+
+func TestInitialize_ExampleConfigFailsOnlyOnItsPlaceholders(t *testing.T) {
+	example, err := os.ReadFile(filepath.Join("..", "..", "config", "config.local.example.yaml"))
+	require.NoError(t, err)
+
+	_, err = initialize(t, string(example))
+
+	require.Error(t, err)
+	for _, line := range strings.Split(strings.TrimPrefix(err.Error(), "invalid configuration: "), "\n") {
+		assert.Contains(t, line, "still holds the example placeholder")
+	}
 }

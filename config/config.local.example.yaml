@@ -6,8 +6,9 @@ application:
   environment: local # one of local, dev, uat, staging, prod, production
   host: 
   # Per-request deadline. Every duration in this file needs a unit, such as 30s;
-  # a bare number fails startup. Leave timeout empty for no deadline.
-  timeout: 30s
+  # a bare number fails startup. Leave timeout empty for no deadline. When set,
+  # it must be less than write_timeout, so the deadline's error reaches the client.
+  timeout: 25s
   timezone: "Asia/Jakarta"
   max_body_size: 1M
   # CIDRs of reverse proxies whose X-Forwarded-For is trusted, e.g. ["10.0.0.0/8"].

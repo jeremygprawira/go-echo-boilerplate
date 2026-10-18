@@ -119,3 +119,12 @@ func TestValidate_ApplicationTimeout(t *testing.T) {
 	c.Application.Timeout = 0
 	require.NoError(t, c.Validate(), "application.timeout stays optional")
 }
+
+func TestValidate_TimeoutBelowWriteTimeout(t *testing.T) {
+	c := validCfg()
+	c.Application.Timeout = c.Application.WriteTimeout
+	require.ErrorContains(t, c.Validate(), "application.timeout (30s) must be less than application.write_timeout (30s)")
+
+	c.Application.Timeout = c.Application.WriteTimeout - time.Second
+	require.NoError(t, c.Validate())
+}

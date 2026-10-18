@@ -77,6 +77,11 @@ func (c *Configuration) Validate() error {
 	if c.Application.Timeout < 0 {
 		errs = append(errs, errors.New("application.timeout must not be negative"))
 	}
+	// At or above write_timeout the server cuts the connection before the
+	// request deadline can write its error body.
+	if c.Application.Timeout > 0 && c.Application.Timeout >= c.Application.WriteTimeout {
+		errs = append(errs, fmt.Errorf("application.timeout (%s) must be less than application.write_timeout (%s)", c.Application.Timeout, c.Application.WriteTimeout))
+	}
 	for _, cidr := range c.Application.TrustedProxies {
 		if _, _, err := net.ParseCIDR(cidr); err != nil {
 			errs = append(errs, fmt.Errorf("application.trusted_proxies entry %q is not a CIDR: %w", cidr, err))

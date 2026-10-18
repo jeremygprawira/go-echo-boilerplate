@@ -40,7 +40,7 @@ Notes:
 - Migrations use goose against `migration/db/postgre`; the Makefile exports `.env` before running.
 - A timestamp column is `TIMESTAMPTZ`, never `TIMESTAMP`. The app sends times over the simple protocol as UTC text, and the gorm driver reads a `TIMESTAMP` in `application.timezone`, so a `TIMESTAMP` reads back shifted by that zone's offset.
 - `application.trusted_proxies` (list of CIDRs, default empty) sets `e.IPExtractor` in `NewServer` (`internal/deliveries/http/router.go`). Empty means `c.RealIP()` is the TCP peer. Otherwise it is the rightmost `X-Forwarded-For` entry not inside a listed proxy range. `NewServer` passes the same extractor to `middleware.RateLimiter`, which keys on the IPv4 address or the IPv6 /64 it returns. The limiter never reads `c.RealIP()`, because a bare `echo.New()` trusts `X-Forwarded-For`.
-- `application.read_header_timeout`, `read_timeout`, `write_timeout`, `idle_timeout` (defaults 5s/15s/30s/60s) are set on `e.Server` in `NewServer`. `application.timeout` is the per-request deadline, empty for none. Every duration in the config file needs a unit, such as `30s`. A bare number such as `timeout: 30` fails startup with a message that names the key.
+- `application.read_header_timeout`, `read_timeout`, `write_timeout`, `idle_timeout` (defaults 5s/15s/30s/60s) are set on `e.Server` in `NewServer`. `application.timeout` is the per-request deadline, empty for none. When set, it must be less than `write_timeout`, or startup fails, because the server would close the connection before the deadline's error body is written. Every duration in the config file needs a unit, such as `30s`. A bare number such as `timeout: 30` fails startup with a message that names the key.
 
 ## Architecture
 
