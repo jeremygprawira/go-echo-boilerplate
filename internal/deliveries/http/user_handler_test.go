@@ -7,7 +7,6 @@ import (
 	"errors"
 	"go-echo-boilerplate/internal/models"
 	"go-echo-boilerplate/internal/pkg/errorc"
-	"go-echo-boilerplate/internal/pkg/generator"
 	"go-echo-boilerplate/internal/pkg/jwtc"
 	"net/http"
 	"net/http/httptest"
@@ -315,7 +314,7 @@ func TestUserHandler_Logout_TokenResolution(t *testing.T) {
 		AccessTokenDuration: 15 * time.Minute,
 		Issuer:              "test",
 	}
-	accessToken, err := generator.AccessToken(&models.User{ID: 1, AccountNumber: "1"}, cfg)
+	accessToken, err := jwtc.SignAccessToken(&models.User{ID: 1, AccountNumber: "1"}, cfg)
 	require.NoError(t, err)
 
 	t.Run("Body token takes precedence over cookie", func(t *testing.T) {

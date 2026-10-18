@@ -179,7 +179,7 @@ func (us *UserService) GetTokens(ctx context.Context, request *models.GetUserTok
 func (us *UserService) issueTokens(user *models.User) (*models.GetUserTokenResponse, error) {
 	var tokens []models.Token
 
-	accessToken, err := generator.AccessToken(user, us.jwt)
+	accessToken, err := jwtc.SignAccessToken(user, us.jwt)
 	if err != nil {
 		return nil, errorc.Internal.New().Internal("failed to generate access token").Wrap(err)
 	}
@@ -190,7 +190,7 @@ func (us *UserService) issueTokens(user *models.User) (*models.GetUserTokenRespo
 		ExpiredIn: accessToken.ExpiredIn,
 	})
 
-	refreshToken, err := generator.RefreshToken(user, us.jwt)
+	refreshToken, err := jwtc.SignRefreshToken(user, us.jwt)
 	if err != nil {
 		return nil, errorc.Internal.New().Internal("failed to generate refresh token").Wrap(err)
 	}
@@ -225,7 +225,7 @@ func (us *UserService) issueTokens(user *models.User) (*models.GetUserTokenRespo
 // issues a fresh access+refresh pair. The claim is atomic, so of several
 // concurrent requests with one token only the first mints a pair.
 func (us *UserService) RefreshTokens(ctx context.Context, refreshToken string) (*models.GetUserTokenResponse, error) {
-	claims, err := validator.RefreshToken(refreshToken, us.jwt)
+	claims, err := jwtc.ParseRefreshToken(refreshToken, us.jwt)
 	if err != nil {
 		return nil, errorc.Unauthorized.New().Public(herr.Message("invalid refresh token")).Wrap(err)
 	}
@@ -259,7 +259,7 @@ func (us *UserService) Logout(ctx context.Context, accessJTI string, refreshToke
 	}
 
 	if refreshToken != "" {
-		if claims, err := validator.RefreshToken(refreshToken, us.jwt); err == nil {
+		if claims, err := jwtc.ParseRefreshToken(refreshToken, us.jwt); err == nil {
 			if _, err := us.revoke(ctx, claims.ID, us.jwt.RefreshTokenDuration); err != nil {
 				return errorc.Internal.New().Internal("failed to revoke refresh token").Wrap(err)
 			}

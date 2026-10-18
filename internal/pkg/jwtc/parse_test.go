@@ -1,20 +1,14 @@
-package validator_test
+package jwtc_test
 
 import (
 	"go-echo-boilerplate/internal/models"
-	"go-echo-boilerplate/internal/pkg/generator"
 	"go-echo-boilerplate/internal/pkg/jwtc"
-	"go-echo-boilerplate/internal/pkg/validator"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func strPtr(s string) *string {
-	return &s
-}
 
 func TestValidateRefreshToken(t *testing.T) {
 	config := &jwtc.Configuration{
@@ -33,19 +27,19 @@ func TestValidateRefreshToken(t *testing.T) {
 	}
 
 	t.Run("Validate Correct Refresh Token", func(t *testing.T) {
-		token, err := generator.RefreshToken(user, config)
+		token, err := jwtc.SignRefreshToken(user, config)
 		assert.NoError(t, err)
 
-		claims, err := validator.RefreshToken(token.Token, config)
+		claims, err := jwtc.ParseRefreshToken(token.Token, config)
 		assert.NoError(t, err)
 		assert.Equal(t, "refresh", claims.TokenType)
 	})
 
 	t.Run("Reject Access Token", func(t *testing.T) {
-		token, err := generator.AccessToken(user, config)
+		token, err := jwtc.SignAccessToken(user, config)
 		assert.NoError(t, err)
 
-		_, err = validator.RefreshToken(token.Token, config)
+		_, err = jwtc.ParseRefreshToken(token.Token, config)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid token type")
 	})
@@ -68,10 +62,10 @@ func TestJWTClaims(t *testing.T) {
 	}
 
 	t.Run("All Claims Present", func(t *testing.T) {
-		token, err := generator.AccessToken(user, config)
+		token, err := jwtc.SignAccessToken(user, config)
 		assert.NoError(t, err)
 
-		claims, err := validator.AccessToken(token.Token, config)
+		claims, err := jwtc.ParseAccessToken(token.Token, config)
 		assert.NoError(t, err)
 
 		// Verify all custom claims
@@ -100,10 +94,10 @@ func TestAccessToken_DistinctSecrets(t *testing.T) {
 	}
 	user := &models.User{ID: 1, AccountNumber: "1234567890"}
 
-	token, err := generator.AccessToken(user, config)
+	token, err := jwtc.SignAccessToken(user, config)
 	require.NoError(t, err)
 
-	claims, err := validator.AccessToken(token.Token, config)
+	claims, err := jwtc.ParseAccessToken(token.Token, config)
 	require.NoError(t, err)
 	require.Equal(t, 1, claims.UserID)
 	require.Equal(t, "access", claims.TokenType)
@@ -119,10 +113,10 @@ func TestRefreshToken_DistinctSecrets(t *testing.T) {
 	}
 	user := &models.User{ID: 2, AccountNumber: "0987654321"}
 
-	token, err := generator.RefreshToken(user, config)
+	token, err := jwtc.SignRefreshToken(user, config)
 	require.NoError(t, err)
 
-	claims, err := validator.RefreshToken(token.Token, config)
+	claims, err := jwtc.ParseRefreshToken(token.Token, config)
 	require.NoError(t, err)
 	require.Equal(t, 2, claims.UserID)
 	require.Equal(t, "refresh", claims.TokenType)

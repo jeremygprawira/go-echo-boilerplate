@@ -76,7 +76,7 @@ func TestLogin_UnknownAndWrongPasswordLookTheSame(t *testing.T) {
 
 func TestMe_RemovedAccountIsNotFound(t *testing.T) {
 	e, mock, jwtConfig := newRealRepoServer(t)
-	token, err := generator.AccessToken(&models.User{ID: 1, AccountNumber: "100"}, jwtConfig)
+	token, err := jwtc.SignAccessToken(&models.User{ID: 1, AccountNumber: "100"}, jwtConfig)
 	require.NoError(t, err)
 
 	mock.ExpectQuery(regexp.QuoteMeta("FROM users")).WithArgs("100").

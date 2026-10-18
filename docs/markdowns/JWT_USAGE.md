@@ -24,7 +24,7 @@ authorization:
   api_key: replace-with-a-random-api-key-of-32-bytes-or-more
 ```
 
-Loaded into `jwtc.Configuration` via `jwtc.DefaultConfig(configuration)` in `internal/core/setup.go`. Access and refresh **must** use different secrets — `validator.AccessToken`/`validator.RefreshToken` each verify against their own secret and reject the other token type.
+Loaded into `jwtc.Configuration` via `jwtc.DefaultConfig(configuration)` in `internal/core/setup.go`. Access and refresh **must** use different secrets. `jwtc.ParseAccessToken` and `jwtc.ParseRefreshToken` each verify against their own secret and reject the other token type.
 
 ## Claims
 
@@ -41,26 +41,26 @@ type Claims struct {
 }
 ```
 
-Refresh tokens only populate `UserID`/`TokenType`/registered claims — `Email`/`PhoneNumber`/`AccountNumber` are left empty so a leaked refresh token doesn't carry that data (see `generator.RefreshToken`).
+Refresh tokens only populate `UserID`/`TokenType`/registered claims — `Email`/`PhoneNumber`/`AccountNumber` are left empty so a leaked refresh token doesn't carry that data (see `jwtc.SignRefreshToken`).
 
-## Generating tokens
+## Signing tokens
 
-`internal/pkg/generator/jwt.go`:
+`internal/pkg/jwtc/sign.go`:
 
 ```go
-accessToken, err := generator.AccessToken(user, jwtConfig)   // *models.Token{Type, Token, ExpiredIn}
-refreshToken, err := generator.RefreshToken(user, jwtConfig)
+accessToken, err := jwtc.SignAccessToken(user, jwtConfig)   // *models.Token{Type, Token, ExpiredIn}
+refreshToken, err := jwtc.SignRefreshToken(user, jwtConfig)
 ```
 
 Both return an error if `jwtConfig` is nil — there is no hardcoded fallback secret.
 
-## Validating tokens
+## Parsing tokens
 
-`internal/pkg/validator/jwt.go`:
+`internal/pkg/jwtc/parse.go`:
 
 ```go
-claims, err := validator.AccessToken(tokenString, jwtConfig)   // rejects TokenType != "access"
-claims, err := validator.RefreshToken(tokenString, jwtConfig)  // rejects TokenType != "refresh"
+claims, err := jwtc.ParseAccessToken(tokenString, jwtConfig)   // rejects TokenType != "access"
+claims, err := jwtc.ParseRefreshToken(tokenString, jwtConfig)  // rejects TokenType != "refresh"
 ```
 
 ## HTTP flow
@@ -77,7 +77,7 @@ Routes (`internal/deliveries/http/api/v1/user_v1_handler.go`), all under `/api/v
 
 `RefreshTokens` and `Logout` both resolve the refresh token the same way (`jwtc.ResolveRefreshToken` in `internal/pkg/jwtc`): an explicit value in the request body wins; otherwise they fall back to the `refresh_token` cookie set by `GetTokens` (login). This lets a browser client rely purely on the httpOnly cookie, a non-browser client pass the token explicitly in the body, and either client call any of the three endpoints without caring which channel the others used.
 
-`middleware.BearerAuthMiddleware` (`internal/deliveries/http/middleware/jwt.go`) does, in order: check `Authorization: Bearer <token>` header present and well-formed → `validator.AccessToken` → `revocation.IsRevoked(ctx, claims.ID)` (a `middleware.RevocationChecker`, which `service.TokenService` satisfies) → set `userID`/`accountNumber`/`email`/`phoneNumber`/`jti` on the Echo context.
+`middleware.BearerAuthMiddleware` (`internal/deliveries/http/middleware/jwt.go`) does, in order: check `Authorization: Bearer <token>` header present and well-formed → `jwtc.ParseAccessToken` → `revocation.IsRevoked(ctx, claims.ID)` (a `middleware.RevocationChecker`, which `service.TokenService` satisfies) → set `userID`/`accountNumber`/`email`/`phoneNumber`/`jti` on the Echo context.
 
 ### Refresh (`UserService.RefreshTokens`)
 

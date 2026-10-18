@@ -10,9 +10,7 @@ import (
 	httpdelivery "go-echo-boilerplate/internal/deliveries/http"
 	"go-echo-boilerplate/internal/deliveries/http/middleware"
 	"go-echo-boilerplate/internal/models"
-	"go-echo-boilerplate/internal/pkg/generator"
 	"go-echo-boilerplate/internal/pkg/jwtc"
-	"go-echo-boilerplate/internal/pkg/validator"
 
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/require"
@@ -30,10 +28,10 @@ func TestBearer_RejectsRevokedToken(t *testing.T) {
 		AccessTokenDuration: 15 * time.Minute,
 		Issuer:              "test",
 	}
-	tok, err := generator.AccessToken(&models.User{ID: 1, AccountNumber: "1"}, cfg)
+	tok, err := jwtc.SignAccessToken(&models.User{ID: 1, AccountNumber: "1"}, cfg)
 	require.NoError(t, err)
 
-	claims, err := validator.AccessToken(tok.Token, cfg)
+	claims, err := jwtc.ParseAccessToken(tok.Token, cfg)
 	require.NoError(t, err)
 
 	store := revokedSet{claims.ID: true}
@@ -58,7 +56,7 @@ func TestBearer_AllowsNonRevokedToken(t *testing.T) {
 		AccessTokenDuration: 15 * time.Minute,
 		Issuer:              "test",
 	}
-	tok, err := generator.AccessToken(&models.User{ID: 1, AccountNumber: "1"}, cfg)
+	tok, err := jwtc.SignAccessToken(&models.User{ID: 1, AccountNumber: "1"}, cfg)
 	require.NoError(t, err)
 
 	store := revokedSet{}

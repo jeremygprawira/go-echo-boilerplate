@@ -1,17 +1,16 @@
-package generator
+package jwtc
 
 import (
 	"fmt"
 	"go-echo-boilerplate/internal/models"
-	jwtc "go-echo-boilerplate/internal/pkg/jwtc"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
 
-// GenerateAccessToken generates a JWT access token for the given user
-func AccessToken(user *models.User, config *jwtc.Configuration) (*models.Token, error) {
+// SignAccessToken signs a short-lived access token for user.
+func SignAccessToken(user *models.User, config *Configuration) (*models.Token, error) {
 	if config == nil {
 		return nil, fmt.Errorf("jwt configuration is required")
 	}
@@ -26,7 +25,7 @@ func AccessToken(user *models.User, config *jwtc.Configuration) (*models.Token, 
 		phoneNumber = *user.PhoneNumber
 	}
 
-	claims := jwtc.Claims{
+	claims := Claims{
 		UserID:        user.ID,
 		Email:         email,
 		PhoneNumber:   phoneNumber,
@@ -55,9 +54,9 @@ func AccessToken(user *models.User, config *jwtc.Configuration) (*models.Token, 
 	}, nil
 }
 
-// GenerateRefreshToken generates a JWT refresh token for the given user
-// Refresh tokens are long-lived (default: 7 days) and used to obtain new access tokens
-func RefreshToken(user *models.User, config *jwtc.Configuration) (*models.Token, error) {
+// SignRefreshToken signs a long-lived refresh token for user. It is used only
+// to get a new access token.
+func SignRefreshToken(user *models.User, config *Configuration) (*models.Token, error) {
 	if config == nil {
 		return nil, fmt.Errorf("jwt configuration is required")
 	}
@@ -66,7 +65,7 @@ func RefreshToken(user *models.User, config *jwtc.Configuration) (*models.Token,
 	// Refresh tokens contain MINIMAL claims for security
 	// Only UserID is needed to identify the user when refreshing
 	// Sensitive data (email, phone, account number) is excluded to minimize exposure
-	claims := jwtc.Claims{
+	claims := Claims{
 		UserID:    user.ID,
 		TokenType: "refresh",
 		// Email, PhoneNumber, and AccountNumber intentionally omitted for security

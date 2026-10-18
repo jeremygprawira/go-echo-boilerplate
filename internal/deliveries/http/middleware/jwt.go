@@ -4,7 +4,6 @@ import (
 	"context"
 	"go-echo-boilerplate/internal/pkg/errorc"
 	"go-echo-boilerplate/internal/pkg/jwtc"
-	"go-echo-boilerplate/internal/pkg/validator"
 	"strings"
 
 	"github.com/jeremygprawira/herr"
@@ -46,7 +45,7 @@ func BearerAuthMiddleware(config *jwtc.Configuration, revocation RevocationCheck
 			tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 
 			// Validate access token (handles signature, expiration, type validation)
-			claims, err := validator.AccessToken(tokenString, config)
+			claims, err := jwtc.ParseAccessToken(tokenString, config)
 			if err != nil {
 				return errorc.Unauthorized.New().Wrap(err)
 			}

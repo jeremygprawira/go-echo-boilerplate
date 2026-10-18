@@ -7,8 +7,7 @@ import (
 
 	"go-echo-boilerplate/internal/models"
 	"go-echo-boilerplate/internal/pkg/errorc"
-	"go-echo-boilerplate/internal/pkg/generator"
-	"go-echo-boilerplate/internal/pkg/validator"
+	"go-echo-boilerplate/internal/pkg/jwtc"
 	"go-echo-boilerplate/internal/service"
 
 	"github.com/stretchr/testify/assert"
@@ -41,7 +40,7 @@ func TestUserService_RefreshTokens(t *testing.T) {
 		mockRepo := new(MockUserRepository)
 		user := &models.User{ID: 1, AccountNumber: "123456"}
 
-		refreshToken, err := generator.RefreshToken(user, testJWTConfig())
+		refreshToken, err := jwtc.SignRefreshToken(user, testJWTConfig())
 		require.NoError(t, err)
 
 		mockRepo.On("UserByID", mock.Anything, 1).Return(user, nil)
@@ -61,12 +60,12 @@ func TestUserService_RefreshTokens(t *testing.T) {
 		mockRepo := new(MockUserRepository)
 		user := &models.User{ID: 1, AccountNumber: "123456"}
 
-		refreshToken, err := generator.RefreshToken(user, testJWTConfig())
+		refreshToken, err := jwtc.SignRefreshToken(user, testJWTConfig())
 		require.NoError(t, err)
 
 		store := newMemRevoked()
 
-		claims, err := validator.RefreshToken(refreshToken.Token, testJWTConfig())
+		claims, err := jwtc.ParseRefreshToken(refreshToken.Token, testJWTConfig())
 		require.NoError(t, err)
 		_, err = store.RevokeToken(context.Background(), claims.ID, time.Now().Add(testJWTConfig().RefreshTokenDuration))
 		require.NoError(t, err)
@@ -96,7 +95,7 @@ func TestUserService_RefreshTokens(t *testing.T) {
 		mockRepo := new(MockUserRepository)
 		user := &models.User{ID: 1, AccountNumber: "123456"}
 
-		refreshToken, err := generator.RefreshToken(user, testJWTConfig())
+		refreshToken, err := jwtc.SignRefreshToken(user, testJWTConfig())
 		require.NoError(t, err)
 
 		// UserByID returning (nil, nil) is how the repository reports "no such
@@ -135,10 +134,10 @@ func TestUserService_Logout(t *testing.T) {
 		store := newMemRevoked()
 		user := &models.User{ID: 1, AccountNumber: "123456"}
 
-		refreshToken, err := generator.RefreshToken(user, testJWTConfig())
+		refreshToken, err := jwtc.SignRefreshToken(user, testJWTConfig())
 		require.NoError(t, err)
 
-		claims, err := validator.RefreshToken(refreshToken.Token, testJWTConfig())
+		claims, err := jwtc.ParseRefreshToken(refreshToken.Token, testJWTConfig())
 		require.NoError(t, err)
 
 		svc := service.NewUserService(fakeStore{mockRepo, store}, testJWTConfig())
