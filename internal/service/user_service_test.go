@@ -271,6 +271,23 @@ func TestGetTokens_UserNotFound_GenericError(t *testing.T) {
 	mockRepo.AssertExpectations(t)
 }
 
+func TestGetTokens_StoreFailureIsDatabaseError(t *testing.T) {
+	mockRepo := new(MockUserRepository)
+	mockRepo.
+		On("UserCredentials", mock.Anything, "user@example.com", "").
+		Return(nil, errors.New("connection reset"))
+
+	svc := service.NewUserService(fakeStore{mockRepo, newMemRevoked()}, nil)
+
+	_, err := svc.GetTokens(context.Background(), &models.GetUserTokenRequest{
+		Email:    "user@example.com",
+		Password: "whatever",
+	})
+
+	require.True(t, errorc.Database.Is(err), "got %v", err)
+	mockRepo.AssertExpectations(t)
+}
+
 func TestGetTokens_WrongPassword_SameGenericError(t *testing.T) {
 	hashed, _ := generator.Hash("correct-password")
 	mockRepo := new(MockUserRepository)
