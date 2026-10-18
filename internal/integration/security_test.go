@@ -10,8 +10,10 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -174,6 +176,16 @@ func do(t *testing.T, method, path, bearer string, body any) (int, reply) {
 
 const password = "Passw0rd!"
 
+var emails atomic.Int64
+
+var nonAlnum = regexp.MustCompile(`[^a-z0-9]+`)
+
+// email returns an address unused in this process, because the schema resets
+// once per process and -count or -shuffle rerun tests in it.
+func email(t *testing.T) string {
+	return fmt.Sprintf("%s-%d@example.test", nonAlnum.ReplaceAllString(strings.ToLower(t.Name()), "-"), emails.Add(1))
+}
+
 func register(t *testing.T, email string) reply {
 	t.Helper()
 	code, out := post(t, "/api/v1/users", "", map[string]any{"name": "Integration", "email": email, "password": password})
@@ -190,19 +202,22 @@ func login(t *testing.T, email string) (access, refresh string) {
 }
 
 func TestLogin_UnknownAccountAndWrongPasswordLookTheSame(t *testing.T) {
-	register(t, "enum@example.test")
+	mail := email(t)
+	register(t, mail)
 
-	unknownCode, unknown := post(t, "/api/v1/users/tokens", "", map[string]any{"email": "nobody@example.test", "password": password})
-	wrongCode, wrong := post(t, "/api/v1/users/tokens", "", map[string]any{"email": "enum@example.test", "password": "WrongPassw0rd!"})
+	unknownCode, unknown := post(t, "/api/v1/users/tokens", "", map[string]any{"email": email(t), "password": password})
+	wrongCode, wrong := post(t, "/api/v1/users/tokens", "", map[string]any{"email": mail, "password": "WrongPassw0rd!"})
 
 	assert.Equal(t, http.StatusUnauthorized, wrongCode, "wrong password")
+	assert.NotEmpty(t, wrong.ErrorCode, "wrong password has an error code")
 	assert.Equal(t, wrongCode, unknownCode, "unknown account answers like a wrong password")
 	assert.Equal(t, wrong.ErrorCode, unknown.ErrorCode, "unknown account has the wrong-password error code")
 }
 
 func TestLogout_RevokesAccessAndRefreshTokens(t *testing.T) {
-	register(t, "logout@example.test")
-	access, refresh := login(t, "logout@example.test")
+	mail := email(t)
+	register(t, mail)
+	access, refresh := login(t, mail)
 
 	code, out := post(t, "/api/v1/users/logout", access, map[string]any{"refreshToken": refresh})
 	require.Equal(t, http.StatusOK, code, "logout: %+v", out)
@@ -215,8 +230,9 @@ func TestLogout_RevokesAccessAndRefreshTokens(t *testing.T) {
 
 func TestRefresh_ConcurrentUseOfOneTokenMintsOnce(t *testing.T) {
 	const callers, rounds = 5, 5
-	register(t, "race@example.test")
-	_, refresh := login(t, "race@example.test")
+	mail := email(t)
+	register(t, mail)
+	_, refresh := login(t, mail)
 
 	for round := range rounds {
 		start := make(chan struct{})
@@ -248,10 +264,11 @@ func TestRefresh_ConcurrentUseOfOneTokenMintsOnce(t *testing.T) {
 }
 
 func TestRefresh_FailsAfterUserRowIsDeleted(t *testing.T) {
-	register(t, "deleted@example.test")
-	_, refresh := login(t, "deleted@example.test")
+	mail := email(t)
+	register(t, mail)
+	_, refresh := login(t, mail)
 
-	_, err := db.Exec("DELETE FROM users WHERE email = $1", "deleted@example.test")
+	_, err := db.Exec("DELETE FROM users WHERE email = $1", mail)
 	require.NoError(t, err)
 
 	code, _ := post(t, "/api/v1/users/tokens/refresh", "", map[string]any{"refreshToken": refresh})
@@ -259,8 +276,9 @@ func TestRefresh_FailsAfterUserRowIsDeleted(t *testing.T) {
 }
 
 func TestMe_ReturnsTheCreatedAtThatRegisterReturned(t *testing.T) {
-	registered := register(t, "clock@example.test")
-	access, _ := login(t, "clock@example.test")
+	mail := email(t)
+	registered := register(t, mail)
+	access, _ := login(t, mail)
 
 	code, me := do(t, http.MethodGet, "/api/v1/users/me", access, nil)
 	require.Equal(t, http.StatusOK, code)
