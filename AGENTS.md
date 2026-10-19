@@ -126,6 +126,13 @@ Tests live beside the code (`*_test.go`) and use testify. Repository tests use g
 - Each test makes its own emails with `email(t)`, so reruns and shuffles work. The script runs without `-race` for speed, and the suite passes with `-race`.
 - `cmd/http`'s `TestRun_PortInUseIsAnErrorNamingTheListenFailure` needs Postgres to get past `core.Setup`, and skips without `TEST_DATABASE_URL`.
 
+## Using this repo as a template
+
+A repo made with GitHub's "Use this template", or a shallow clone, starts without this repo's history. `scripts/check-repo.sh` then cannot find this repo's first commit, `3a6d57d`. It prints one line, "no project history here, so the rule table's commit citations were not checked", and runs every other check.
+- Keep the rules and their checks. The "Fails on" column is this repo's history, so its commits and PR numbers are not in yours. You can keep them as the record of why each rule exists, or drop them. A cell without a commit needs a probe: a sentence that says how to break the code on purpose so the check fails.
+- Once your rows cite your own commits, set `history_anchor` in `scripts/check-repo.sh` to your first commit (`git rev-list --max-parents=0 HEAD`), so the citations are checked again. When you drop rules, lower `min_rule_rows` there too.
+- Set the module name. Run `go mod edit -module github.com/you/service`, then `git grep -lz 'go-echo-boilerplate/' -- '*.go' .golangci.yml scripts/deadcode-allow.txt | xargs -0 perl -pi -e 's#(^|["\s])go-echo-boilerplate/#$1github.com/you/service/#g'`, then `make ci`. The `go-echo-boilerplate` names in `docker-compose.yml` and the config `issuer` are plain names. Change them if you like.
+
 ## Judgment rules
 
 No check enforces these. Each one is a mistake that agents made at least twice here.
@@ -223,6 +230,7 @@ Each rule has a check that fails on a real past commit. When no past commit brok
 | No `config/config.<env>.yaml` is tracked, only the local example | `scripts/check-repo.sh` | 8f86790 |
 | Agent scratch (`.serena/`, `docs/superpowers/`) is never tracked | `scripts/check-repo.sh` | 9bf871f |
 | This table sits under its heading in a readable `AGENTS.md` and keeps at least 50 rows | `scripts/check-repo.sh` | no past violation. Probe: every row deleted, the heading renamed, or `AGENTS.md` deleted. The checker before this row passed all three |
+| A copy without this repo's first commit, `3a6d57d`, prints one notice line and skips the commit and PR citations of this table, and runs every other check. A copy with it still fails on a cited commit outside HEAD's history | `scripts/check-repo.sh` | no past violation. Probe: a `git archive` copy committed to a fresh `git init` repo, which failed with one "not an ancestor of HEAD" line per cited commit before this row |
 | Every commit in the "Fails on" column of this table is an ancestor of HEAD. Each `PR #n` is named by a merge commit in HEAD's history. Each `Probe:` says what it breaks in 20 characters or more | `scripts/check-repo.sh` | no past violation. Probe: a row that cites a commit outside HEAD's history, a row that cites a pull request number that no merge names, and a row whose cell is the probe marker alone |
 | Each "Enforced by" cell names a command: a backticked make target, `scripts/` path, `go test`, `go build` or test func. Each name in it exists: a test func, a make target, a path, a linter in an `enable:` list of `.golangci.yml`, or an identifier in the Go code. A test paired with `make test` runs without `TEST_DATABASE_URL`, and no cited test skips unconditionally. Each "Fails on" cell names a commit, a PR or a probe | `scripts/check-repo.sh` | no past violation. Probe: a renamed test, a renamed make target, the PR 9 table, whose rows said only "no past violation", `make lint` without backticks, an integration test relabelled `make test`, a cited test with `t.Skip()`, and forbidigo dropped from `enable:` with its settings kept |
 | This repo is a boilerplate. A generic helper with no caller stays when it has a behavior test and a line in `scripts/deadcode-allow.txt` that says why. Duplicates and speculative infrastructure get deleted | `scripts/check-deadcode.sh` for the line. Review for the test | 1c90978 |

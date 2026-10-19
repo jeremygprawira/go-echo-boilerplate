@@ -37,6 +37,10 @@ check_no_tracked_agent_files() {
 # their mistakes become impossible, while a lost table or block still fails.
 min_rule_rows=50
 
+# The repo's first commit. A copy without it, such as a repo made from this
+# template or a shallow clone, has none of the commits the table cites.
+history_anchor=3a6d57d
+
 rule_rows() {
 	awk '/^## Rules and what enforces them$/{on=1; next} /^## /{on=0} on && /^\| / && !/^\| (Rule|---) /' AGENTS.md
 }
@@ -59,7 +63,11 @@ check_rule_table_present() {
 }
 
 check_rule_table_commits() {
-	local row cell sha full rest probe n merges rc=0
+	local row cell sha full rest probe n merges history=1 rc=0
+	if ! git rev-parse -q --verify "$history_anchor^{commit}" >/dev/null; then
+		echo "check-repo: no project history here, so the rule table's commit citations were not checked"
+		history=0
+	fi
 	merges=$(git log --merges --format=%s)
 	while IFS= read -r row; do
 		cell=$(awk -F'|' '{print $(NF-1)}' <<<"$row")
@@ -76,6 +84,7 @@ check_rule_table_commits() {
 				rc=1
 			fi
 		done
+		[ "$history" = 1 ] || continue
 		for n in $(grep -oE 'PR #[0-9]+' <<<"$cell" | tr -d 'PR #'); do
 			if ! grep -qE "pull request #$n( |$)" <<<"$merges"; then
 				echo "rule table cites PR #$n, which no merge commit in HEAD's history names: $row"
