@@ -152,6 +152,7 @@ Each rule has a check that fails on a real past commit. Add a row when you add a
 | The integration suite passes when rerun and shuffled in one process | `scripts/test-integration.sh -count=2 -shuffle=on` | 447a593 |
 | A refresh whose user lookup fails with anything but `models.ErrNotFound` answers 500 `DATABASE_ERROR` and leaves the refresh token usable | `make test` (`TestUserService_RefreshTokens`) | cf4df4e |
 | A revocation row expires at the token's own `exp`, not at now plus the configured lifetime | `make test` (`TestUserService_RevocationExpiresWithItsToken`, `TestLogout_StoresTheAccessTokensOwnExpiry`) | cf4df4e |
+| `ParseAccessToken` and `ParseRefreshToken` reject a token without `exp`, so the bearer middleware answers 401 for one signed with our secret. `SignAccessToken` and `SignRefreshToken` set `exp` to now plus the configured lifetime | `make test` (`TestParse_RejectsATokenWithoutExp`, `TestMe_AccessTokenWithoutExpIsUnauthorized`, `TestSign_EveryTokenCarriesItsExp`) | cf4df4e |
 | Echo's middleware package is imported as `echoMiddleware` | `make lint` (importas) | ab33d3a^ |
 | Every returned error is checked, including `Close` | `make lint` (errcheck) | 1c90978 |
 | Every Go file is gofmt-clean | `make lint` (the gofmt formatter in `.golangci.yml`) | no past violation: PR 6 had already formatted the one offender, so a probe file proves the rule |
