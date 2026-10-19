@@ -1,7 +1,6 @@
 # Go Echo Boilerplate
 
 ![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat&logo=go)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 A clean-architecture boilerplate for REST APIs in Go with the Echo framework. Use it as the start of any kind of service.
 
@@ -91,6 +90,12 @@ Dependencies point inward. A service never imports the repository, gorm or echo,
     make install-tools
     ```
 
+    `go install` puts them in `$(go env GOPATH)/bin`. Add that folder to your `PATH`, or `make dev` and `make migrate-up` cannot find them:
+
+    ```bash
+    export PATH="$(go env GOPATH)/bin:$PATH"
+    ```
+
     golangci-lint, gosec, deadcode and swag need no install. They are pinned in `tools/go.mod` and run through `go tool -modfile=tools/go.mod`.
 
 3. Create `.env` for the Compose Postgres and the migrations:
@@ -112,11 +117,11 @@ Dependencies point inward. A service never imports the repository, gorm or echo,
 5. Start Postgres and apply the migrations:
 
     ```bash
-    docker compose up -d postgres
+    docker compose up -d --wait postgres
     make migrate-up
     ```
 
-    If `make migrate-up` fails with a connection error, Postgres is still starting. Wait a few seconds and run it again.
+    `--wait` returns once the Postgres healthcheck passes.
 
 6. Start the server, with hot reload or without:
 
@@ -131,7 +136,18 @@ Dependencies point inward. A service never imports the repository, gorm or echo,
     curl localhost:8080/health
     ```
 
-    Every route under `/api` needs the `X-API-Key` header with your `authorization.api_key`. Outside production, Swagger UI is at `http://localhost:8080/swagger/index.html`.
+8. Register a user, log in, and read the user back. Every route under `/api` needs the `X-API-Key` header with your `authorization.api_key`:
+
+    ```bash
+    API_KEY=<your authorization.api_key>
+    curl -X POST localhost:8080/api/v1/users -H "X-API-Key: $API_KEY" -H 'Content-Type: application/json' \
+      -d '{"name": "John Doe", "email": "john.doe@example.com", "password": "password123"}'
+    TOKEN=$(curl -s -X POST localhost:8080/api/v1/users/tokens -H "X-API-Key: $API_KEY" -H 'Content-Type: application/json' \
+      -d '{"email": "john.doe@example.com", "password": "password123"}' | jq -r '.data.tokens[0].token')
+    curl localhost:8080/api/v1/users/me -H "X-API-Key: $API_KEY" -H "Authorization: Bearer $TOKEN"
+    ```
+
+    Register answers 201, and `/me` answers 200 with the user. Outside production, the API reference is at `http://localhost:8080/docs` and Swagger UI at `http://localhost:8080/swagger/index.html`.
 
 ## Testing and checks
 
@@ -148,13 +164,16 @@ The GitHub Actions workflow is optional. It runs the same `make ci` and the inte
 
 ## Docker
 
-`make docker-up` builds the app image and starts the app and Postgres. The app container reads `config/config.dev.yaml`, so create it from the example first. Inside Compose, Postgres is at host `pgdb`, port `5432`. The app answers on `http://localhost:8090`.
+`make docker-up` builds the app image and starts Postgres, then the app once Postgres is healthy. The app container reads `config/config.dev.yaml`, so create it from the example first, with `environment: dev`. Inside Compose, Postgres is at host `pgdb`, port `5432`. The app answers on `http://localhost:8090`. On a new database, apply the migrations from your machine with `make migrate-up`, which reaches the Compose Postgres through the `.env` values (`DB_HOST=localhost`, `DB_PORT=5888`).
 
 ```bash
 make docker-up      # build and start the app and Postgres
+make migrate-up     # on a new database
 make docker-logs    # follow the logs
 make docker-down    # stop the containers
 ```
+
+The Makefile runs `docker compose`, or the older `docker-compose` when the plugin is missing.
 
 After a Go version bump, rebuild with `docker compose build --pull`. The golang image sets `GOTOOLCHAIN=local`, so a cached `golang:1.26-alpine` older than the `go` directive in `go.mod` fails the build.
 
@@ -173,3 +192,7 @@ The [JWT usage guide](docs/markdowns/JWT_USAGE.md) has the details. The [logging
 2. Read [AGENTS.md](AGENTS.md). It holds the architecture, the owner's rules and the rule table.
 3. Run `make ci`. If you change the service or repository layer, also run `make test-integration`.
 4. Open a pull request.
+
+## License
+
+This repo has no license file yet.
