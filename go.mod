@@ -7,10 +7,10 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/jeremygprawira/herr v0.2.0
-	github.com/jeremygprawira/wlog v1.0.0
-	github.com/jeremygprawira/wlog/errors/herr v1.0.0
-	github.com/jeremygprawira/wlog/log/zap v1.0.0
-	github.com/jeremygprawira/wlog/middleware/echo v1.0.0
+	github.com/jeremygprawira/wlog v1.1.0
+	github.com/jeremygprawira/wlog/errors/herr v1.1.0
+	github.com/jeremygprawira/wlog/log/zap v1.1.0
+	github.com/jeremygprawira/wlog/middleware/echo v1.1.0
 	github.com/quasilyte/go-ruleguard/dsl v0.3.23
 	github.com/stretchr/testify v1.12.1
 	github.com/swaggo/swag v1.16.6

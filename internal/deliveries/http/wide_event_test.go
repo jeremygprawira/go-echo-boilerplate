@@ -30,9 +30,6 @@ func (failingRevocation) IsRevoked(context.Context, string) (bool, error) {
 	return false, errors.New("connection refused")
 }
 
-// wlog's outcome is the server's verdict: "error" only at level error. A 4xx
-// is the client's fault, so it is level warn with outcome "success", and the
-// rejection shows in http.status and error.code.
 func TestWideEvent_RecordsEveryRejectionWithItsStatusLevelAndCode(t *testing.T) {
 	tok, err := jwtc.SignAccessToken(&models.User{ID: 42}, testJWT())
 	require.NoError(t, err)
@@ -57,19 +54,19 @@ func TestWideEvent_RecordsEveryRejectionWithItsStatusLevelAndCode(t *testing.T) 
 		code       string
 	}{
 		{name: "missing bearer", apiKey: true, path: "/api/v1/users/me",
-			status: 401, level: zapcore.WarnLevel, outcome: "success", code: "UNAUTHORIZED"},
+			status: 401, level: zapcore.WarnLevel, outcome: "rejected", code: "UNAUTHORIZED"},
 		{name: "bad bearer", apiKey: true, bearer: "not-a-token", path: "/api/v1/users/me",
-			status: 401, level: zapcore.WarnLevel, outcome: "success", code: "UNAUTHORIZED"},
+			status: 401, level: zapcore.WarnLevel, outcome: "rejected", code: "UNAUTHORIZED"},
 		{name: "missing api key", path: "/api/v1/users/me",
-			status: 401, level: zapcore.WarnLevel, outcome: "success", code: "UNAUTHORIZED"},
+			status: 401, level: zapcore.WarnLevel, outcome: "rejected", code: "UNAUTHORIZED"},
 		{name: "forbidden by the service", users: forbidden, apiKey: true, bearer: tok.Token, path: "/api/v1/users/me",
-			status: 403, level: zapcore.WarnLevel, outcome: "success", code: "FORBIDDEN_ROLE"},
+			status: 403, level: zapcore.WarnLevel, outcome: "rejected", code: "FORBIDDEN_ROLE"},
 		{name: "unknown route", apiKey: true, path: "/api/v1/nope",
-			status: 404, level: zapcore.WarnLevel, outcome: "success", code: "DATA_NOT_FOUND"},
+			status: 404, level: zapcore.WarnLevel, outcome: "rejected", code: "DATA_NOT_FOUND"},
 		{name: "invalid body", apiKey: true, method: http.MethodPost, path: "/api/v1/users", body: "{}",
-			status: 422, level: zapcore.WarnLevel, outcome: "success", code: "VALIDATION_FAILED"},
+			status: 422, level: zapcore.WarnLevel, outcome: "rejected", code: "VALIDATION_FAILED"},
 		{name: "rate limited", cfg: burstOfOne, apiKey: true, method: http.MethodPost, path: "/api/v1/users/tokens", body: "{}", earlier: 1,
-			status: 429, level: zapcore.WarnLevel, outcome: "success", code: "TOO_MANY_REQUESTS"},
+			status: 429, level: zapcore.WarnLevel, outcome: "rejected", code: "TOO_MANY_REQUESTS"},
 		{name: "revocation check down", revocation: failingRevocation{}, apiKey: true, bearer: tok.Token, path: "/api/v1/users/me",
 			status: 500, level: zapcore.ErrorLevel, outcome: "error", code: "INTERNAL_SERVER_ERROR"},
 	} {
