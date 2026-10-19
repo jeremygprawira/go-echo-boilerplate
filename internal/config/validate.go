@@ -79,7 +79,7 @@ func (c *Configuration) Validate() error {
 	}
 	// At or above write_timeout the server cuts the connection before the
 	// request deadline can write its error body.
-	if c.Application.Timeout > 0 && c.Application.Timeout >= c.Application.WriteTimeout {
+	if c.Application.Timeout > 0 && c.Application.WriteTimeout > 0 && c.Application.Timeout >= c.Application.WriteTimeout {
 		errs = append(errs, fmt.Errorf("application.timeout (%s) must be less than application.write_timeout (%s)", c.Application.Timeout, c.Application.WriteTimeout))
 	}
 	// LoadLocation maps "" to UTC and "Local" to the host zone, but the

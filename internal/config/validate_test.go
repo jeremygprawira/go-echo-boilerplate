@@ -129,6 +129,14 @@ func TestValidate_TimeoutBelowWriteTimeout(t *testing.T) {
 
 	c.Application.Timeout = c.Application.WriteTimeout - time.Second
 	require.NoError(t, c.Validate())
+
+}
+
+func TestValidate_ZeroWriteTimeoutReportsOnlyItself(t *testing.T) {
+	c := validCfg()
+	c.Application.Timeout = 25 * time.Second
+	c.Application.WriteTimeout = 0
+	require.EqualError(t, c.Validate(), "application.write_timeout must be greater than 0")
 }
 
 func TestValidate_Timezone(t *testing.T) {
