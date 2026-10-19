@@ -16,6 +16,7 @@ import (
 	"go-echo-boilerplate/internal/service"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/postgres"
@@ -89,4 +90,19 @@ func TestMe_RemovedAccountIsNotFound(t *testing.T) {
 
 	require.NoError(t, mock.ExpectationsWereMet())
 	require.Equal(t, http.StatusNotFound, rec.Code, rec.Body.String())
+}
+
+func TestMe_AccessTokenWithoutExpIsUnauthorized(t *testing.T) {
+	e, mock, jwtConfig := newRealRepoServer(t)
+	claims := jwtc.Claims{UserID: 1, AccountNumber: "100", TokenType: "access", RegisteredClaims: jwt.RegisteredClaims{Subject: "1"}}
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(jwtConfig.AccessTokenSecret))
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/users/me", nil)
+	req.Header.Set(echo.HeaderAuthorization, "Bearer "+token)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusUnauthorized, rec.Code, rec.Body.String())
+	require.NoError(t, mock.ExpectationsWereMet())
 }

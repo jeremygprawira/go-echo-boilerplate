@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -120,4 +121,23 @@ func TestRefreshToken_DistinctSecrets(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2, claims.UserID)
 	require.Equal(t, "refresh", claims.TokenType)
+}
+
+func TestParse_RejectsATokenWithoutExp(t *testing.T) {
+	config := &jwtc.Configuration{
+		AccessTokenSecret:  "access-secret-aaaaaaaaaaaaaaaaaaaa",
+		RefreshTokenSecret: "refresh-secret-bbbbbbbbbbbbbbbbbbbb",
+	}
+	sign := func(tokenType, secret string) string {
+		claims := jwtc.Claims{UserID: 1, TokenType: tokenType, RegisteredClaims: jwt.RegisteredClaims{Subject: "1"}}
+		token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
+		require.NoError(t, err)
+		return token
+	}
+
+	_, err := jwtc.ParseAccessToken(sign("access", config.AccessTokenSecret), config)
+	require.ErrorIs(t, err, jwt.ErrTokenRequiredClaimMissing)
+
+	_, err = jwtc.ParseRefreshToken(sign("refresh", config.RefreshTokenSecret), config)
+	require.ErrorIs(t, err, jwt.ErrTokenRequiredClaimMissing)
 }

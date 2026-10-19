@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -197,4 +198,33 @@ func TestAccessToken_NilConfigErrors(t *testing.T) {
 func TestRefreshToken_NilConfigErrors(t *testing.T) {
 	_, err := jwtc.SignRefreshToken(&models.User{ID: 1}, nil)
 	require.Error(t, err)
+}
+
+func TestSign_EveryTokenCarriesItsExp(t *testing.T) {
+	config := &jwtc.Configuration{
+		AccessTokenSecret:    "access-secret-aaaaaaaaaaaaaaaaaaaa",
+		RefreshTokenSecret:   "refresh-secret-bbbbbbbbbbbbbbbbbbbb",
+		AccessTokenDuration:  15 * time.Minute,
+		RefreshTokenDuration: 7 * 24 * time.Hour,
+	}
+	user := &models.User{ID: 1, AccountNumber: "1234567890"}
+
+	for name, tc := range map[string]struct {
+		sign     func(*models.User, *jwtc.Configuration) (*models.Token, error)
+		secret   string
+		duration time.Duration
+	}{
+		"access":  {jwtc.SignAccessToken, config.AccessTokenSecret, config.AccessTokenDuration},
+		"refresh": {jwtc.SignRefreshToken, config.RefreshTokenSecret, config.RefreshTokenDuration},
+	} {
+		before := time.Now().Truncate(time.Second)
+		token, err := tc.sign(user, config)
+		require.NoError(t, err, name)
+
+		claims := &jwtc.Claims{}
+		_, err = jwt.ParseWithClaims(token.Token, claims, func(*jwt.Token) (interface{}, error) { return []byte(tc.secret), nil })
+		require.NoError(t, err, name)
+		require.NotNil(t, claims.ExpiresAt, "%s token has no exp", name)
+		require.WithinDuration(t, before.Add(tc.duration), claims.ExpiresAt.Time, 2*time.Second, name)
+	}
 }

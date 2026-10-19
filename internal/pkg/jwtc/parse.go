@@ -7,14 +7,15 @@ import (
 )
 
 // parseWithSecret parses and validates a JWT using the provided HMAC secret.
-// It enforces that the signing method is HMAC (HS256) before returning claims.
+// It enforces that the signing method is HMAC (HS256) and that the token
+// carries an exp claim before returning claims.
 func parseWithSecret(tokenString, secret string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
 		return []byte(secret), nil
-	})
+	}, jwt.WithExpirationRequired())
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse token: %w", err)
 	}
