@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"path"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -40,7 +41,7 @@ func TestSwaggerPathsMatchServedRoutes(t *testing.T) {
 		}
 	}
 
-	require.Equal(t, documented, served, "each served route needs an @Router annotation that names its method and path. Run make docs after you change one")
+	require.Equal(t, served, documented, "each served route needs an @Router annotation that names its method and path. Run make docs after you change one")
 }
 
 func TestSwaggerSpecDefinesItsInfoAndEverySecurityScheme(t *testing.T) {
@@ -48,8 +49,13 @@ func TestSwaggerSpecDefinesItsInfoAndEverySecurityScheme(t *testing.T) {
 	assert.NotEmpty(t, spec.Info.Title, "the general info block must sit in the file that make docs passes to swag -g")
 	for p, operations := range spec.Paths {
 		for method, op := range operations {
-			if underAPI(path.Join(spec.BasePath, p)) {
-				assert.NotEmpty(t, op.Security, "%s %s names no security scheme, so Swagger UI sends no X-API-Key. Add @Security ApiKeyAuth", method, p)
+			full := path.Join(spec.BasePath, p)
+			if underAPI(full) {
+				if publicRoutes[strings.ToUpper(method)+" "+swaggerParam.ReplaceAllString(full, ":$1")] {
+					assert.True(t, oneRequirementNames(op.Security, "ApiKeyAuth"), "%s %s does not name ApiKeyAuth, so Swagger UI sends no X-API-Key. Add @Security ApiKeyAuth", method, p)
+				} else {
+					assert.True(t, oneRequirementNames(op.Security, "ApiKeyAuth", "BearerAuth"), "%s %s is not on publicRoutes, so it needs a bearer token. Add @Security ApiKeyAuth && BearerAuth", method, p)
+				}
 			}
 			for _, requirement := range op.Security {
 				for scheme := range requirement {
@@ -58,6 +64,17 @@ func TestSwaggerSpecDefinesItsInfoAndEverySecurityScheme(t *testing.T) {
 			}
 		}
 	}
+}
+
+func oneRequirementNames(security []map[string][]string, schemes ...string) bool {
+	return slices.ContainsFunc(security, func(requirement map[string][]string) bool {
+		for _, scheme := range schemes {
+			if _, ok := requirement[scheme]; !ok {
+				return false
+			}
+		}
+		return true
+	})
 }
 
 type swaggerSpec struct {

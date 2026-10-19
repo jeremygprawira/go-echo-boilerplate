@@ -195,7 +195,7 @@ Each rule has a check that fails on a real past commit. When no past commit brok
 | The refresh cookie that login sets is a refresh token that refreshes | `make test` (`TestLogin_RefreshCookieRotatesTokens`) | no past violation. Mutant M2 |
 | A success envelope has status `OK` | `make test` (`TestSuccess` in `internal/pkg/response`, and `TestRevocation_LogoutAndRotationInvalidateTokens` on the real login response) | no past violation. Mutant M5, which `TestSuccess` already killed |
 | Refresh is never idempotent. A retry with the same `Idempotency-Key` gets 401, not a replay | `make test` (`TestRefresh_IsNeverIdempotent`) | no past violation. Mutant M7 |
-| The Swagger spec has a title, defines each security scheme an operation names, and each operation under `/api` names at least one scheme | `make test` (`TestSwaggerSpecDefinesItsInfoAndEverySecurityScheme`) | 1c90978 |
+| The Swagger spec has a title and defines each security scheme an operation names. Each operation under `/api` names `ApiKeyAuth`, and each one not on `publicRoutes` names `ApiKeyAuth && BearerAuth` | `make test` (`TestSwaggerSpecDefinesItsInfoAndEverySecurityScheme`) | 1c90978. Probe: `GET /api/v1/users/me` annotated `@Security ApiKeyAuth` only, which the test before this row passed |
 | `docs/` is what the pinned swag generates from the annotations | `make docs-check` (in `make ci`) | 728d857 |
 | `Store.Atomic` runs every query in `fn` on the transaction | `make test` (`TestAtomic_CommitsWritesMadeThroughTheTransaction`) | no past violation. Probe: `Atomic` hands `fn` the outer store, not the transaction store |
 | A duration in config is a `time.Duration` field. Only `internal/config` calls `time.ParseDuration` | `make lint` (forbidigo) | 8db11a6^ |
