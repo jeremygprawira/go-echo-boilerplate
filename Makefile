@@ -36,7 +36,7 @@ help:
 	@echo "  make docker-clean             - Remove containers, volumes, and images"
 	@echo ""
 	@echo "🗄️  Database & Migrations:"
-	@echo "  make migrate-up               - Run migrations (ENV=local)"
+	@echo "  make migrate-up               - Apply migrations to the database that .env's DB_* values name"
 	@echo "  make migrate-down             - Rollback migrations"
 	@echo "  make migrate-status           - Check migration status"
 	@echo "  make migrate-create NAME=xxx  - Create new migration file"
@@ -60,7 +60,6 @@ help:
 	@echo ""
 	@echo "💡 Examples:"
 	@echo "  make run ENV=dev              - Run with dev config"
-	@echo "  make migrate-up ENV=uat       - Run UAT migrations"
 	@echo "  make test-coverage            - Get test coverage HTML report"
 	@echo ""
 
@@ -189,7 +188,7 @@ docker-clean:
 	@echo "✅ Docker cleanup complete"
 
 migrate-up:
-	@echo "📊 Running migrations (ENV=$(ENV))..."
+	@echo "📊 Running migrations on the database that .env names..."
 	@if ! command -v goose > /dev/null; then \
 		echo "⚠️  goose not installed. Run 'make install-tools'"; \
 		exit 1; \

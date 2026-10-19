@@ -3,6 +3,10 @@
 # Usage: scripts/check-pr-base.sh <pr-number> [--at-creation]
 # --at-creation replays the check as of the PR's creation time, for past PRs.
 set -euo pipefail
+if [ $# -lt 1 ]; then
+	echo "usage: scripts/check-pr-base.sh <pr-number> [--at-creation]" >&2
+	exit 2
+fi
 pr=$1
 read_json() { gh pr view "$pr" --json baseRefName,createdAt -q "$1"; }
 base=$(read_json .baseRefName)
