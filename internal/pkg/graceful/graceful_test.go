@@ -39,6 +39,8 @@ type fake struct {
 	exitAfterReady func() error
 	startErr       error
 	blockStop      bool
+	hangStop       chan struct{}
+	ignoreCtx      bool
 }
 
 func (f *fake) Start(ctx context.Context, ready func()) error {
@@ -53,7 +55,14 @@ func (f *fake) Start(ctx context.Context, ready func()) error {
 	if f.exitAfterReady != nil {
 		return f.exitAfterReady()
 	}
-	<-f.stopped
+	if f.ignoreCtx {
+		<-f.stopped
+		return nil
+	}
+	select {
+	case <-ctx.Done():
+	case <-f.stopped:
+	}
 	return nil
 }
 
@@ -62,6 +71,10 @@ func (f *fake) Stop(ctx context.Context) error {
 	if f.blockStop {
 		<-ctx.Done()
 		return ctx.Err()
+	}
+	if f.hangStop != nil {
+		<-f.hangStop
+		return nil
 	}
 	close(f.stopped)
 	return nil
@@ -161,15 +174,55 @@ func TestGraceful_ProcessThatEndsBeforeShutdownFailsTheRun(t *testing.T) {
 	}
 }
 
-func TestGraceful_StopTimeoutIsAnErrorAndLaterStopsStillRun(t *testing.T) {
+func TestGraceful_StopTimeoutNamesWhatDidNotStopAndSkipsLaterStops(t *testing.T) {
+	for range 20 {
+		log := &journal{}
+		hook := graceful.WithStartupHook(func() { require.NoError(t, syscall.Kill(syscall.Getpid(), syscall.SIGTERM)) })
+
+		started := time.Now()
+		err := run(t, processes(log, &fake{name: "db"}, &fake{name: "http", blockStop: true, ignoreCtx: true}),
+			hook, graceful.WithTimeout(50*time.Millisecond))
+
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		assert.Less(t, time.Since(started), time.Second, "the timeout bounds the shutdown")
+		assert.ErrorContains(t, err, "stop http: context deadline exceeded")
+		assert.ErrorContains(t, err, "stop db: skipped")
+		assert.ErrorContains(t, err, "still running after 50ms: http: context deadline exceeded",
+			"db returned when its ctx was cancelled, so only http is still running")
+		assert.Equal(t, []string{"start db", "start http", "stop http"}, log.all())
+	}
+}
+
+func released(t *testing.T) chan struct{} {
+	ch := make(chan struct{})
+	t.Cleanup(func() { close(ch) })
+	return ch
+}
+
+func TestGraceful_StartThatIgnoresCtxAndNeverReadiesIsNamedNotWaitedOn(t *testing.T) {
+	log := &journal{}
+	stuck := released(t)
+	bindForever := func(context.Context) {
+		require.NoError(t, syscall.Kill(syscall.Getpid(), syscall.SIGTERM))
+		<-stuck
+	}
+
+	err := run(t, processes(log, &fake{name: "db"}, &fake{name: "http", beforeReady: bindForever}),
+		graceful.WithTimeout(100*time.Millisecond))
+
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.ErrorContains(t, err, "still running after 100ms: http: context deadline exceeded")
+	assert.Equal(t, []string{"start db", "start http"}, log.all(), "http used the whole timeout, so db's stop is skipped")
+}
+
+func TestGraceful_StopThatIgnoresItsDeadlineIsNamedNotWaitedOn(t *testing.T) {
 	log := &journal{}
 	hook := graceful.WithStartupHook(func() { require.NoError(t, syscall.Kill(syscall.Getpid(), syscall.SIGTERM)) })
 
-	started := time.Now()
-	err := run(t, processes(log, &fake{name: "db"}, &fake{name: "http", blockStop: true}),
-		hook, graceful.WithTimeout(50*time.Millisecond))
+	err := run(t, processes(log, &fake{name: "db"}, &fake{name: "http", hangStop: released(t)}),
+		hook, graceful.WithTimeout(100*time.Millisecond))
 
 	require.ErrorIs(t, err, context.DeadlineExceeded)
-	assert.Less(t, time.Since(started), time.Second, "the timeout bounds the shutdown")
-	assert.Equal(t, []string{"start db", "start http", "stop http", "stop db"}, log.all())
+	assert.ErrorContains(t, err, "stop http: context deadline exceeded")
+	assert.Equal(t, []string{"start db", "start http", "stop http"}, log.all())
 }
