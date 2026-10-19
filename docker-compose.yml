@@ -11,7 +11,7 @@ services:
     environment:
       - ENV=dev
     volumes:
-      - ./config/config.dev.yaml:/config/config.dev.yaml
+      - ./config/config.dev.yaml:/app/config/config.dev.yaml
     ports:
       - 8090:8080
   postgres:
