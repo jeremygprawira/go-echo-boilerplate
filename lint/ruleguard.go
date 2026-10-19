@@ -22,11 +22,22 @@ func structScan(m dsl.Matcher) {
 		Report(`Scan or Find into a struct returns a zero value when no row matches; read one row through repository.one`)
 }
 
+// environmentCompare: internal/config, its tests and configtest own the
+// environment's values. Everyone else asks IsProduction.
 func environmentCompare(m dsl.Matcher) {
 	m.Import(`go-echo-boilerplate/internal/config`)
+
 	m.Match(`$a == $b`, `$a != $b`).
 		Where((m["a"].Type.Is(`config.Environment`) || m["b"].Type.Is(`config.Environment`) ||
 			m["a"].Text.Matches(`\.Environment$`) || m["b"].Text.Matches(`\.Environment$`)) &&
-			!m.File().PkgPath.Matches(`/internal/config$`)).
+			!m.File().PkgPath.Matches(`/internal/config(_test)?(/|$)`)).
+		Report(`compare the environment with config.Environment.IsProduction, not with a string`)
+
+	m.Match(`switch $x { $*_ }`, `switch string($x) { $*_ }`,
+		`string($x) == $_`, `$_ == string($x)`, `string($x) != $_`, `$_ != string($x)`,
+		`strings.EqualFold(string($x), $_)`, `strings.EqualFold($_, string($x))`,
+		`strings.HasPrefix(string($x), $_)`, `strings.HasSuffix(string($x), $_)`,
+		`strings.Contains(string($x), $_)`, `strings.Compare(string($x), $_)`, `strings.Compare($_, string($x))`).
+		Where(m["x"].Type.Is(`config.Environment`) && !m.File().PkgPath.Matches(`/internal/config(_test)?(/|$)`)).
 		Report(`compare the environment with config.Environment.IsProduction, not with a string`)
 }
