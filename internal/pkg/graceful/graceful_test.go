@@ -276,9 +276,6 @@ func TestGraceful_NilProcessIsAnErrorBeforeAnythingStarts(t *testing.T) {
 	assert.Empty(t, log.all())
 }
 
-// A second Ctrl-C during a stuck shutdown must kill the process, so the
-// signal handler is released when shutdown begins. The helper runs in a
-// child process because the signal's default action ends the process.
 func TestGraceful_SecondSignalDuringAStuckShutdownKillsTheProcess(t *testing.T) {
 	if os.Getenv("GRACEFUL_STUCK_SHUTDOWN") == "1" {
 		stuck := &fake{name: "http", hangStop: make(chan struct{})}

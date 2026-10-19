@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Runs internal/integration and the cmd/http tests that need a database on a
-# throwaway Postgres container. Extra arguments go to go test, as in
+# Runs the internal/integration and cmd/http tests on a throwaway Postgres
+# container. Extra arguments go to go test, as in
 # scripts/test-integration.sh -count=2 -shuffle=on.
 # The EXIT trap removes the container. A SIGKILL skips the trap and leaks it,
 # so remove leftovers with: docker rm -f $(docker ps -qf name=go-echo-integration-)

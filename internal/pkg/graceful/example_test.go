@@ -9,7 +9,6 @@ import (
 	"go-echo-boilerplate/internal/pkg/graceful"
 )
 
-// worker is a Process that handles jobs until shutdown.
 type worker struct {
 	jobs chan string
 	done chan struct{}
@@ -29,7 +28,6 @@ func (w *worker) Start(ctx context.Context, ready func()) error {
 	}
 }
 
-// Stop waits for Start to finish its current job and return.
 func (w *worker) Stop(ctx context.Context) error {
 	select {
 	case <-w.done:
@@ -40,6 +38,8 @@ func (w *worker) Stop(ctx context.Context) error {
 	}
 }
 
+func pressCtrlC() { _ = syscall.Kill(syscall.Getpid(), syscall.SIGTERM) }
+
 func ExampleProcess() {
 	w := &worker{jobs: make(chan string)}
 
@@ -47,8 +47,7 @@ func ExampleProcess() {
 		graceful.WithTimeout(5*time.Second),
 		graceful.WithStartupHook(func() {
 			w.jobs <- "job-1"
-			// Stands in for Ctrl-C, so the example ends.
-			_ = syscall.Kill(syscall.Getpid(), syscall.SIGTERM)
+			pressCtrlC()
 		}),
 	)
 	fmt.Println("err:", err)

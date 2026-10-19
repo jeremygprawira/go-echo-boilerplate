@@ -16,7 +16,7 @@ type EchoProcess struct {
 	addr   string
 }
 
-// NewEchoProcess returns a Process that serves server on addr, such as ":8080".
+// NewEchoProcess returns an EchoProcess that serves server on addr, such as ":8080".
 func NewEchoProcess(server *echo.Echo, addr string) *EchoProcess {
 	return &EchoProcess{
 		server: server,

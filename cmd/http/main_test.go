@@ -65,8 +65,6 @@ func TestMain_AFailedRunPrintsOneLineAndExitsOne(t *testing.T) {
 	assert.True(t, strings.HasPrefix(lines[0], "Application failed: load configuration: "), lines[0])
 }
 
-// Graceful only runs after core.Setup, which connects to Postgres, so this
-// test needs TEST_DATABASE_URL. make test-integration provides one.
 func TestRun_PortInUseIsAnErrorNamingTheListenFailure(t *testing.T) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {

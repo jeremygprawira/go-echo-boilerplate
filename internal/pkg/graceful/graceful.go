@@ -15,10 +15,10 @@ import (
 // error. It starts them one at a time in slice order, each once the one before
 // it is ready, and runs the startup hook once all are ready. At shutdown it
 // runs the shutdown hook and stops the ready processes in reverse order. The
-// timeout bounds the whole shutdown. Graceful names in its error each Stop
-// still running at the deadline, each Stop it skipped because the deadline
-// had passed, and each Start that has not returned, and returns without them.
-// A panic in Start fails the run like a returned error.
+// timeout bounds the whole shutdown. Graceful does not wait past it: its error
+// names each Stop still running or skipped at the deadline and each Start that
+// has not returned. A panic in Start fails the run like a returned error, and
+// a nil Process is an error before anything starts.
 func Graceful(processes []NamedProcess, opts ...Option) error {
 	o := defaultOptions()
 	for _, opt := range opts {
@@ -30,8 +30,8 @@ func Graceful(processes []NamedProcess, opts ...Option) error {
 		}
 	}
 
-	signalCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stopSignals()
+	signalCtx, restoreSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer restoreSignals()
 	ctx, cancel := context.WithCancel(signalCtx)
 	defer cancel()
 
@@ -56,8 +56,7 @@ func Graceful(processes []NamedProcess, opts ...Option) error {
 	if signalCtx.Err() != nil {
 		o.logger.Infof("received termination signal, shutting down")
 	}
-	// Restore the default action, so a second Ctrl-C ends a stuck shutdown.
-	stopSignals()
+	restoreSignals()
 	cancel()
 	o.shutdownHook()
 
@@ -90,13 +89,10 @@ func Graceful(processes []NamedProcess, opts ...Option) error {
 	var errs []error
 	var stillRunning []string
 	for _, r := range started {
-		select {
-		case <-r.exited:
-			if r.err != nil {
-				errs = append(errs, r.err)
-			}
-		default:
+		if !closed(r.exited) {
 			stillRunning = append(stillRunning, r.Name)
+		} else if r.err != nil {
+			errs = append(errs, r.err)
 		}
 	}
 	errs = append(errs, stopErrs...)
@@ -113,25 +109,24 @@ type running struct {
 	err           error
 }
 
-// waitReady reports whether r called ready. Only the process that was starting
-// when shutdown began can still be on its way there.
 func (r *running) waitReady(ctx context.Context) bool {
 	select {
 	case <-r.ready:
-		return true
-	default:
-	}
-	select {
-	case <-r.ready:
-		return true
 	case <-r.exited:
 	case <-ctx.Done():
 	}
-	return false
+	return closed(r.ready)
 }
 
-// start runs p.Start and cancels the run when it returns, so a failure ends
-// the startup wait and the run wait alike.
+func closed(ch <-chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
+	}
+}
+
 func start(ctx context.Context, cancel context.CancelFunc, p NamedProcess) *running {
 	r := &running{NamedProcess: p, ready: make(chan struct{}), exited: make(chan struct{})}
 	go func() {
