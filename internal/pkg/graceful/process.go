@@ -12,6 +12,9 @@ import "context"
 // is a failed start, and a return after ready, even nil, is a failed run.
 // Either makes Graceful stop the other processes and return the error.
 //
+// A Start that fails before ready must release what it acquired before it
+// returns, because Graceful calls Stop only on a process that called ready.
+//
 // Stop releases what Start acquired, within ctx's deadline. Graceful calls it
 // only on a process that called ready, after it cancels Start's ctx.
 type Process interface {
@@ -19,6 +22,8 @@ type Process interface {
 	Stop(ctx context.Context) error
 }
 
+// NamedProcess is a Process with the name that Graceful logs and puts in its
+// errors.
 type NamedProcess struct {
 	Name    string
 	Process Process

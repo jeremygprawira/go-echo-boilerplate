@@ -9,11 +9,14 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+// EchoProcess runs an Echo server as a Process. Start binds the address and
+// calls ready once the listener is bound, so a port in use is a failed start.
 type EchoProcess struct {
 	server *echo.Echo
 	addr   string
 }
 
+// NewEchoProcess returns a Process that serves server on addr, such as ":8080".
 func NewEchoProcess(server *echo.Echo, addr string) *EchoProcess {
 	return &EchoProcess{
 		server: server,

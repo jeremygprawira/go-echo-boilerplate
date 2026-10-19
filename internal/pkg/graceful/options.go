@@ -25,6 +25,7 @@ func defaultOptions() options {
 	}
 }
 
+// Option configures Graceful.
 type Option func(*options)
 
 // WithStartupHook sets a hook that runs once every process has called ready.
