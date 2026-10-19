@@ -11,6 +11,8 @@ import (
 	"github.com/spf13/viper"
 )
 
+const defaultWriteTimeout = 30 * time.Second
+
 func Initialize(ctx context.Context) (Validated, error) {
 	var configuration Configuration
 
@@ -30,7 +32,7 @@ func Initialize(ctx context.Context) (Validated, error) {
 	viper.SetDefault("idempotency.ttl", "10m")
 	viper.SetDefault("application.read_header_timeout", "5s")
 	viper.SetDefault("application.read_timeout", "15s")
-	viper.SetDefault("application.write_timeout", "30s")
+	viper.SetDefault("application.write_timeout", defaultWriteTimeout.String())
 	viper.SetDefault("application.idle_timeout", "60s")
 	viper.SetDefault("application.timezone", "UTC")
 

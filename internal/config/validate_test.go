@@ -125,11 +125,16 @@ func TestValidate_ApplicationTimeout(t *testing.T) {
 func TestValidate_TimeoutBelowWriteTimeout(t *testing.T) {
 	c := validCfg()
 	c.Application.Timeout = c.Application.WriteTimeout
-	require.ErrorContains(t, c.Validate(), "application.timeout (30s) must be less than application.write_timeout (30s)")
+	require.ErrorContains(t, c.Validate(), "application.timeout (30s) must be less than application.write_timeout (30s, its default)")
 
 	c.Application.Timeout = c.Application.WriteTimeout - time.Second
 	require.NoError(t, c.Validate())
 
+	c.Application.WriteTimeout = 40 * time.Second
+	c.Application.Timeout = 40 * time.Second
+	err := c.Validate()
+	require.ErrorContains(t, err, "application.timeout (40s) must be less than application.write_timeout (40s)")
+	assert.NotContains(t, err.Error(), "default")
 }
 
 func TestValidate_ZeroWriteTimeoutReportsOnlyItself(t *testing.T) {

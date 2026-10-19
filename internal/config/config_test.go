@@ -80,6 +80,11 @@ func TestInitialize_EmptyTimezoneFails(t *testing.T) {
 	require.ErrorContains(t, err, `application.timezone "" must name a zone`)
 }
 
+func TestInitialize_TimeoutAtTheDefaultWriteTimeoutNamesTheDefault(t *testing.T) {
+	_, err := initialize(t, "application: {environment: local, timeout: 30s}\n"+secrets)
+	require.ErrorContains(t, err, "application.timeout (30s) must be less than application.write_timeout (30s, its default)")
+}
+
 func TestInitialize_NormalizesEnvironment(t *testing.T) {
 	c, err := initialize(t, `application: {environment: " PROD "}`+secrets)
 	require.NoError(t, err)

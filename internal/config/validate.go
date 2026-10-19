@@ -80,7 +80,11 @@ func (c *Configuration) Validate() error {
 	// At or above write_timeout the server cuts the connection before the
 	// request deadline can write its error body.
 	if c.Application.Timeout > 0 && c.Application.WriteTimeout > 0 && c.Application.Timeout >= c.Application.WriteTimeout {
-		errs = append(errs, fmt.Errorf("application.timeout (%s) must be less than application.write_timeout (%s)", c.Application.Timeout, c.Application.WriteTimeout))
+		writeTimeout := c.Application.WriteTimeout.String()
+		if c.Application.WriteTimeout == defaultWriteTimeout {
+			writeTimeout += ", its default"
+		}
+		errs = append(errs, fmt.Errorf("application.timeout (%s) must be less than application.write_timeout (%s)", c.Application.Timeout, writeTimeout))
 	}
 	// LoadLocation maps "" to UTC and "Local" to the host zone, but the
 	// timezone DSN parameter takes neither, so the connect would fail later.
