@@ -1,7 +1,7 @@
 # Essential 
 application:
-  name:
-  port:
+  name: go-echo-boilerplate
+  port: 8080 # 1 to 65535
   version: 
   environment: local # one of local, dev, uat, staging, prod, production
   host: 

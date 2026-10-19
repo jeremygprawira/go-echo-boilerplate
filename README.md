@@ -107,7 +107,7 @@ Dependencies point inward. A service never imports the repository, gorm or echo,
     cp config/config.local.example.yaml config/config.local.yaml
     ```
 
-    Set `application.name`, `application.port` (for example `8080`) and the `postgresql` block, with the same values as `.env`. Replace the three `replace-with-` secrets with values from `openssl rand -base64 48`. Startup fails while a placeholder is left. Config files other than the example are gitignored, so your secrets stay local.
+    The example sets `application.name` to `go-echo-boilerplate` and `application.port` to `8080`. Startup fails on an empty name or a port outside 1 to 65535. Set the `postgresql` block with the same values as `.env`. Replace the three `replace-with-` secrets with values from `openssl rand -base64 48`. Startup fails while a placeholder is left. Config files other than the example are gitignored, so your secrets stay local.
 
 5. Start Postgres and apply the migrations:
 

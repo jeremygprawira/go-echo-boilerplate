@@ -38,27 +38,27 @@ func initialize(t *testing.T, yaml string) (Configuration, error) {
 
 func TestInitialize_OmittedOrEmptyRateLimitKeepsLimiterOn(t *testing.T) {
 	for name, extra := range map[string]string{"omitted": "", "empty block": "rate_limit:\n"} {
-		c, err := initialize(t, "application: {environment: local}\n"+secrets+extra)
+		c, err := initialize(t, "application: {environment: local, name: app, port: 8080}\n"+secrets+extra)
 		require.NoError(t, err, name)
 		assert.Equal(t, RateLimit{Enabled: true, Rate: 5, Burst: 10, ExpiresIn: 3 * time.Minute}, c.RateLimit, name)
 	}
 }
 
 func TestInitialize_ZeroRateLimitFails(t *testing.T) {
-	_, err := initialize(t, "application: {environment: local}\n"+secrets+"rate_limit: {rate: 0, burst: 0, expires_in: 0s}\n")
+	_, err := initialize(t, "application: {environment: local, name: app, port: 8080}\n"+secrets+"rate_limit: {rate: 0, burst: 0, expires_in: 0s}\n")
 	require.ErrorContains(t, err, "rate_limit.rate must be greater than 0")
 	require.ErrorContains(t, err, "rate_limit.burst must be greater than 0")
 	require.ErrorContains(t, err, "rate_limit.expires_in must be greater than 0")
 }
 
 func TestInitialize_OnlyExplicitFalseDisablesRateLimit(t *testing.T) {
-	c, err := initialize(t, "application: {environment: local}\n"+secrets+"rate_limit: {enabled: false}\n")
+	c, err := initialize(t, "application: {environment: local, name: app, port: 8080}\n"+secrets+"rate_limit: {enabled: false}\n")
 	require.NoError(t, err)
 	assert.False(t, c.RateLimit.Enabled)
 }
 
 func TestInitialize_DecodesDurations(t *testing.T) {
-	c, err := initialize(t, "application: {environment: local, timeout: 25s, read_timeout: 20s}\n"+secrets+
+	c, err := initialize(t, "application: {environment: local, name: app, port: 8080, timeout: 25s, read_timeout: 20s}\n"+secrets+
 		"idempotency: {ttl: 2m}\npostgresql: {conn_max_lifetime: 1h}\n")
 	require.NoError(t, err)
 	assert.Equal(t, 25*time.Second, c.Application.Timeout)
@@ -70,23 +70,23 @@ func TestInitialize_DecodesDurations(t *testing.T) {
 	assert.Equal(t, 2*time.Minute, c.Idempotency.TTL)
 	assert.Equal(t, time.Hour, c.PostgreSQL.ConnMaxLifetime)
 
-	c, err = initialize(t, "application:\n  environment: local\n  timeout:\n"+secrets)
+	c, err = initialize(t, "application:\n  environment: local\n  name: app\n  port: 8080\n  timeout:\n"+secrets)
 	require.NoError(t, err)
 	assert.Zero(t, c.Application.Timeout, "an empty timeout means no deadline")
 }
 
 func TestInitialize_EmptyTimezoneFails(t *testing.T) {
-	_, err := initialize(t, "application: {environment: local, timezone: \"\"}\n"+secrets)
+	_, err := initialize(t, "application: {environment: local, name: app, port: 8080, timezone: \"\"}\n"+secrets)
 	require.ErrorContains(t, err, `application.timezone "" must name a zone`)
 }
 
 func TestInitialize_TimeoutAtTheDefaultWriteTimeoutNamesTheDefault(t *testing.T) {
-	_, err := initialize(t, "application: {environment: local, timeout: 30s}\n"+secrets)
+	_, err := initialize(t, "application: {environment: local, name: app, port: 8080, timeout: 30s}\n"+secrets)
 	require.ErrorContains(t, err, "application.timeout (30s) must be less than application.write_timeout (30s, its default)")
 }
 
 func TestInitialize_NormalizesEnvironment(t *testing.T) {
-	c, err := initialize(t, `application: {environment: " PROD "}`+secrets)
+	c, err := initialize(t, `application: {environment: " PROD ", name: app, port: 8080}`+secrets)
 	require.NoError(t, err)
 	assert.Equal(t, Environment("prod"), c.Application.Environment)
 	assert.True(t, c.Application.Environment.IsProduction())
@@ -104,9 +104,9 @@ func TestInitialize_RejectsUnknownOrMissingEnvironment(t *testing.T) {
 
 func TestInitialize_RejectsDurationWithoutUnit(t *testing.T) {
 	for application, want := range map[string]string{
-		"{environment: local, timeout: 30}":        "'application.timeout' 30 is not a duration",
-		"{environment: local, read_timeout: 30}":   "'application.read_timeout' 30 is not a duration",
-		"{environment: local, read_timeout: soon}": "'application.read_timeout' time: invalid duration",
+		"{environment: local, name: app, port: 8080, timeout: 30}":        "'application.timeout' 30 is not a duration",
+		"{environment: local, name: app, port: 8080, read_timeout: 30}":   "'application.read_timeout' 30 is not a duration",
+		"{environment: local, name: app, port: 8080, read_timeout: soon}": "'application.read_timeout' time: invalid duration",
 	} {
 		_, err := initialize(t, "application: "+application+"\n"+secrets)
 		assert.ErrorContains(t, err, want, application)
@@ -144,4 +144,13 @@ func TestInitialize_ExampleConfigFailsOnlyOnItsPlaceholders(t *testing.T) {
 	for _, line := range strings.Split(strings.TrimPrefix(err.Error(), "invalid configuration: "), "\n") {
 		assert.Contains(t, line, "still holds the example placeholder")
 	}
+}
+
+func TestInitialize_EmptyOrNonNumericPortAndEmptyNameFail(t *testing.T) {
+	_, err := initialize(t, "application:\n  environment: local\n  name:\n  port:\n"+secrets)
+	require.ErrorContains(t, err, "application.port 0 must be between 1 and 65535")
+	require.ErrorContains(t, err, "application.name must not be empty")
+
+	_, err = initialize(t, "application: {environment: local, name: app, port: http}\n"+secrets)
+	require.ErrorContains(t, err, "'application.port'")
 }

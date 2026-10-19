@@ -17,12 +17,12 @@ import (
 
 func TestValid_MatchesInitializeDefaults(t *testing.T) {
 	want := configtest.Valid().Get()
-	yaml := fmt.Sprintf(`application: {environment: %s}
+	yaml := fmt.Sprintf(`application: {environment: %s, name: %s, port: %d}
 authorization:
   access: {secret: %s, duration: %s}
   refresh: {secret: %s, duration: %s}
   api_key: %s
-`, want.Application.Environment,
+`, want.Application.Environment, want.Application.Name, want.Application.Port,
 		want.Authorization.Access.Secret, want.Authorization.Access.Duration,
 		want.Authorization.Refresh.Secret, want.Authorization.Refresh.Duration,
 		want.Authorization.APIKey)

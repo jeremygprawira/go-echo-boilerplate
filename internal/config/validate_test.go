@@ -12,6 +12,8 @@ import (
 func validCfg() *Configuration {
 	c := &Configuration{}
 	c.Application.Environment = "local"
+	c.Application.Name = "go-echo-boilerplate"
+	c.Application.Port = 8080
 	c.Authorization.Access = TokenConfiguration{Secret: "access-secret-0123456789abcdef0123456789", Duration: 15 * time.Minute}
 	c.Authorization.Refresh = TokenConfiguration{Secret: "refresh-secret-0123456789abcdef012345678", Duration: 168 * time.Hour}
 	c.Authorization.APIKey = "api-key-0123456789abcdef0123456789abcdef"
@@ -159,5 +161,23 @@ func TestValidate_Timezone(t *testing.T) {
 		c := validCfg()
 		c.Application.Timezone = zone
 		assert.ErrorContains(t, c.Validate(), fmt.Sprintf("application.timezone %q must name a zone, such as UTC or Asia/Jakarta", zone))
+	}
+}
+
+func TestValidate_PortAndName(t *testing.T) {
+	for _, port := range []int{1, 8080, 65535} {
+		c := validCfg()
+		c.Application.Port = port
+		assert.NoError(t, c.Validate(), "port %d", port)
+	}
+	for _, port := range []int{0, -1, 65536} {
+		c := validCfg()
+		c.Application.Port = port
+		assert.EqualError(t, c.Validate(), fmt.Sprintf("application.port %d must be between 1 and 65535", port))
+	}
+	for _, name := range []string{"", "  "} {
+		c := validCfg()
+		c.Application.Name = name
+		assert.EqualError(t, c.Validate(), "application.name must not be empty", "name %q", name)
 	}
 }

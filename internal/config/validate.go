@@ -21,6 +21,12 @@ const placeholderMarker = "replace-with-"
 func (c *Configuration) Validate() error {
 	var errs []error
 
+	if strings.TrimSpace(c.Application.Name) == "" {
+		errs = append(errs, errors.New("application.name must not be empty"))
+	}
+	if c.Application.Port < 1 || c.Application.Port > 65535 {
+		errs = append(errs, fmt.Errorf("application.port %d must be between 1 and 65535", c.Application.Port))
+	}
 	if !environments[c.Application.Environment] {
 		errs = append(errs, fmt.Errorf("application.environment %q must be one of local, dev, uat, staging, prod, production", c.Application.Environment))
 	}

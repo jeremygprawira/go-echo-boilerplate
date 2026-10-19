@@ -77,7 +77,7 @@ func TestRun_PortInUseIsAnErrorNamingTheListenFailure(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = taken.Close() })
 
-	err = runWithConfig(t, fmt.Sprintf(`application: {environment: local, port: %d}
+	err = runWithConfig(t, fmt.Sprintf(`application: {environment: local, name: app, port: %d}
 postgresql: {host: %s, port: %s, user: %s, password: %s, name: %s, ssl_mode: disable, max_open_conns: 2, max_idle_conns: 2}
 authorization:
   access: {secret: access-secret-0123456789abcdef0123456789, duration: 15m}

@@ -12,6 +12,8 @@ import (
 func Valid(mutate ...func(*config.Configuration)) config.Validated {
 	var c config.Configuration
 	c.Application.Environment = "local"
+	c.Application.Name = "go-echo-boilerplate"
+	c.Application.Port = 8080
 	c.Application.ReadHeaderTimeout = 5 * time.Second
 	c.Application.ReadTimeout = 15 * time.Second
 	c.Application.WriteTimeout = 30 * time.Second
