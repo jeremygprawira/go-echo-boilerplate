@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -89,13 +90,13 @@ func (s *rateLimiterStore) removeLocked(el *list.Element) {
 var ipv6ClientMask = net.CIDRMask(64, 128)
 
 func rateLimitKey(extract echo.IPExtractor, r *http.Request) string {
-	ip := net.ParseIP(extract(r))
+	ip := parseIPWithoutZone(extract(r))
 	if ip == nil {
 		host, _, err := net.SplitHostPort(r.RemoteAddr)
 		if err != nil {
 			return r.RemoteAddr
 		}
-		if ip = net.ParseIP(host); ip == nil {
+		if ip = parseIPWithoutZone(host); ip == nil {
 			return host
 		}
 	}
@@ -103,6 +104,13 @@ func rateLimitKey(extract echo.IPExtractor, r *http.Request) string {
 		return ip.String()
 	}
 	return ip.Mask(ipv6ClientMask).String() + "/64"
+}
+
+// parseIPWithoutZone drops an IPv6 zone such as the "%eth0" in
+// "fe80::1%eth0", which net.ParseIP rejects.
+func parseIPWithoutZone(s string) net.IP {
+	addr, _, _ := strings.Cut(s, "%")
+	return net.ParseIP(addr)
 }
 
 // evictLoop periodically drops identifiers idle longer than expiresIn so the

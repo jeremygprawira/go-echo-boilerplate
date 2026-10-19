@@ -140,6 +140,9 @@ func TestRateLimiter_KeysIPv4OnTheAddressAndIPv6OnThe64(t *testing.T) {
 	require.Equal(t, http.StatusOK, code("[2001:db8:1:2::1]:1234"))
 	require.Equal(t, http.StatusTooManyRequests, code("[2001:db8:1:2:ffff:ffff:ffff:fffe]:1234"), "addresses in one /64 share a budget")
 	require.Equal(t, http.StatusOK, code("[2001:db8:1:3::1]:1234"), "another /64 has its own budget")
+
+	require.Equal(t, http.StatusOK, code("[fe80::1%eth0]:1234"))
+	require.Equal(t, http.StatusTooManyRequests, code("[fe80::2%eth1]:1234"), "a zoned address is keyed on its /64 without the zone")
 }
 
 func TestRateLimiter_ReadsTheClientFromItsExtractorNotEchoDefaults(t *testing.T) {
