@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -20,6 +21,7 @@ func validCfg() *Configuration {
 	c.Application.ReadTimeout = 15 * time.Second
 	c.Application.WriteTimeout = 30 * time.Second
 	c.Application.IdleTimeout = 60 * time.Second
+	c.Application.Timezone = "UTC"
 	return c
 }
 
@@ -130,7 +132,7 @@ func TestValidate_TimeoutBelowWriteTimeout(t *testing.T) {
 }
 
 func TestValidate_Timezone(t *testing.T) {
-	for _, zone := range []string{"", "UTC", "Asia/Jakarta"} {
+	for _, zone := range []string{"UTC", "Asia/Jakarta"} {
 		c := validCfg()
 		c.Application.Timezone = zone
 		assert.NoError(t, c.Validate(), "timezone %q", zone)
@@ -139,4 +141,10 @@ func TestValidate_Timezone(t *testing.T) {
 	c := validCfg()
 	c.Application.Timezone = "Asia/Jakart"
 	require.ErrorContains(t, c.Validate(), `application.timezone "Asia/Jakart" is not a time zone`)
+
+	for _, zone := range []string{"", "Local"} {
+		c := validCfg()
+		c.Application.Timezone = zone
+		assert.ErrorContains(t, c.Validate(), fmt.Sprintf("application.timezone %q must name a zone, such as UTC or Asia/Jakarta", zone))
+	}
 }

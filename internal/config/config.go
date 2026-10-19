@@ -32,6 +32,7 @@ func Initialize(ctx context.Context) (Validated, error) {
 	viper.SetDefault("application.read_timeout", "15s")
 	viper.SetDefault("application.write_timeout", "30s")
 	viper.SetDefault("application.idle_timeout", "60s")
+	viper.SetDefault("application.timezone", "UTC")
 
 	viper.AddConfigPath("./config")
 	viper.SetConfigName(configName)

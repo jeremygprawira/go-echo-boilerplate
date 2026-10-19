@@ -82,7 +82,11 @@ func (c *Configuration) Validate() error {
 	if c.Application.Timeout > 0 && c.Application.Timeout >= c.Application.WriteTimeout {
 		errs = append(errs, fmt.Errorf("application.timeout (%s) must be less than application.write_timeout (%s)", c.Application.Timeout, c.Application.WriteTimeout))
 	}
-	if _, err := time.LoadLocation(c.Application.Timezone); err != nil {
+	// LoadLocation maps "" to UTC and "Local" to the host zone, but the
+	// timezone DSN parameter takes neither, so the connect would fail later.
+	if c.Application.Timezone == "" || c.Application.Timezone == "Local" {
+		errs = append(errs, fmt.Errorf("application.timezone %q must name a zone, such as UTC or Asia/Jakarta", c.Application.Timezone))
+	} else if _, err := time.LoadLocation(c.Application.Timezone); err != nil {
 		errs = append(errs, fmt.Errorf("application.timezone %q is not a time zone: %w", c.Application.Timezone, err))
 	}
 	for _, cidr := range c.Application.TrustedProxies {

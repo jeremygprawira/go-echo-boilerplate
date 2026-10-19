@@ -141,7 +141,7 @@ Each rule has a check that fails on a real past commit. Add a row when you add a
 | `configtest.Valid` carries the same defaults as `config.Initialize` | `make test` (`TestValid_MatchesInitializeDefaults`) | no past violation |
 | A duration written without a unit fails startup and names the key | `make test` (`TestInitialize_RejectsDurationWithoutUnit`) | no past violation |
 | A set `application.timeout` is less than `application.write_timeout`. The example config fails only on its placeholder secrets | `make test` (`TestValidate_TimeoutBelowWriteTimeout`, `TestInitialize_ExampleConfigFailsOnlyOnItsPlaceholders`) | cf4df4e |
-| An `application.timezone` that `time.LoadLocation` rejects fails startup and names the key | `make test` (`TestValidate_Timezone`) | cf4df4e |
+| An `application.timezone` that `time.LoadLocation` rejects, or that is `""` or `Local`, fails startup and names the key. An omitted one is `UTC` | `make test` (`TestValidate_Timezone`, `TestInitialize_EmptyTimezoneFails`, `TestInitialize_DecodesDurations`) | cf4df4e |
 | Login answers an unknown account and a wrong password with the same status and `errorCode` | `make test-integration` (`TestLogin_UnknownAccountAndWrongPasswordLookTheSame`) | dff4183^, 6b1dc3b^ |
 | After logout, the old access token on `/me` and the old refresh token answer 401 | `make test-integration` (`TestLogout_RevokesAccessAndRefreshTokens`) | 6b1dc3b^, 701e02d^ |
 | Concurrent refreshes with one refresh token give exactly one 200, over 5 chained rounds | `make test-integration` (`TestRefresh_ConcurrentUseOfOneTokenMintsOnce`) | e4ac4c3^, dff4183^ |

@@ -64,6 +64,7 @@ func TestInitialize_DecodesDurations(t *testing.T) {
 	assert.Equal(t, 25*time.Second, c.Application.Timeout)
 	assert.Equal(t, 20*time.Second, c.Application.ReadTimeout)
 	assert.Equal(t, 60*time.Second, c.Application.IdleTimeout, "default")
+	assert.Equal(t, "UTC", c.Application.Timezone, "default")
 	assert.Equal(t, 15*time.Minute, c.Authorization.Access.Duration)
 	assert.Equal(t, 168*time.Hour, c.Authorization.Refresh.Duration)
 	assert.Equal(t, 2*time.Minute, c.Idempotency.TTL)
@@ -72,6 +73,11 @@ func TestInitialize_DecodesDurations(t *testing.T) {
 	c, err = initialize(t, "application:\n  environment: local\n  timeout:\n"+secrets)
 	require.NoError(t, err)
 	assert.Zero(t, c.Application.Timeout, "an empty timeout means no deadline")
+}
+
+func TestInitialize_EmptyTimezoneFails(t *testing.T) {
+	_, err := initialize(t, "application: {environment: local, timezone: \"\"}\n"+secrets)
+	require.ErrorContains(t, err, `application.timezone "" must name a zone`)
 }
 
 func TestInitialize_NormalizesEnvironment(t *testing.T) {

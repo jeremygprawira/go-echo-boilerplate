@@ -16,6 +16,7 @@ func Valid(mutate ...func(*config.Configuration)) config.Validated {
 	c.Application.ReadTimeout = 15 * time.Second
 	c.Application.WriteTimeout = 30 * time.Second
 	c.Application.IdleTimeout = 60 * time.Second
+	c.Application.Timezone = "UTC"
 	c.Authorization.Access = config.TokenConfiguration{Secret: "access-secret-0123456789abcdef0123456789", Duration: 15 * time.Minute}
 	c.Authorization.Refresh = config.TokenConfiguration{Secret: "refresh-secret-0123456789abcdef012345678", Duration: 168 * time.Hour}
 	c.Authorization.APIKey = APIKey
