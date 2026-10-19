@@ -33,13 +33,8 @@ check_no_tracked_agent_files() {
 	return 1
 }
 
-# The table had 65 rows when this floor was set. The margin lets rows go as
-# their mistakes become impossible, while a lost table or block still fails.
 min_rule_rows=50
-
-# The repo's first commit. A copy without it, such as a repo made from this
-# template or a shallow clone, has none of the commits the table cites.
-history_anchor=3a6d57d
+first_commit=3a6d57d
 
 rule_rows() {
 	awk '/^## Rules and what enforces them$/{on=1; next} /^## /{on=0} on && /^\| / && !/^\| (Rule|---) /' AGENTS.md
@@ -64,7 +59,7 @@ check_rule_table_present() {
 
 check_rule_table_commits() {
 	local row cell sha full rest probe n merges history=1 rc=0
-	if ! git rev-parse -q --verify "$history_anchor^{commit}" >/dev/null; then
+	if ! git rev-parse -q --verify "$first_commit^{commit}" >/dev/null; then
 		echo "check-repo: no project history here, so the rule table's commit citations were not checked"
 		history=0
 	fi

@@ -141,7 +141,7 @@ Tests live beside the code (`*_test.go`) and use testify. Repository tests use g
 
 A repo made with GitHub's "Use this template", or a shallow clone, starts without this repo's history. `scripts/check-repo.sh` then cannot find this repo's first commit, `3a6d57d`. It prints one line, "no project history here, so the rule table's commit citations were not checked", and runs every other check.
 - Keep the rules and their checks. The "Fails on" column is this repo's history, so its commits and PR numbers are not in yours. You can keep them as the record of why each rule exists, or drop them. A cell without a commit needs a probe: a sentence that says how to break the code on purpose so the check fails.
-- Once your rows cite your own commits, set `history_anchor` in `scripts/check-repo.sh` to your first commit (`git rev-list --max-parents=0 HEAD`), so the citations are checked again. When you drop rules, lower `min_rule_rows` there too.
+- Once your rows cite your own commits, set `first_commit` in `scripts/check-repo.sh` to your first commit (`git rev-list --max-parents=0 HEAD`), so the citations are checked again. When you drop rules, lower `min_rule_rows` there too.
 - Set the module name. Run `go mod edit -module github.com/you/service`, then `git grep -lz 'go-echo-boilerplate/' -- '*.go' .golangci.yml scripts/deadcode-allow.txt | xargs -0 perl -pi -e 's#(^|["\s])go-echo-boilerplate/#$1github.com/you/service/#g'`, then `make ci`. The `go-echo-boilerplate` names in `docker-compose.yml` and the config `issuer` are plain names. Change them if you like.
 
 ## Judgment rules

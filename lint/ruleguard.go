@@ -22,8 +22,6 @@ func structScan(m dsl.Matcher) {
 		Report(`Scan or Find into a struct returns a zero value when no row matches; read one row through repository.one`)
 }
 
-// environmentCompare: internal/config, its tests and configtest own the
-// environment's values. Everyone else asks IsProduction.
 func environmentCompare(m dsl.Matcher) {
 	m.Import(`go-echo-boilerplate/internal/config`)
 
