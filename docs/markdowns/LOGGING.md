@@ -182,7 +182,7 @@ Return herr errors from the `errorc` catalog. `ErrorHandler` coerces any error t
 
 The level follows the status. A 4xx is `warn`, a 5xx or a panic is `error`, and anything else is `info`.
 
-`outcome` follows the level, so it is `error` only for a 5xx or a panic. wlog's outcome says whether the server failed. A 4xx is the client's mistake, so a rejected request, an authentication failure included, logs `outcome: success` at level `warn`, with its `http.status` and `error.code`. To find rejected requests, filter on `level` or `http.status`, not `outcome`.
+`outcome` says how the request ended. A 2xx or a 3xx is `success`. A 4xx is the client's mistake, so it is `rejected` at level `warn`, with its `http.status` and `error.code`. This includes an authentication failure. A 5xx or a panic is `error`. To find rejected requests, filter on `outcome:rejected`. To find failures of the server, filter on `outcome:error`.
 
 To keep extra context next to an error, set it as a field before you return:
 
@@ -237,7 +237,7 @@ One request, one zap entry. The message is the operation (`METHOD /route`), and 
   "message": "POST /api/v1/users",
   "timestamp": "2026-10-14T07:41:51.023066Z",
   "kind": "request",
-  "outcome": "success",
+  "outcome": "rejected",
   "duration_ms": 0.298,
   "event_id": "01a1395c-462f-7d23-8b96-79bf83abd5fc",
   "summary": "POST /api/v1/users 422 in 0.30ms: VALIDATION_FAILED",
