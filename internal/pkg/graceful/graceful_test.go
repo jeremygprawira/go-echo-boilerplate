@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"sync"
@@ -321,4 +322,42 @@ func TestGraceful_SecondSignalDuringAStuckShutdownKillsTheProcess(t *testing.T) 
 	case <-time.After(5 * time.Second):
 		t.Fatal("the second SIGINT did not end a shutdown stuck in Stop")
 	}
+}
+
+func (j *journal) Infof(format string, args ...any) { j.add(fmt.Sprintf(format, args...)) }
+
+func TestGraceful_LogsTheSignalAndEachProcessItStopped(t *testing.T) {
+	logs := &journal{}
+	hook := graceful.WithStartupHook(func() { require.NoError(t, syscall.Kill(syscall.Getpid(), syscall.SIGTERM)) })
+
+	err := run(t, processes(&journal{}, &fake{name: "db"}, &fake{name: "http", blockStop: true}),
+		hook, graceful.WithLogger(logs), graceful.WithTimeout(50*time.Millisecond))
+
+	require.Error(t, err)
+	assert.Equal(t, []string{
+		"starting db", "starting http",
+		"received termination signal, shutting down",
+		"stopping http",
+		"shutdown complete",
+	}, logs.all(), "http's stop failed, so it is not logged as stopped, and db's stop was skipped")
+
+	logs = &journal{}
+	hook = graceful.WithStartupHook(func() { require.NoError(t, syscall.Kill(syscall.Getpid(), syscall.SIGTERM)) })
+	require.NoError(t, run(t, processes(&journal{}, &fake{name: "db"}, &fake{name: "http"}), hook, graceful.WithLogger(logs)))
+	assert.Equal(t, []string{
+		"starting db", "starting http",
+		"received termination signal, shutting down",
+		"stopping http", "stopped http",
+		"stopping db", "stopped db",
+		"shutdown complete",
+	}, logs.all())
+}
+
+func TestGraceful_AFailureIsNotLoggedAsASignal(t *testing.T) {
+	logs := &journal{}
+
+	err := run(t, processes(&journal{}, &fake{name: "db", startErr: errors.New("refused")}), graceful.WithLogger(logs))
+
+	require.Error(t, err)
+	assert.Equal(t, []string{"starting db", "shutdown complete"}, logs.all())
 }

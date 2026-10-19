@@ -53,6 +53,9 @@ func Graceful(processes []NamedProcess, opts ...Option) error {
 		o.startupHook()
 		<-ctx.Done()
 	}
+	if signalCtx.Err() != nil {
+		o.logger.Infof("received termination signal, shutting down")
+	}
 	// Restore the default action, so a second Ctrl-C ends a stuck shutdown.
 	stopSignals()
 	cancel()
@@ -73,7 +76,9 @@ func Graceful(processes []NamedProcess, opts ...Option) error {
 		o.logger.Infof("stopping %s", r.Name)
 		if err := stopWithin(stopCtx, r.Process); err != nil {
 			stopErrs = append(stopErrs, fmt.Errorf("stop %s: %w", r.Name, err))
+			continue
 		}
+		o.logger.Infof("stopped %s", r.Name)
 	}
 
 	for _, r := range started {
