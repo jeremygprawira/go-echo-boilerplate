@@ -168,10 +168,41 @@ check_rule_table_commands() {
 	return "$rc"
 }
 
+check_ci_runs_make_ci() {
+	local workflow=.github/workflows/ci.yml
+	[ -f "$workflow" ] || return 0
+	grep -qE '^[[:space:]]*(- )?run: make ci[[:space:]]*$' "$workflow" && return 0
+	echo "$workflow does not run make ci, so CI can check something other than the local gate"
+	return 1
+}
+
+check_tools_come_from_tools_mod() {
+	local tool name found rc=0
+	if [ ! -f tools/go.mod ]; then
+		echo "tools/go.mod is missing. make ci runs golangci-lint, gosec, deadcode and swag at the versions it pins"
+		return 1
+	fi
+	for tool in $(awk '/^tool \($/{on=1; next} on && /^\)/{on=0} on {print $1} /^tool [^(]/{print $2}' tools/go.mod); do
+		name=${tool##*/}
+		found=$(
+			git grep -nE "go (install|get|run) [^ ]*/$name@" -- Makefile '.github/*' 'scripts/*'
+			awk -v tool="$tool" '/^tool \($/{on=1; next} on && /^\)/{on=0} (on && $1 == tool) || ($1 == "tool" && $2 == tool) {print "go.mod:" NR ": tool " tool}' go.mod
+		)
+		if [ -n "$found" ]; then
+			echo "$name is pinned in tools/go.mod, but this gets another copy. Run it with go tool -modfile=tools/go.mod $name:"
+			echo "$found"
+			rc=1
+		fi
+	done
+	return "$rc"
+}
+
 fail=0
 check_docker_go_version || fail=1
 check_no_tracked_env_config || fail=1
 check_no_tracked_agent_files || fail=1
+check_ci_runs_make_ci || fail=1
+check_tools_come_from_tools_mod || fail=1
 if check_rule_table_present; then
 	check_rule_table_commits || fail=1
 	check_rule_table_commands || fail=1

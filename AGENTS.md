@@ -41,7 +41,7 @@ go test -v -race ./internal/service/ -run TestUserService_Create
 
 Notes:
 - `make ci` runs `go mod tidy -diff` for both modules, build, `go test -race`, golangci-lint, gosec, `scripts/check-repo.sh`, `scripts/check-deadcode.sh` and `make docs-check`. It needs no Docker. The GitHub workflow runs `make ci`, `scripts/check-pr-base.sh` on pull requests, and the integration suite against a Postgres service.
-- golangci-lint, gosec, deadcode and swag are pinned in `tools/go.mod` and run as `go tool -modfile=tools/go.mod <tool>`. Change a tool version there, never with `go install ...@latest`. A bare `golangci-lint` on your PATH can be another version with other defaults, so use `make lint` or `make ci`.
+- golangci-lint, gosec, deadcode and swag are pinned in `tools/go.mod` and run as `go tool -modfile=tools/go.mod <tool>`. Change a tool version there. `scripts/check-repo.sh` fails on a `go install` of one of them, and on a CI workflow that does not run `make ci`. A bare `golangci-lint` on your PATH can be another version with other defaults, so use `make lint` or `make ci`.
 - Swagger docs are a generated Go package (`docs/docs.go`) that the router imports. After you change a handler's `@` annotations, run `make docs` and commit the result, or `make docs-check` fails. The general info block (`@title`, `@BasePath`, the security definitions) sits on `main` in `cmd/http/main.go`, the file `swag -g` reads. `@BasePath` is `/`, because each `@Router` path starts with `/api`.
 - A timestamp column is `TIMESTAMPTZ`, never `TIMESTAMP`. The app sends times over the simple protocol as UTC text. The gorm driver reads a `TIMESTAMP` in `application.timezone`, so the value comes back shifted by that zone's offset.
 
@@ -154,7 +154,7 @@ These are the 14 classes of repeated agent mistakes from the repo's history and 
 | 2 | A security fix checked only against mocks | `make test-integration` rows: login, logout, refresh, deleted and soft-deleted users, `createdAt` | "Test a security fix on Postgres" for a new fix |
 | 3 | The Go version in Dockerfiles and CI drifts from go.mod | `scripts/check-repo.sh` (`FROM golang:` row). CI reads `go-version-file: go.mod` | none |
 | 4 | Scaffolding nobody asked for, deleted later | `scripts/check-deadcode.sh` (allowlist rows) | the owner's rule on speculative infrastructure |
-| 5 | Local lint and gosec differ from CI | Architecture: tools pinned in `tools/go.mod`, one `make ci` that CI runs. The errcheck row | none |
+| 5 | Local lint and gosec differ from CI | The `scripts/check-repo.sh` row on `make ci` in CI and tools from `tools/go.mod`. The errcheck row | none |
 | 6 | A fix lands on one copy and misses its siblings | Architecture: one `Store`, one `one[T]`, one `conflict`, one `mount`. The `structScan`, `ErrNotFound` and `ErrConflict` rows | none |
 | 7 | A zero-value GORM `Scan` row read as found | The `structScan` and `ErrNotFound` rows | none |
 | 8 | "Is production?" checked by raw string compares | The `config.Environment` type, and the `environmentCompare` row | none |
@@ -226,6 +226,7 @@ Each rule has a check that fails on a real past commit. When no past commit brok
 | Echo's middleware package is imported as `echoMiddleware` | `make lint` (importas) | ab33d3a^ |
 | Every returned error is checked, including `Close` | `make lint` (errcheck) | 1c90978 |
 | Every Go file is gofmt-clean | `make lint` (the gofmt formatter in `.golangci.yml`) | 6b1dc3b, 8a2d76f |
+| `.github/workflows/ci.yml`, when present, runs `make ci`. No Makefile, workflow or script line installs or runs a tool that `tools/go.mod` pins (golangci-lint, gosec, deadcode, swag) with `go install`, `go get` or `go run`, and the root `go.mod` has no `tool` line for one | `scripts/check-repo.sh` | 1c90978, whose CI ran golangci-lint-action and installed gosec v2.28.0, and whose Makefile installed golangci-lint, swag and gosec `@latest` |
 | Every `FROM golang:` image matches the go.mod Go minor version | `scripts/check-repo.sh` | 5180441^, bd3fd72^, f910f52^, e2c4e2d^, 9bf871f |
 | No `config/config.<env>.yaml` is tracked, only the local example | `scripts/check-repo.sh` | 8f86790 |
 | Agent scratch (`.serena/`, `docs/superpowers/`) is never tracked | `scripts/check-repo.sh` | 9bf871f |
