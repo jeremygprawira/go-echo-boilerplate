@@ -21,3 +21,12 @@ func structScan(m dsl.Matcher) {
 			!(m.File().PkgPath.Matches(`/internal/repository$`) && m.File().Name.Matches(`^store\.go$`))).
 		Report(`Scan or Find into a struct returns a zero value when no row matches; read one row through repository.one`)
 }
+
+func environmentCompare(m dsl.Matcher) {
+	m.Import(`go-echo-boilerplate/internal/config`)
+	m.Match(`$a == $b`, `$a != $b`).
+		Where((m["a"].Type.Is(`config.Environment`) || m["b"].Type.Is(`config.Environment`) ||
+			m["a"].Text.Matches(`\.Environment$`) || m["b"].Text.Matches(`\.Environment$`)) &&
+			!m.File().PkgPath.Matches(`/internal/config$`)).
+		Report(`compare the environment with config.Environment.IsProduction, not with a string`)
+}
