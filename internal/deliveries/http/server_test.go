@@ -39,6 +39,7 @@ type testServer struct {
 	revocation middleware.RevocationChecker
 	health     healthService
 	users      userService
+	logs       *zap.Logger
 }
 
 func (s testServer) build(t *testing.T) *echo.Echo {
@@ -52,7 +53,10 @@ func (s testServer) build(t *testing.T) *echo.Echo {
 	if s.revocation == nil {
 		s.revocation = notRevoked{}
 	}
-	log, err := logger.NewWlog(s.cfg, wlogzap.Drain(zap.NewNop()))
+	if s.logs == nil {
+		s.logs = zap.NewNop()
+	}
+	log, err := logger.NewWlog(s.cfg, wlogzap.Drain(s.logs))
 	require.NoError(t, err)
 	return NewServer(s.cfg, log, s.jwt, s.revocation, s.health, s.users)
 }

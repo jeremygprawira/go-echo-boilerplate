@@ -182,6 +182,8 @@ Return herr errors from the `errorc` catalog. `ErrorHandler` coerces any error t
 
 The level follows the status. A 4xx is `warn`, a 5xx or a panic is `error`, and anything else is `info`.
 
+`outcome` follows the level, so it is `error` only for a 5xx or a panic. wlog's outcome says whether the server failed. A 4xx is the client's mistake, so a rejected request, an authentication failure included, logs `outcome: success` at level `warn`, with its `http.status` and `error.code`. To find rejected requests, filter on `level` or `http.status`, not `outcome`.
+
 To keep extra context next to an error, set it as a field before you return:
 
 ```go
