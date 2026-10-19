@@ -17,12 +17,15 @@ func NewFuncProcess(stopFunc func(ctx context.Context) error) *FuncProcess {
 	}
 }
 
+// Start calls ready at once, then blocks until ctx is cancelled.
 func (p *FuncProcess) Start(ctx context.Context, ready func()) error {
 	ready()
 	<-ctx.Done()
 	return nil
 }
 
+// Stop runs the stop function given to NewFuncProcess, or returns nil when
+// there is none.
 func (p *FuncProcess) Stop(ctx context.Context) error {
 	if p.stopFunc != nil {
 		return p.stopFunc(ctx)

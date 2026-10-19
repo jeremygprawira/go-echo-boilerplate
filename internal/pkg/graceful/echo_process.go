@@ -24,6 +24,8 @@ func NewEchoProcess(server *echo.Echo, addr string) *EchoProcess {
 	}
 }
 
+// Start binds the listener, calls ready once it is bound, then serves until ctx
+// is cancelled or the server fails.
 func (p *EchoProcess) Start(ctx context.Context, ready func()) error {
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", p.addr)
 	if err != nil {
@@ -37,6 +39,7 @@ func (p *EchoProcess) Start(ctx context.Context, ready func()) error {
 	return nil
 }
 
+// Stop drains in-flight requests until ctx expires, then closes the server.
 func (p *EchoProcess) Stop(ctx context.Context) error {
 	return p.server.Shutdown(ctx)
 }

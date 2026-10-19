@@ -15,6 +15,10 @@ import "context"
 // Stop releases what Start acquired, within ctx's deadline. Graceful calls it
 // only on a process that called ready, after it cancels Start's ctx, so a
 // Start that fails before ready must release what it acquired itself.
+//
+// A Start that ignores ctx before it calls ready makes shutdown wait for it
+// until the shutdown deadline, which leaves the earlier processes' Stops
+// skipped, so honor ctx in Start.
 type Process interface {
 	Start(ctx context.Context, ready func()) error
 	Stop(ctx context.Context) error
