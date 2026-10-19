@@ -33,7 +33,7 @@ check_no_tracked_agent_files() {
 	return 1
 }
 
-# The table had 61 rows when this floor was set. The margin lets rows go as
+# The table had 65 rows when this floor was set. The margin lets rows go as
 # their mistakes become impossible, while a lost table or block still fails.
 min_rule_rows=50
 

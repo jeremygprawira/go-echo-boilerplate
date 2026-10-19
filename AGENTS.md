@@ -7,14 +7,14 @@ This file guides coding agents (Claude Code, Codex and similar tools) in this re
 - This repo is a boilerplate for any use case. Keep a generic helper with no caller yet. It needs a behavior test and a line in `scripts/deadcode-allow.txt` that says why. Delete duplicates: a second way to do one thing goes.
 - Do not add speculative infrastructure unless the owner asks for it: ports or interfaces with one implementation, a unit-of-work, optional Redis, Kafka or Firebase clients, a `Dependencies` bag. Each of these was added once and deleted later.
 - `make ci` is the gate. Run it on your committed head before you push. GitHub Actions is optional. The workflow runs the same `make ci`, so a green local run is the result that counts.
-- Land a stacked chain of PRs with merge commits, never squash or rebase merges. Rule rows can cite commits from inside a PR, and a squash or rebase drops those commits from `master`. `scripts/check-repo.sh` then fails.
-- An agent's commit message ends with the `Co-Authored-By:` trailer that the operator names for the session, which is `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>` unless the operator says otherwise. A delegate uses the same trailer as the session that spawned it. Check the trailers with `git log` before you push, because a rewrite after a push changes the SHAs that rule rows cite.
+- Land a stacked chain of PRs with merge commits. A rule row can cite a commit from inside its PR, and a squash or rebase merge drops that commit from `master`, so `scripts/check-repo.sh` fails until a later PR changes the row. For the `rearch/` stack (#14 to #23): with merge commits, `scripts/check-repo.sh` passes after each PR lands. With squash merges, it fails after each of #17 to #22 (`rearch/04` to `rearch/09`) and passes again once #23 (`rearch/10`) lands, because #23's rows cite only commits on `master`. `make test-integration` already pointed at `./tests/...` on `master` and #20 (`rearch/07`) fixes it, so a landing that stops before #20 leaves it broken.
+- An agent's commit message ends with a `Co-Authored-By:` trailer, `Co-Authored-By: <model> <noreply@anthropic.com>`, where `<model>` is the model name your session reports. When the operator names a trailer for the session, use that one. A delegate uses the same trailer as the session that spawned it. Check the trailers with `git log` before you push, because a rewrite after a push changes the SHAs that rule rows cite.
 
 ## Commands
 
 ```bash
 make ci                       # The gate: every check below except the integration suite. Run it before you push
-make hooks                    # Opt in: git push runs make ci first (skip once: git push --no-verify)
+make hooks                    # Opt in: git push runs make ci first, on the working tree, not the pushed commit (skip once: git push --no-verify)
 make unhooks                  # Turn the pre-push hook off
 make pr-base PR=<number>      # The CI PR base check, run locally (needs an authenticated gh)
 make dev                      # Hot-reload dev server (air); regenerates Swagger docs first. Default ENV=dev
@@ -63,13 +63,23 @@ Clean Architecture, written the Go way. Dependencies point inward: `internal/del
 **Route rows.** A `route` has a `method`, a `path`, exactly one of `public` or `bearer`, and the flags `rateLimited` and `idempotent`. A `public` handler is an `echo.HandlerFunc` and needs only the API key. A handler that reads its caller is a `bearerHandler`, `func(echo.Context, jwtc.Claims) error`. It goes in the `bearer` field, which also needs a live access token. Put it in `public` and the build fails. `NewServer` builds the rate limiter, the bearer check and the idempotency store once, and mounts every row under `/api` behind the API key. Each `rateLimited` row has its own budget per client IP. `mount` panics at startup on a row with no handler or two.
 
 **Add a feature.** For example `notes`, with a table, one public route and one bearer route:
-1. Add the migration with `make migrate-create NAME=notes`, and the entity in `internal/models`.
+1. Run `make migrate-create NAME=notes`. It writes a placeholder file in `migration/db/postgre` with `SELECT 'up SQL query';` in its Up and Down sections. Replace both with your SQL. Then add the entity in `internal/models`.
 2. Add the queries as `Store` methods in `internal/repository/note_repository.go`, with sqlmock tests. A single-row read goes through `one[models.Note]`, and an insert into a table with a unique index through `conflict`.
-3. Add `internal/service/note_service.go`: a `noteStore` interface with the store methods the service calls, a `NoteService` struct, and `NewNoteService(store noteStore)`.
-4. Add `internal/deliveries/http/note_handler.go`: a `noteService` interface, the handlers with their swag annotations, and `noteRoutes(notes noteService) []route`. Each handler needs `@Security ApiKeyAuth`, or `@Security ApiKeyAuth && BearerAuth` for a bearer route, or `TestSwaggerSpecDefinesItsInfoAndEverySecurityScheme` fails.
-5. Wire it in three existing files. In `NewServer`, add a `notes noteService` parameter and add `noteRoutes(notes)` to the `slices.Concat` call. In `core.Setup`, add `service.NewNoteService(store)` to the `NewServer` call. In `internal/deliveries/http/server_test.go`, add a `notes` field to `testServer`.
+3. Add `internal/service/note_service.go`: a `noteStore` interface with the store methods the service calls, a `NoteService` struct, and `NewNoteService(store noteStore)`. Turn store errors into catalog errors from `internal/pkg/errorc`:
+   - `errors.Is(err, models.ErrConflict)` becomes `errorc.AlreadyExists.New().Public(herr.Message("note already exists")).Wrap(err)`, a 409.
+   - `errors.Is(err, models.ErrNotFound)` becomes `errorc.DataNotFound.New().Public(herr.Message("note not found")).Wrap(err)`, a 404.
+   - Any other store error becomes `errorc.Database.New().Internal("failed to create note").Wrap(err)`, a 500 whose detail is only logged.
+   - `.Public` takes a `herr.Message(...)`. A bare string does not compile.
+   - Service tests are in package `service_test`, as in `internal/service/user_service_test.go`, with a fake store.
+4. Add `internal/deliveries/http/note_handler.go`: a `noteService` interface, the handlers with their swag annotations, and `noteRoutes(notes noteService) []route`. A handler binds the body with `ctx.Bind`, checks it with `validator.Input(request)` (return `errorc.FromValidation(err)` on an error), calls the service, returns its error as is, and ends with `response.Success(ctx, http.StatusCreated, data)`. A bearer handler is `func(ctx echo.Context, caller jwtc.Claims) error` and reads the caller from `caller.UserID` or `caller.AccountNumber`. Each handler needs `@Security ApiKeyAuth`, or `@Security ApiKeyAuth && BearerAuth` for a bearer route, or `TestSwaggerSpecDefinesItsInfoAndEverySecurityScheme` fails. A path parameter is `{id}` in `@Router /api/v1/notes/{id} [get]` and `:id` in the route row. The Swagger tests treat the two as the same.
+5. Wire it in four existing files:
+   - In `NewServer` in `internal/deliveries/http/router.go`, add a `notes noteService` parameter and add `noteRoutes(notes)` to the `slices.Concat` call.
+   - In `core.Setup`, add `service.NewNoteService(store)` to the `NewServer` call.
+   - In `internal/deliveries/http/server_test.go`, add a `notes noteService` field to `testServer`, and pass `s.notes` to `NewServer` in `build()`.
+   - In `internal/deliveries/http/revocation_test.go`, give `revocationTestServerWithBarrier` a fake note service in its `testServer`. The route walk (`TestRoutes_EveryAPIRouteEnforcesItsControls`) builds its server there. Without the fake, your handler calls a nil service, panics, and the walk fails on the 500.
 6. Run `make docs`. `TestSwaggerPathsMatchServedRoutes` fails until each served route has an `@Router` with the same method and path.
 7. Add a `public` route to `publicRoutes` in `internal/deliveries/http/route_controls_test.go`. Until then `TestRoutes_EveryAPIRouteEnforcesItsControls` fails, because it expects 401 without a bearer token from every other route under `/api`. A route on the root Echo, outside `/api`, skips the API key. `TestRoutes_OutsideAPIAreListed` fails until you add it to the list in that test.
+8. Run `make ci`. To try the routes by hand, run `make migrate-up` first, so your database has the new table.
 
 If a store method, a service method, a `NewServer` parameter or a `core.Setup` argument is missing, the build fails. If nothing mounts a route function, `make lint` reports it as unused and the feature's server tests get 404.
 
@@ -140,9 +150,9 @@ No check enforces these. Each one is a mistake that agents made at least twice h
 
 - **Claim only what you observed.** Before you say that something is done, merged, deleted, passing or finished, show the output that proves it in the same message. Name the command and its result. If you have not checked, say so.
 - **Change something before you retry.** When a command fails, read the error. Then change the command, its quoting or the tool. Never rerun a failed command unchanged. After two failures with one approach, use another: a script file, another tool, or a narrower command.
-- **Name things fully and keep tunables out of code.** Name a value for what it is, such as `log`, not `wl`. Follow the import alias that the nearest file uses. A value that an operator can tune (a TTL, a rate, a timeout) goes in config with a default in `config.Initialize`. A fixed name that several files share (a cookie or header name) goes in `internal/constant`. Neither is a literal in a handler.
+- **Name things fully and keep tunables out of code.** Name a value for what it is, such as `log`, not `wl`. Use the import alias the package already uses. A value that an operator can tune (a TTL, a rate, a timeout) goes in config with a default in `config.Initialize`. A fixed name that several files share (a cookie or header name) goes in `internal/constant`. Neither is a literal in a handler.
 - **Keep comments and docs true.** A comment states a why that the code cannot show. When you rename, move or delete code, run `git grep -w <name>` and fix or delete each comment and doc line that names it, in the same commit. When you change a command, a path or a rule, update this file in the same commit.
-- **Keep scratch out of the repo.** Plans, reports, status notes and agent tool folders stay outside the tree. `.gitignore` and `scripts/check-repo.sh` catch `.serena/` and `docs/superpowers/`, and nothing catches a plan written elsewhere.
+- **Keep scratch out of the repo.** Plans, reports, status notes and agent tool folders stay outside the tree, for example in the system temp dir (`$TMPDIR` or `/tmp`). `.gitignore` and `scripts/check-repo.sh` catch `.serena/` and `docs/superpowers/`, and nothing catches a plan written elsewhere.
 - **Test a security fix on Postgres.** A fix to the service or repository layer gets a property in `internal/integration`, not only a sqlmock test.
 
 ## Mistake classes and what covers them
@@ -151,7 +161,7 @@ These are the 14 classes of repeated agent mistakes from the repo's history and 
 
 | # | Mistake class | Enforced by | Left to judgment |
 | --- | --- | --- | --- |
-| 1 | A security control ships switched off (zero value, nil config, no-op store) | `go build` (`config.Validated` constructors, the `bearerHandler` field), and `make test`: the route walk, the omitted `rate_limit` row, `configtest.Valid` defaults, the server with the limiter on | none |
+| 1 | A security control ships switched off (zero value, nil config, no-op store) | `go build` (`config.Validated` constructors, the `bearerHandler` field), and `make test`: the route walk, the omitted `rate_limit` row, `configtest.Valid` defaults, the server with the limiter on | A new constructor that takes `*config.Configuration` instead of `config.Validated` compiles, and only review catches it |
 | 2 | A security fix checked only against mocks | `make test-integration` rows: login, logout, refresh, deleted and soft-deleted users, `createdAt` | "Test a security fix on Postgres" for a new fix |
 | 3 | The Go version in Dockerfiles and CI drifts from go.mod | `scripts/check-repo.sh` (`FROM golang:` row). CI reads `go-version-file: go.mod` | none |
 | 4 | Scaffolding nobody asked for, deleted later | `scripts/check-deadcode.sh` (allowlist rows) | the owner's rule on speculative infrastructure |
@@ -180,7 +190,7 @@ Each rule has a check that fails on a real past commit. When no past commit brok
 | `internal/repository` never imports `service` or `deliveries` | `make lint` (depguard `repository-no-callers`) | no past violation. Probe: a repository file that imports the HTTP middleware package |
 | A handler that reads its caller mounts only on a bearer route row | `go build` (the `bearerHandler` type of the `bearer` field) | no past violation. Probe: the `/v1/users/me` handler moved to the `public` field |
 | Each served route has a Swagger path with the same method, and each Swagger path is served | `make test` (`TestSwaggerPathsMatchServedRoutes`) | no past violation. Probe: the `/api/v1/users/me` path renamed in `docs/docs.go` |
-| One rate limiter on many route rows keeps a budget per method, route and client IP | `make test` (`TestRateLimiter_OneInstanceKeepsABudgetPerRoute`, `TestRateLimiter_OneInstanceKeepsABudgetPerMethodOnAPath`) | no past violation. Probe: the limiter store keyed on the client IP without the method and route |
+| One rate limiter on many route rows keeps a budget per method, route and client IP | `make test` (`TestRateLimiter_OneInstanceKeepsABudgetPerRoute`, `TestRateLimiter_OneInstanceKeepsABudgetPerMethodOnAPath`) | 1c90978 |
 | The rate limiter counts an IPv4 client by its address and an IPv6 client, zoned or not, by its /64 | `make test` (`TestRateLimiter_KeysIPv4OnTheAddressAndIPv6OnThe64`) | 1c90978 |
 | The rate limiter reads the client from the IP extractor it is given, never from `c.RealIP()`, which trusts `X-Forwarded-For` on a bare `echo.New()`. A nil extractor panics. `NewServer` passes the extractor it sets on `e.IPExtractor` | `go build` (the `RateLimiter` signature), and `make test` (`TestRateLimiter_ReadsTheClientFromItsExtractorNotEchoDefaults`, `TestRateLimiter_NilExtractorPanics`, `TestRateLimit_TrustedProxyForwardsClientIP`) | 1c90978 |
 | A lookup with no row returns `models.ErrNotFound`, never `(nil, nil)` or a zero-value struct | `make test` (`TestUserLookups_NoRowIsErrNotFound`). On past trees, which have no `ErrNotFound`, its nil-user half | 701e02d^, dff4183^ |

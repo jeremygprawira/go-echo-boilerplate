@@ -158,7 +158,7 @@ make test-integration   # integration suite on a throwaway Postgres container (n
 make ci                 # every check: tidy modules, build, tests, lint, gosec, repo rules, dead code, Swagger docs
 ```
 
-`make ci` is the gate. Run it before you push. It needs no Docker and no GitHub Actions. To run it on every push, run `make hooks` once. To skip it for one push, use `git push --no-verify`. To turn it off, run `make unhooks`.
+`make ci` is the gate. Run it before you push. It needs no Docker and no GitHub Actions. To run it on every push, run `make hooks` once. The hook checks your working tree, not the commits you push, so commit your changes before you push. To skip it for one push, use `git push --no-verify`. To turn it off, run `make unhooks`.
 
 The GitHub Actions workflow is optional. It runs the same `make ci` and the integration suite against a Postgres service. On a pull request, it also checks that the PR targets `master` or a branch with an open PR. Run that last check locally with `make pr-base PR=<number>`. It needs the `gh` CLI, logged in.
 
