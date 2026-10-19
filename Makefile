@@ -6,6 +6,7 @@
 BINARY_NAME=server
 MAIN_FILE=cmd/http/main.go
 DOCKER_COMPOSE_FILE=docker-compose.yml
+DOCKER_COMPOSE = $(shell docker compose version >/dev/null 2>&1 && echo "docker compose" || echo docker-compose)
 
 # Default environment (can be overridden: make run ENV=dev)
 ENV ?= dev
@@ -29,7 +30,7 @@ help:
 	@echo "  make tidy                     - Clean and download Go modules"
 	@echo ""
 	@echo "📦 Container & Deploy:"
-	@echo "  make docker-up                - Start services with Docker Compose"
+	@echo "  make docker-up                - Start the app and Postgres (needs config/config.dev.yaml)"
 	@echo "  make docker-down              - Stop services"
 	@echo "  make docker-logs              - View container logs"
 	@echo "  make docker-clean             - Remove containers, volumes, and images"
@@ -163,22 +164,27 @@ docs:
 	@echo "✅ Swagger docs generated in ./docs"
 
 docker-up:
+	@if [ ! -f config/config.dev.yaml ]; then \
+		echo "❌ ERROR: config/config.dev.yaml not found. Copy config/config.local.example.yaml to it, set environment: dev, and set the postgresql host to pgdb, port 5432"; \
+		if [ -d config/config.dev.yaml ]; then echo "   It is a directory, which Docker makes for a missing file. Remove it with: rmdir config/config.dev.yaml"; fi; \
+		exit 1; \
+	fi
 	@echo "🐳 Starting containers..."
-	@docker-compose -f $(DOCKER_COMPOSE_FILE) up -d --build
-	@echo "✅ Containers started"
-	@docker-compose ps
+	@$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_FILE) up -d --build
+	@echo "✅ Containers started. On a new database, run make migrate-up"
+	@$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_FILE) ps
 
 docker-down:
 	@echo "🐳 Stopping containers..."
-	@docker-compose -f $(DOCKER_COMPOSE_FILE) down
+	@$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_FILE) down
 	@echo "✅ Containers stopped"
 
 docker-logs:
-	@docker-compose -f $(DOCKER_COMPOSE_FILE) logs -f --tail=100
+	@$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_FILE) logs -f --tail=100
 
 docker-clean:
 	@echo "🧹 Cleaning Docker resources..."
-	@docker-compose -f $(DOCKER_COMPOSE_FILE) down -v --remove-orphans
+	@$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_FILE) down -v --remove-orphans
 	@docker system prune -f
 	@echo "✅ Docker cleanup complete"
 
