@@ -18,10 +18,16 @@ import (
 // timeout bounds the whole shutdown. Graceful names in its error each Stop
 // still running at the deadline, each Stop it skipped because the deadline
 // had passed, and each Start that has not returned, and returns without them.
+// A panic in Start fails the run like a returned error.
 func Graceful(processes []NamedProcess, opts ...Option) error {
 	o := defaultOptions()
 	for _, opt := range opts {
 		opt(&o)
+	}
+	for _, p := range processes {
+		if p.Process == nil {
+			return fmt.Errorf("process %q is nil", p.Name)
+		}
 	}
 
 	signalCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -47,6 +53,8 @@ func Graceful(processes []NamedProcess, opts ...Option) error {
 		o.startupHook()
 		<-ctx.Done()
 	}
+	// Restore the default action, so a second Ctrl-C ends a stuck shutdown.
+	stopSignals()
 	cancel()
 	o.shutdownHook()
 
@@ -123,10 +131,19 @@ func start(ctx context.Context, cancel context.CancelFunc, p NamedProcess) *runn
 	r := &running{NamedProcess: p, ready: make(chan struct{}), exited: make(chan struct{})}
 	go func() {
 		defer close(r.exited)
-		r.err = exitError(ctx, p.Name, p.Process.Start(ctx, sync.OnceFunc(func() { close(r.ready) })))
+		r.err = exitError(ctx, p.Name, startRecovered(ctx, p.Process, sync.OnceFunc(func() { close(r.ready) })))
 		cancel()
 	}()
 	return r
+}
+
+func startRecovered(ctx context.Context, p Process, ready func()) (err error) {
+	defer func() {
+		if v := recover(); v != nil {
+			err = fmt.Errorf("panic: %v", v)
+		}
+	}()
+	return p.Start(ctx, ready)
 }
 
 func exitError(ctx context.Context, name string, err error) error {

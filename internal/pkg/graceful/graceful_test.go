@@ -1,8 +1,11 @@
 package graceful_test
 
 import (
+	"bufio"
 	"context"
 	"errors"
+	"os"
+	"os/exec"
 	"sync"
 	"syscall"
 	"testing"
@@ -38,6 +41,7 @@ type fake struct {
 	beforeReady    func(ctx context.Context)
 	exitAfterReady func() error
 	startErr       error
+	startPanic     any
 	blockStop      bool
 	hangStop       chan struct{}
 	ignoreCtx      bool
@@ -47,6 +51,9 @@ func (f *fake) Start(ctx context.Context, ready func()) error {
 	f.log.add("start " + f.name)
 	if f.startErr != nil {
 		return f.startErr
+	}
+	if f.startPanic != nil {
+		panic(f.startPanic)
 	}
 	if f.beforeReady != nil {
 		f.beforeReady(ctx)
@@ -225,4 +232,93 @@ func TestGraceful_StopThatIgnoresItsDeadlineIsNamedNotWaitedOn(t *testing.T) {
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	assert.ErrorContains(t, err, "stop http: context deadline exceeded")
 	assert.Equal(t, []string{"start db", "start http", "stop http"}, log.all())
+}
+
+func TestGraceful_EarlierProcessEndingDuringALaterStartRunsNoHook(t *testing.T) {
+	log := &journal{}
+	errCrash := errors.New("db: connection lost")
+	dbDown := make(chan struct{})
+	waitForTheRunToEnd := func(ctx context.Context) {
+		close(dbDown)
+		select {
+		case <-ctx.Done():
+		case <-time.After(time.Second):
+		}
+	}
+	hook := graceful.WithStartupHook(func() { log.add("ready hook") })
+
+	err := run(t, processes(log,
+		&fake{name: "db", exitAfterReady: func() error { <-dbDown; return errCrash }},
+		&fake{name: "http", beforeReady: waitForTheRunToEnd}), hook)
+
+	require.ErrorIs(t, err, errCrash)
+	assert.NotContains(t, log.all(), "ready hook")
+	assert.Contains(t, log.all(), "stop http")
+}
+
+func TestGraceful_PanicInStartIsAFailedStart(t *testing.T) {
+	log := &journal{}
+
+	err := run(t, processes(log, &fake{name: "db"}, &fake{name: "http", startPanic: "nil map"}))
+
+	require.ErrorContains(t, err, "http: panic: nil map")
+	assert.Equal(t, []string{"start db", "start http", "stop db"}, log.all(), "the ready process is still stopped")
+}
+
+func TestGraceful_NilProcessIsAnErrorBeforeAnythingStarts(t *testing.T) {
+	log := &journal{}
+	procs := append(processes(log, &fake{name: "db"}), graceful.NamedProcess{Name: "http"})
+
+	err := run(t, procs)
+
+	require.EqualError(t, err, `process "http" is nil`)
+	assert.Empty(t, log.all())
+}
+
+// A second Ctrl-C during a stuck shutdown must kill the process, so the
+// signal handler is released when shutdown begins. The helper runs in a
+// child process because the signal's default action ends the process.
+func TestGraceful_SecondSignalDuringAStuckShutdownKillsTheProcess(t *testing.T) {
+	if os.Getenv("GRACEFUL_STUCK_SHUTDOWN") == "1" {
+		stuck := &fake{name: "http", hangStop: make(chan struct{})}
+		_ = graceful.Graceful(processes(&journal{}, stuck), graceful.WithTimeout(time.Minute),
+			graceful.WithStartupHook(func() { println("ready") }),
+			graceful.WithShutdownHook(func() { println("shutting down") }))
+		os.Exit(0)
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$")
+	cmd.Env = append(os.Environ(), "GRACEFUL_STUCK_SHUTDOWN=1")
+	stderr, err := cmd.StderrPipe()
+	require.NoError(t, err)
+	require.NoError(t, cmd.Start())
+	t.Cleanup(func() { _ = cmd.Process.Kill() })
+	lines := bufio.NewScanner(stderr)
+	waitFor := func(want string) {
+		t.Helper()
+		for lines.Scan() {
+			if lines.Text() == want {
+				return
+			}
+		}
+		t.Fatalf("child never printed %q", want)
+	}
+
+	waitFor("ready")
+	require.NoError(t, cmd.Process.Signal(syscall.SIGINT))
+	waitFor("shutting down")
+	require.NoError(t, cmd.Process.Signal(syscall.SIGINT))
+
+	exited := make(chan error, 1)
+	go func() { exited <- cmd.Wait() }()
+	select {
+	case err := <-exited:
+		var exit *exec.ExitError
+		require.ErrorAs(t, err, &exit)
+		status, ok := exit.Sys().(syscall.WaitStatus)
+		require.True(t, ok)
+		assert.Equal(t, syscall.SIGINT, status.Signal(), "the second SIGINT killed the child")
+	case <-time.After(5 * time.Second):
+		t.Fatal("the second SIGINT did not end a shutdown stuck in Stop")
+	}
 }
