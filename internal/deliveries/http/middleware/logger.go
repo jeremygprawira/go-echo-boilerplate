@@ -2,7 +2,6 @@ package middleware
 
 import (
 	wlogecho "github.com/jeremygprawira/wlog/middleware/echo"
-	"github.com/jeremygprawira/wlog/middleware/httpcore"
 	"github.com/labstack/echo/v4"
 )
 
@@ -16,12 +15,5 @@ func (m *Middleware) LoggingMiddleware() echo.MiddlewareFunc {
 		wlogecho.CaptureAll(),
 		wlogecho.BodyContentTypes(echo.MIMEApplicationJSON),
 		wlogecho.MaxBodyCapture(maxBodyCapture),
-		wlogecho.WithUserFunc(extractUserID),
 	)
-}
-
-// extractUserID reads the user id for the event. Customize this based on your
-// authentication setup.
-func extractUserID(r httpcore.Request) string {
-	return r.Header("X-User-ID")
 }

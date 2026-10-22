@@ -25,3 +25,13 @@ func TestParsePagination_IgnoresGarbageLimit(t *testing.T) {
 	require.Equal(t, 20, p.Limit)
 	require.Equal(t, "42", p.Cursor)
 }
+
+func TestParsePagination_IgnoresNonPositiveLimit(t *testing.T) {
+	require.Equal(t, 20, models.ParsePagination("", "0").Limit)
+	require.Equal(t, 20, models.ParsePagination("", "-5").Limit)
+}
+
+func TestParsePagination_KeepsLimitWithinBounds(t *testing.T) {
+	require.Equal(t, 1, models.ParsePagination("", "1").Limit)
+	require.Equal(t, 100, models.ParsePagination("", "100").Limit)
+}

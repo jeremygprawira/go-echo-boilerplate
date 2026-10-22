@@ -1,11 +1,20 @@
 {
     "swagger": "2.0",
     "info": {
-        "contact": {}
+        "description": "This is a go-echo-boilerplate api docs.",
+        "title": "GO-ECHO-BOILERPLATE API DOCUMENTATION",
+        "contact": {},
+        "version": "1.0"
     },
+    "basePath": "/",
     "paths": {
         "/api/v1/users": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Register a new user with email, phone number, and password. Auto-generates account number. Optionally pass an Idempotency-Key header to make a retried request safe: a repeated request with the same key returns the original response instead of re-executing.",
                 "consumes": [
                     "application/json"
@@ -84,6 +93,7 @@
             "post": {
                 "security": [
                     {
+                        "ApiKeyAuth": [],
                         "BearerAuth": []
                     }
                 ],
@@ -128,6 +138,7 @@
             "get": {
                 "security": [
                     {
+                        "ApiKeyAuth": [],
                         "BearerAuth": []
                     }
                 ],
@@ -184,6 +195,11 @@
         },
         "/api/v1/users/tokens": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Get tokens for a user",
                 "consumes": [
                     "application/json"
@@ -254,6 +270,11 @@
         },
         "/api/v1/users/tokens/refresh": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Exchange a valid, non-revoked refresh token for a new access+refresh pair. The token may be supplied in the body or via the refresh_token cookie set at login; the body takes precedence. The presented refresh token is revoked, so a retry with it gets 401 and the client must log in again.",
                 "consumes": [
                     "application/json"
@@ -642,6 +663,19 @@
                     "example": "accessToken"
                 }
             }
+        }
+    },
+    "securityDefinitions": {
+        "ApiKeyAuth": {
+            "type": "apiKey",
+            "name": "X-API-Key",
+            "in": "header"
+        },
+        "BearerAuth": {
+            "description": "Type \"Bearer\" followed by a space and the access token.",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
         }
     }
 }

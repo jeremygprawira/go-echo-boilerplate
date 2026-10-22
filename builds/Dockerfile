@@ -48,12 +48,14 @@ COPY --from=build /etc/passwd /etc/passwd
 COPY --from=build /etc/group /etc/group
 
 
-# Copy executable
-COPY --from=build /go/bin/app /
+WORKDIR /app
+COPY --from=build /go/bin/app /app/app
+COPY api-docs.html /app/api-docs.html
+USER appuser:appuser
 
 EXPOSE 8080
 
 ENV PORT 8080
 
 # Entrypoint
-CMD ["/app"]
+CMD ["/app/app"]

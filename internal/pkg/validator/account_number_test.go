@@ -41,6 +41,7 @@ func TestValidateAccountNumber(t *testing.T) {
 		assert.False(t, AccountNumber("453201511283036a"))
 		assert.False(t, AccountNumber("4532-0151-1283-0366"))
 		assert.False(t, AccountNumber("4532 0151 1283 0366"))
+		assert.False(t, AccountNumber("6:11514433546201"), "':' must not count as digit 10")
 	})
 }
 
@@ -49,4 +50,12 @@ func BenchmarkValidateAccountNumber(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_ = AccountNumber(accountNumber)
 	}
+}
+
+func TestLuhn(t *testing.T) {
+	assert.True(t, Luhn([]int{7, 9, 9, 2, 7, 3, 9, 8, 7, 1, 3}), "79927398713 is the reference Luhn number")
+	assert.False(t, Luhn([]int{7, 9, 9, 2, 7, 3, 9, 8, 7, 1, 4}))
+	assert.True(t, Luhn([]int{0}))
+	assert.True(t, Luhn([]int{1, 8}))
+	assert.False(t, Luhn([]int{8, 1}))
 }

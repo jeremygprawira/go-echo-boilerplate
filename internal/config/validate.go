@@ -21,7 +21,13 @@ const placeholderMarker = "replace-with-"
 func (c *Configuration) Validate() error {
 	var errs []error
 
-	if !environments[c.environment()] {
+	if strings.TrimSpace(c.Application.Name) == "" {
+		errs = append(errs, errors.New("application.name must not be empty"))
+	}
+	if c.Application.Port < 1 || c.Application.Port > 65535 {
+		errs = append(errs, fmt.Errorf("application.port %d must be between 1 and 65535", c.Application.Port))
+	}
+	if !environments[c.Application.Environment] {
 		errs = append(errs, fmt.Errorf("application.environment %q must be one of local, dev, uat, staging, prod, production", c.Application.Environment))
 	}
 
@@ -53,20 +59,6 @@ func (c *Configuration) Validate() error {
 			errs = append(errs, fmt.Errorf("%s still holds the example placeholder", name))
 		}
 	}
-	if _, err := time.ParseDuration(c.Authorization.Access.Duration); err != nil {
-		errs = append(errs, fmt.Errorf("authorization.access.duration is invalid: %w", err))
-	}
-	if _, err := time.ParseDuration(c.Authorization.Refresh.Duration); err != nil {
-		errs = append(errs, fmt.Errorf("authorization.refresh.duration is invalid: %w", err))
-	}
-	if _, err := time.ParseDuration(c.RateLimit.ExpiresIn); err != nil {
-		errs = append(errs, fmt.Errorf("rate_limit.expires_in is invalid: %w", err))
-	}
-	if ttl, err := time.ParseDuration(c.Idempotency.TTL); err != nil {
-		errs = append(errs, fmt.Errorf("idempotency.ttl is invalid: %w", err))
-	} else if ttl <= 0 {
-		errs = append(errs, errors.New("idempotency.ttl must be greater than 0"))
-	}
 	if c.RateLimit.Rate <= 0 {
 		errs = append(errs, errors.New("rate_limit.rate must be greater than 0"))
 	}
@@ -74,20 +66,38 @@ func (c *Configuration) Validate() error {
 		errs = append(errs, errors.New("rate_limit.burst must be greater than 0"))
 	}
 
-	for name, value := range map[string]string{
+	for name, d := range map[string]time.Duration{
+		"authorization.access.duration":   c.Authorization.Access.Duration,
+		"authorization.refresh.duration":  c.Authorization.Refresh.Duration,
+		"rate_limit.expires_in":           c.RateLimit.ExpiresIn,
+		"idempotency.ttl":                 c.Idempotency.TTL,
 		"application.read_header_timeout": c.Application.ReadHeaderTimeout,
 		"application.read_timeout":        c.Application.ReadTimeout,
 		"application.write_timeout":       c.Application.WriteTimeout,
 		"application.idle_timeout":        c.Application.IdleTimeout,
 	} {
-		if d, err := time.ParseDuration(value); err != nil {
-			errs = append(errs, fmt.Errorf("%s is invalid: %w", name, err))
-		} else if d <= 0 {
+		if d <= 0 {
 			errs = append(errs, fmt.Errorf("%s must be greater than 0", name))
 		}
 	}
 	if c.Application.Timeout < 0 {
 		errs = append(errs, errors.New("application.timeout must not be negative"))
+	}
+	// At or above write_timeout the server cuts the connection before the
+	// request deadline can write its error body.
+	if c.Application.Timeout > 0 && c.Application.WriteTimeout > 0 && c.Application.Timeout >= c.Application.WriteTimeout {
+		writeTimeout := c.Application.WriteTimeout.String()
+		if c.Application.WriteTimeout == defaultWriteTimeout {
+			writeTimeout += ", its default"
+		}
+		errs = append(errs, fmt.Errorf("application.timeout (%s) must be less than application.write_timeout (%s)", c.Application.Timeout, writeTimeout))
+	}
+	// LoadLocation maps "" to UTC and "Local" to the host zone, but the
+	// timezone DSN parameter takes neither, so the connect would fail later.
+	if c.Application.Timezone == "" || c.Application.Timezone == "Local" {
+		errs = append(errs, fmt.Errorf("application.timezone %q must name a zone, such as UTC or Asia/Jakarta", c.Application.Timezone))
+	} else if _, err := time.LoadLocation(c.Application.Timezone); err != nil {
+		errs = append(errs, fmt.Errorf("application.timezone %q is not a time zone: %w", c.Application.Timezone, err))
 	}
 	for _, cidr := range c.Application.TrustedProxies {
 		if _, _, err := net.ParseCIDR(cidr); err != nil {

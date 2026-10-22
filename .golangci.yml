@@ -1,0 +1,84 @@
+version: "2"
+
+formatters:
+  enable:
+    - gofmt
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+linters:
+  default: standard
+  enable:
+    - errcheck
+    - depguard
+    - importas
+    - forbidigo
+    - gocritic
+  exclusions:
+    rules:
+      - path: ^internal/config/
+        linters: [forbidigo]
+      - path: _test\.go$
+        linters: [forbidigo]
+  settings:
+    gocritic:
+      disable-all: true
+      enabled-checks: [ruleguard]
+      settings:
+        ruleguard:
+          rules: ${base-path}/lint/ruleguard.go
+          failOn: all
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^time\.ParseDuration$
+          msg: make the config field a time.Duration; internal/config decodes durations once, at load
+    depguard:
+      rules:
+        pkg-is-leaf:
+          files: ["**/internal/pkg/**", "!$test"]
+          deny:
+            - pkg: go-echo-boilerplate/internal/repository
+              desc: internal/pkg is a leaf; data access belongs in internal/repository, called from internal/service
+            - pkg: go-echo-boilerplate/internal/service
+              desc: internal/pkg is a leaf; it must not depend on services
+            - pkg: go-echo-boilerplate/internal/deliveries
+              desc: internal/pkg is a leaf; it must not depend on the HTTP layer
+            - pkg: go-echo-boilerplate/internal/core
+              desc: internal/pkg is a leaf; it must not depend on the composition root
+        deliveries-no-persistence:
+          files: ["**/internal/deliveries/**", "!$test"]
+          deny:
+            - pkg: go-echo-boilerplate/internal/repository
+              desc: handlers and middleware reach data through a service, never the repository
+            - pkg: gorm.io
+              desc: handlers and middleware reach data through a service, never gorm
+            - pkg: go-echo-boilerplate/internal/service
+              desc: a handler declares the service methods it calls as a small interface, and core.Setup passes the service
+        service-no-adapters:
+          files: ["**/internal/service/**", "!$test"]
+          deny:
+            - pkg: go-echo-boilerplate/internal/repository
+              desc: a service declares the store methods it calls as a small interface, and core.Setup passes the repository.Store
+            - pkg: gorm.io
+              desc: a service declares the store methods it calls as a small interface; gorm stays in internal/repository
+            - pkg: github.com/jackc/pgx
+              desc: the repository turns driver errors into models.ErrNotFound and models.ErrConflict; match those with errors.Is
+            - pkg: github.com/labstack/echo
+              desc: a service knows nothing about HTTP; handlers in internal/deliveries/http call it
+            - pkg: go-echo-boilerplate/internal/deliveries
+              desc: dependencies point inward; handlers call services, never the reverse
+        repository-no-callers:
+          files: ["**/internal/repository/**", "!$test"]
+          deny:
+            - pkg: go-echo-boilerplate/internal/service
+              desc: the repository is called by services; it never calls them
+            - pkg: go-echo-boilerplate/internal/deliveries
+              desc: the repository is called by services; it never reaches the HTTP layer
+    importas:
+      no-unaliased: true
+      alias:
+        - pkg: github.com/labstack/echo/v4/middleware
+          alias: echoMiddleware

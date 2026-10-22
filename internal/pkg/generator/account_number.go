@@ -10,23 +10,6 @@ import (
 // AccountNumberLength defines the total length of the account number including check digit
 const AccountNumberLength = 16
 
-// GenerateAccountNumber generates a random account number with Luhn check digit
-// The format is similar to credit card numbers (16 digits with Luhn validation)
-//
-// Parameters:
-//   - affix: Optional variadic parameters for prefix and/or suffix
-//   - affix[0]: Prefix - digits to prepend to the account number
-//   - affix[1]: Suffix - digits to append before the check digit
-//
-// Examples:
-//   - GenerateAccountNumber() -> "4532015112830366" (fully random)
-//   - GenerateAccountNumber("99") -> "9932015112830366" (with prefix "99")
-//   - GenerateAccountNumber("99", "88") -> "9932015112883066" (with prefix "99" and suffix "88")
-//   - GenerateAccountNumber("", "88") -> "4532015112883088" (with suffix "88" only)
-//
-// Returns:
-//   - string: A valid account number with Luhn check digit
-//   - error: If affix is invalid or random number generation fails
 func AccountNumber(affix ...string) (string, error) {
 	var prefix, suffix string
 

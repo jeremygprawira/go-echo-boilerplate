@@ -1,3 +1,4 @@
+basePath: /
 definitions:
   models.CreateUserRequest:
     properties:
@@ -188,6 +189,9 @@ definitions:
     type: object
 info:
   contact: {}
+  description: This is a go-echo-boilerplate api docs.
+  title: GO-ECHO-BOILERPLATE API DOCUMENTATION
+  version: "1.0"
 paths:
   /api/v1/users:
     post:
@@ -236,6 +240,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/models.Response'
+      security:
+      - ApiKeyAuth: []
       summary: Create New User
       tags:
       - Users
@@ -264,7 +270,8 @@ paths:
           schema:
             $ref: '#/definitions/models.Response'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
+        BearerAuth: []
       summary: Logout
       tags:
       - Users
@@ -298,7 +305,8 @@ paths:
           schema:
             $ref: '#/definitions/models.Response'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
+        BearerAuth: []
       summary: Get User By Access Token
       tags:
       - Users
@@ -342,6 +350,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/models.Response'
+      security:
+      - ApiKeyAuth: []
       summary: Get Tokens
       tags:
       - Users
@@ -383,6 +393,8 @@ paths:
           description: Validation Failed
           schema:
             $ref: '#/definitions/models.Response'
+      security:
+      - ApiKeyAuth: []
       summary: Refresh Tokens
       tags:
       - Users
@@ -419,4 +431,14 @@ paths:
       summary: Check health status
       tags:
       - Health
+securityDefinitions:
+  ApiKeyAuth:
+    in: header
+    name: X-API-Key
+    type: apiKey
+  BearerAuth:
+    description: Type "Bearer" followed by a space and the access token.
+    in: header
+    name: Authorization
+    type: apiKey
 swagger: "2.0"

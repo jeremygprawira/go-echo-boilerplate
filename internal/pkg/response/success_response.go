@@ -12,21 +12,23 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-func Success(ctx echo.Context, code int, data interface{}, message ...string) error {
+const defaultMessage = "Request has been successfully processed."
+
+// Metadata is the envelope's metadata block: the X-Request-Id response header
+// (a fresh UUID when it is unset) and the current time in RFC3339.
+func Metadata(ctx echo.Context) models.Metadata {
 	requestID := ctx.Response().Header().Get(echo.HeaderXRequestID)
 	if requestID == "" {
 		requestID = uuid.New().String()
 	}
+	return models.Metadata{RequestId: requestID, Timestamp: time.Now().Format(time.RFC3339)}
+}
 
-	timestamp, _ := ctx.Get("X-Timestamp").(string)
-	if timestamp == "" {
-		timestamp = time.Now().Format(time.RFC3339)
-	}
-
+func Success(ctx echo.Context, code int, data interface{}, message ...string) error {
 	var finalMessage string
 	switch len(message) {
 	case 0:
-		finalMessage = "Request has been successfully processed."
+		finalMessage = defaultMessage
 	case 1:
 		finalMessage = message[0]
 	default:
@@ -34,42 +36,27 @@ func Success(ctx echo.Context, code int, data interface{}, message ...string) er
 	}
 
 	return ctx.JSON(code, models.Response{
-		Code:    code,
-		Status:  "OK",
-		Message: finalMessage,
-		Data:    data,
-		Metadata: models.Metadata{
-			RequestId: requestID,
-			Timestamp: timestamp,
-		},
+		Code:     code,
+		Status:   "OK",
+		Message:  finalMessage,
+		Data:     data,
+		Metadata: Metadata(ctx),
 	})
 }
 
 func SuccessList(ctx echo.Context, code int, message string, data interface{}) error {
-	requestID := ctx.Response().Header().Get(echo.HeaderXRequestID)
-	if requestID == "" {
-		requestID = uuid.New().String()
-	}
-
-	timestamp, _ := ctx.Get("X-Timestamp").(string)
-	if timestamp == "" {
-		timestamp = time.Now().Format(time.RFC3339)
-	}
-
 	if message == "" {
-		message = "Request has been successfully processed."
+		message = defaultMessage
 	}
 
+	metadata := Metadata(ctx)
 	length, err := numberc.LengthOf(data)
 	if err != nil {
 		return ctx.JSON(http.StatusInternalServerError, models.Response{
-			Code:    http.StatusInternalServerError,
-			Status:  "ERROR",
-			Message: "Failed to get length of data.",
-			Metadata: models.Metadata{
-				RequestId: requestID,
-				Timestamp: timestamp,
-			},
+			Code:     http.StatusInternalServerError,
+			Status:   "ERROR",
+			Message:  "Failed to get length of data.",
+			Metadata: metadata,
 		})
 	}
 
@@ -77,50 +64,27 @@ func SuccessList(ctx echo.Context, code int, message string, data interface{}) e
 	if code >= http.StatusBadRequest {
 		status = "ERROR"
 	}
+	metadata.TotalRows = length
 	return ctx.JSON(code, models.Response{
-		Code:    code,
-		Status:  status,
-		Message: message,
-		Data:    data,
-		Metadata: models.Metadata{
-			RequestId: requestID,
-			Timestamp: timestamp,
-			TotalRows: length,
-		},
+		Code:     code,
+		Status:   status,
+		Message:  message,
+		Data:     data,
+		Metadata: metadata,
 	})
 }
 
-// SuccessPagination returns a list response with pagination metadata.
-//
-// Phase 4 (Ops & Polish) deviation: the plan specified a separate
-// SuccessListPaginated(ctx, status, message, data, pagination) helper, but
-// it was intentionally not implemented because SuccessPagination already
-// covers the Phase 4 pagination response requirement (status code, message,
-// data, and models.PaginationOutput in a single envelope).
 func SuccessPagination(ctx echo.Context, code int, message string, pagination models.PaginationOutput, data interface{}) error {
-	requestID := ctx.Response().Header().Get(echo.HeaderXRequestID)
-	if requestID == "" {
-		requestID = uuid.New().String()
-	}
-
-	timestamp, _ := ctx.Get("X-Timestamp").(string)
-	if timestamp == "" {
-		timestamp = time.Now().Format(time.RFC3339)
-	}
-
 	if message == "" {
-		message = "Request has been successfully processed."
+		message = defaultMessage
 	}
 
-	return ctx.JSON(http.StatusOK, models.Response{
+	return ctx.JSON(code, models.Response{
 		Code:       code,
 		Status:     "OK",
 		Message:    message,
 		Data:       data,
 		Pagination: &pagination,
-		Metadata: models.Metadata{
-			RequestId: requestID,
-			Timestamp: timestamp,
-		},
+		Metadata:   Metadata(ctx),
 	})
 }

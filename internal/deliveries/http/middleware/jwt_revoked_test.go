@@ -10,9 +10,7 @@ import (
 	httpdelivery "go-echo-boilerplate/internal/deliveries/http"
 	"go-echo-boilerplate/internal/deliveries/http/middleware"
 	"go-echo-boilerplate/internal/models"
-	"go-echo-boilerplate/internal/pkg/generator"
 	"go-echo-boilerplate/internal/pkg/jwtc"
-	"go-echo-boilerplate/internal/pkg/validator"
 
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/require"
@@ -30,10 +28,10 @@ func TestBearer_RejectsRevokedToken(t *testing.T) {
 		AccessTokenDuration: 15 * time.Minute,
 		Issuer:              "test",
 	}
-	tok, err := generator.AccessToken(&models.User{ID: 1, AccountNumber: "1"}, cfg)
+	tok, err := jwtc.SignAccessToken(&models.User{ID: 1, AccountNumber: "1"}, cfg)
 	require.NoError(t, err)
 
-	claims, err := validator.AccessToken(tok.Token, cfg)
+	claims, err := jwtc.ParseAccessToken(tok.Token, cfg)
 	require.NoError(t, err)
 
 	store := revokedSet{claims.ID: true}
@@ -58,7 +56,7 @@ func TestBearer_AllowsNonRevokedToken(t *testing.T) {
 		AccessTokenDuration: 15 * time.Minute,
 		Issuer:              "test",
 	}
-	tok, err := generator.AccessToken(&models.User{ID: 1, AccountNumber: "1"}, cfg)
+	tok, err := jwtc.SignAccessToken(&models.User{ID: 1, AccountNumber: "1"}, cfg)
 	require.NoError(t, err)
 
 	store := revokedSet{}
@@ -74,4 +72,20 @@ func TestBearer_AllowsNonRevokedToken(t *testing.T) {
 	e.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestWithClaims_FailsClosedWithoutBearerAuth(t *testing.T) {
+	e := echo.New()
+	e.HTTPErrorHandler = httpdelivery.ErrorHandler
+	ran := false
+	e.GET("/me", middleware.WithClaims(func(c echo.Context, _ jwtc.Claims) error {
+		ran = true
+		return c.NoContent(http.StatusOK)
+	}))
+
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/me", nil))
+
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	require.False(t, ran)
 }

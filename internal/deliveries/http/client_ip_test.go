@@ -1,0 +1,63 @@
+package http
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"go-echo-boilerplate/internal/config"
+	"go-echo-boilerplate/internal/config/configtest"
+
+	"github.com/labstack/echo/v4"
+	"github.com/stretchr/testify/require"
+)
+
+func limitedServer(t *testing.T, mutate func(*config.Configuration)) *echo.Echo {
+	t.Helper()
+	cfg := configtest.Valid(func(c *config.Configuration) {
+		c.RateLimit = config.RateLimit{Enabled: true, Rate: 1, Burst: 1, ExpiresIn: 3 * time.Minute}
+		if mutate != nil {
+			mutate(c)
+		}
+	})
+	return testServer{cfg: cfg}.build(t)
+}
+
+func limited(e *echo.Echo, remoteAddr, xff string) bool {
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/users/tokens/refresh", nil)
+	req.Header.Set("X-API-Key", configtest.APIKey)
+	req.RemoteAddr = remoteAddr
+	if xff != "" {
+		req.Header.Set(echo.HeaderXForwardedFor, xff)
+	}
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	return rec.Code == http.StatusTooManyRequests
+}
+
+func TestRateLimit_DirectClientCannotRotateXFF(t *testing.T) {
+	e := limitedServer(t, nil)
+
+	require.False(t, limited(e, "192.0.2.1:1234", "198.51.100.2"))
+	require.True(t, limited(e, "192.0.2.1:1234", "198.51.100.3"),
+		"a new X-Forwarded-For value from the same peer must not get a fresh bucket")
+}
+
+func TestRateLimit_TrustedProxyForwardsClientIP(t *testing.T) {
+	e := limitedServer(t, func(c *config.Configuration) { c.Application.TrustedProxies = []string{"203.0.113.0/24"} })
+
+	require.False(t, limited(e, "203.0.113.10:443", "198.51.100.4"))
+	require.True(t, limited(e, "203.0.113.10:443", "198.51.100.4"), "same client behind the proxy")
+	require.False(t, limited(e, "203.0.113.10:443", "198.51.100.5"), "a different client behind the proxy")
+	require.True(t, limited(e, "203.0.113.10:443", "198.51.100.66, 198.51.100.4"),
+		"a client-prepended entry left of the proxy's own entry is ignored")
+}
+
+func TestRateLimit_UntrustedPeerCannotSpoofXFF(t *testing.T) {
+	e := limitedServer(t, func(c *config.Configuration) { c.Application.TrustedProxies = []string{"203.0.113.0/24"} })
+
+	require.False(t, limited(e, "10.1.2.3:1234", "198.51.100.7"))
+	require.True(t, limited(e, "10.1.2.3:1234", "198.51.100.8"),
+		"a private-range peer is not trusted unless listed")
+}

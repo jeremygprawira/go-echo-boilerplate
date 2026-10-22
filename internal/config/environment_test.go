@@ -7,28 +7,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestIsProduction(t *testing.T) {
-	c := &Configuration{}
-	c.Application.Environment = "production"
-	require.True(t, c.IsProduction())
-
-	c.Application.Environment = "prod"
-	require.True(t, c.IsProduction())
-
-	c.Application.Environment = "local"
-	require.False(t, c.IsProduction())
-}
-
-func TestIsProduction_IgnoresCaseAndSpace(t *testing.T) {
-	for _, env := range []string{"Production", " PROD "} {
-		c := &Configuration{}
-		c.Application.Environment = env
-		assert.True(t, c.IsProduction(), "%q", env)
+func TestEnvironment_UnmarshalTextNormalizes(t *testing.T) {
+	for in, want := range map[string]Environment{"production": "production", " PROD ": "prod", "Local": "local"} {
+		var e Environment
+		require.NoError(t, e.UnmarshalText([]byte(in)), in)
+		assert.Equal(t, want, e, in)
 	}
 }
 
-func TestValidate_RejectsUnknownEnvironment(t *testing.T) {
-	for _, env := range []string{"", "prd"} {
+func TestEnvironment_UnmarshalTextRejectsUnknown(t *testing.T) {
+	for _, in := range []string{"", "prd"} {
+		var e Environment
+		assert.Error(t, e.UnmarshalText([]byte(in)), "%q", in)
+	}
+}
+
+func TestEnvironment_IsProduction(t *testing.T) {
+	assert.True(t, Environment("prod").IsProduction())
+	assert.True(t, Environment("production").IsProduction())
+	assert.False(t, Environment("local").IsProduction())
+}
+
+func TestValidate_RejectsMissingOrUnnormalizedEnvironment(t *testing.T) {
+	for _, env := range []Environment{"", "PROD"} {
 		c := validCfg()
 		c.Application.Environment = env
 		assert.Error(t, c.Validate(), "%q", env)

@@ -58,6 +58,5 @@ tmp/
 build-errors.log
 server.log
 
-# MCP
-.serena/cache/
-.serena/*.local.yml
+.serena/
+docs/superpowers/

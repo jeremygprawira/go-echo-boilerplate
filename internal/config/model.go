@@ -1,5 +1,7 @@
 package config
 
+import "time"
+
 type (
 	Configuration struct {
 		Application   Application   `mapstructure:"application"`
@@ -13,24 +15,22 @@ type (
 	}
 
 	Application struct {
-		Name        string `mapstructure:"name"`
-		Version     string `mapstructure:"version"`
-		Port        int    `mapstructure:"port"`
-		Environment string `mapstructure:"environment"`
-		Host        string `mapstructure:"host"`
-		Timeout     int    `mapstructure:"timeout"`
-		Timezone    string `mapstructure:"timezone"`
-		MaxBodySize string `mapstructure:"max_body_size"`
+		Name        string        `mapstructure:"name"`
+		Version     string        `mapstructure:"version"`
+		Port        int           `mapstructure:"port"`
+		Environment Environment   `mapstructure:"environment"`
+		Host        string        `mapstructure:"host"`
+		Timeout     time.Duration `mapstructure:"timeout"`
+		Timezone    string        `mapstructure:"timezone"`
+		MaxBodySize string        `mapstructure:"max_body_size"`
 		// TrustedProxies lists the CIDRs of reverse proxies whose
 		// X-Forwarded-For entries are believed. Empty means clients connect
 		// directly and the TCP peer address identifies them.
-		TrustedProxies []string `mapstructure:"trusted_proxies"`
-		// HTTP server timeouts, as Go duration strings. config.Initialize
-		// defaults them to 5s, 15s, 30s and 60s.
-		ReadHeaderTimeout string `mapstructure:"read_header_timeout"`
-		ReadTimeout       string `mapstructure:"read_timeout"`
-		WriteTimeout      string `mapstructure:"write_timeout"`
-		IdleTimeout       string `mapstructure:"idle_timeout"`
+		TrustedProxies    []string      `mapstructure:"trusted_proxies"`
+		ReadHeaderTimeout time.Duration `mapstructure:"read_header_timeout"`
+		ReadTimeout       time.Duration `mapstructure:"read_timeout"`
+		WriteTimeout      time.Duration `mapstructure:"write_timeout"`
+		IdleTimeout       time.Duration `mapstructure:"idle_timeout"`
 	}
 
 	CORS struct {
@@ -52,8 +52,8 @@ type (
 		// before the sustained Rate applies.
 		Burst int `mapstructure:"burst"`
 		// ExpiresIn is how long an idle client's bucket is retained before
-		// being evicted from the in-memory store (Go duration string, e.g. "3m").
-		ExpiresIn string `mapstructure:"expires_in"`
+		// being evicted from the in-memory store.
+		ExpiresIn time.Duration `mapstructure:"expires_in"`
 	}
 
 	// Idempotency configures how long Idempotency replays a cached response
@@ -61,20 +61,19 @@ type (
 	// long enough for a client's own retry window and short enough that a
 	// stale entry is not a long-lived surprise.
 	Idempotency struct {
-		// TTL is a Go duration string, e.g. "10m".
-		TTL string `mapstructure:"ttl"`
+		TTL time.Duration `mapstructure:"ttl"`
 	}
 
 	PostgreSQL struct {
-		Name            string `mapstructure:"name"`
-		User            string `mapstructure:"user"`
-		Password        string `mapstructure:"password"`
-		Host            string `mapstructure:"host"`
-		Port            int    `mapstructure:"port"`
-		SSLMode         string `mapstructure:"ssl_mode"`
-		MaxIdleConns    int    `mapstructure:"max_idle_conns"`
-		MaxOpenConns    int    `mapstructure:"max_open_conns"`
-		ConnMaxLifetime string `mapstructure:"conn_max_lifetime"`
+		Name            string        `mapstructure:"name"`
+		User            string        `mapstructure:"user"`
+		Password        string        `mapstructure:"password"`
+		Host            string        `mapstructure:"host"`
+		Port            int           `mapstructure:"port"`
+		SSLMode         string        `mapstructure:"ssl_mode"`
+		MaxIdleConns    int           `mapstructure:"max_idle_conns"`
+		MaxOpenConns    int           `mapstructure:"max_open_conns"`
+		ConnMaxLifetime time.Duration `mapstructure:"conn_max_lifetime"`
 	}
 
 	Authorization struct {
@@ -85,15 +84,14 @@ type (
 	}
 
 	TokenConfiguration struct {
-		Secret   string `mapstructure:"secret"`
-		Duration string `mapstructure:"duration"`
+		Secret   string        `mapstructure:"secret"`
+		Duration time.Duration `mapstructure:"duration"`
 	}
 
 	Google struct {
 		ClientID     string `mapstructure:"client_id"`
 		ClientSecret string `mapstructure:"client_secret"`
 		RedirectURI  string `mapstructure:"redirect_uri"`
-		State        string `mapstructure:"state"`
 		UserInfoURL  string `mapstructure:"user_info_url"`
 	}
 )

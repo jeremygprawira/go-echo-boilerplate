@@ -2,28 +2,30 @@ package graceful
 
 import "context"
 
-// FuncProcess wraps a cleanup function to implement the Process interface.
-// This is useful for wrapping cleanup operations like database teardown, cache cleanup, etc.
+// FuncProcess runs a cleanup function, such as closing a database pool, as a
+// Process. Start is ready at once and blocks until shutdown, and Stop calls
+// the function. Put it first in the slice so it stops last.
 type FuncProcess struct {
 	stopFunc func(ctx context.Context) error
 }
 
-// NewFuncProcess creates a new function-based process.
-// The stopFunc will be called during shutdown.
+// NewFuncProcess returns a FuncProcess that calls stopFunc on Stop. A nil
+// stopFunc makes Stop a no-op.
 func NewFuncProcess(stopFunc func(ctx context.Context) error) *FuncProcess {
 	return &FuncProcess{
 		stopFunc: stopFunc,
 	}
 }
 
-// Start is a no-op for function-based processes as they don't need startup.
-func (p *FuncProcess) Start(ctx context.Context) error {
-	// Block until context is cancelled
+// Start calls ready at once, then blocks until ctx is cancelled.
+func (p *FuncProcess) Start(ctx context.Context, ready func()) error {
+	ready()
 	<-ctx.Done()
 	return nil
 }
 
-// Stop calls the wrapped cleanup function.
+// Stop runs the stop function given to NewFuncProcess, or returns nil when
+// there is none.
 func (p *FuncProcess) Stop(ctx context.Context) error {
 	if p.stopFunc != nil {
 		return p.stopFunc(ctx)

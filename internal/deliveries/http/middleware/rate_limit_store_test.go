@@ -15,9 +15,8 @@ import (
 )
 
 func TestRateLimiter_HeaderSizedIdentifierIsNotStored(t *testing.T) {
-	cfg := &config.Configuration{}
-	cfg.RateLimit = config.RateLimit{Enabled: true, Rate: 1, Burst: 1, ExpiresIn: "3m"}
-	mw, store := rateLimiter(cfg)
+	fromHeader := func(r *http.Request) string { return r.Header.Get(echo.HeaderXForwardedFor) }
+	mw, store := rateLimiter(config.RateLimit{Enabled: true, Rate: 1, Burst: 1, ExpiresIn: 3 * time.Minute}, fromHeader)
 	e := echo.New()
 	e.POST("/login", func(c echo.Context) error { return c.NoContent(http.StatusOK) }, mw)
 
@@ -33,7 +32,45 @@ func TestRateLimiter_HeaderSizedIdentifierIsNotStored(t *testing.T) {
 
 	require.Equal(t, []int{http.StatusOK, http.StatusTooManyRequests}, codes)
 	require.Len(t, store.visitors, 1)
-	require.Contains(t, store.visitors, "192.0.2.1")
+	require.Contains(t, store.visitors, "POST /login 192.0.2.1")
+}
+
+func TestRateLimiter_OneInstanceKeepsABudgetPerRoute(t *testing.T) {
+	mw := limiter(config.RateLimit{Enabled: true, Rate: 0.001, Burst: 1, ExpiresIn: 3 * time.Minute})
+	e := echo.New()
+	ok := func(c echo.Context) error { return c.NoContent(http.StatusOK) }
+	e.POST("/login", ok, mw)
+	e.POST("/refresh", ok, mw)
+
+	var codes []int
+	for _, path := range []string{"/login", "/login", "/refresh", "/refresh"} {
+		req := httptest.NewRequest(http.MethodPost, path, nil)
+		req.RemoteAddr = "192.0.2.1:1234"
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		codes = append(codes, rec.Code)
+	}
+
+	require.Equal(t, []int{http.StatusOK, http.StatusTooManyRequests, http.StatusOK, http.StatusTooManyRequests}, codes)
+}
+
+func TestRateLimiter_OneInstanceKeepsABudgetPerMethodOnAPath(t *testing.T) {
+	mw := limiter(config.RateLimit{Enabled: true, Rate: 0.001, Burst: 1, ExpiresIn: 3 * time.Minute})
+	e := echo.New()
+	ok := func(c echo.Context) error { return c.NoContent(http.StatusOK) }
+	e.POST("/tokens", ok, mw)
+	e.DELETE("/tokens", ok, mw)
+
+	var codes []int
+	for _, method := range []string{http.MethodPost, http.MethodPost, http.MethodDelete, http.MethodDelete} {
+		req := httptest.NewRequest(method, "/tokens", nil)
+		req.RemoteAddr = "192.0.2.1:1234"
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		codes = append(codes, rec.Code)
+	}
+
+	require.Equal(t, []int{http.StatusOK, http.StatusTooManyRequests, http.StatusOK, http.StatusTooManyRequests}, codes)
 }
 
 func TestRateLimiterStore_IsCapped(t *testing.T) {

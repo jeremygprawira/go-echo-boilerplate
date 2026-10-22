@@ -182,6 +182,8 @@ Return herr errors from the `errorc` catalog. `ErrorHandler` coerces any error t
 
 The level follows the status. A 4xx is `warn`, a 5xx or a panic is `error`, and anything else is `info`.
 
+`outcome` says how the request ended. A 2xx or a 3xx is `success`. A 4xx is the client's mistake, so it is `rejected` at level `warn`, with its `http.status` and `error.code`. This includes an authentication failure. A 5xx or a panic is `error`. To find rejected requests, filter on `outcome:rejected`. To find failures of the server, filter on `outcome:error`.
+
 To keep extra context next to an error, set it as a field before you return:
 
 ```go
@@ -200,7 +202,7 @@ wlog.Error(ctx, err)
 - query values and cookies (cookie values masked)
 - request bodies with `Content-Type: application/json`, and response bodies, up to 10 KiB each
 
-`user.id` comes from the `X-User-ID` header. Change `extractUserID` in `internal/deliveries/http/middleware/logger.go` to read it from your auth setup.
+`user.id` is set by `BearerAuthMiddleware` from the verified access token, so only bearer routes carry it. A client header such as `X-User-ID` is never an identity. It appears only under `http.request_headers`, as the client sent it.
 
 ### Request ID
 
@@ -235,7 +237,7 @@ One request, one zap entry. The message is the operation (`METHOD /route`), and 
   "message": "POST /api/v1/users",
   "timestamp": "2026-10-14T07:41:51.023066Z",
   "kind": "request",
-  "outcome": "success",
+  "outcome": "rejected",
   "duration_ms": 0.298,
   "event_id": "01a1395c-462f-7d23-8b96-79bf83abd5fc",
   "summary": "POST /api/v1/users 422 in 0.30ms: VALIDATION_FAILED",
