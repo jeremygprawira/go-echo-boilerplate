@@ -12,28 +12,28 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-func ConnectToPostgreSQL(config *config.Configuration) (*gorm.DB, error) {
+func ConnectToPostgreSQL(cfg config.Validated) (*gorm.DB, error) {
+	c := cfg.Get()
 	connection := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d sslmode=%s timezone=%s",
-		config.PostgreSQL.Host,
-		config.PostgreSQL.User,
-		config.PostgreSQL.Password,
-		config.PostgreSQL.Name,
-		config.PostgreSQL.Port,
-		config.PostgreSQL.SSLMode,
-		config.Application.Timezone)
+		c.PostgreSQL.Host,
+		c.PostgreSQL.User,
+		c.PostgreSQL.Password,
+		c.PostgreSQL.Name,
+		c.PostgreSQL.Port,
+		c.PostgreSQL.SSLMode,
+		c.Application.Timezone)
+
+	loc, err := time.LoadLocation(c.Application.Timezone)
+	if err != nil {
+		return nil, fmt.Errorf("application.timezone: %w", err)
+	}
 
 	db, err := gorm.Open(postgres.New(postgres.Config{
 		DSN:                  connection,
 		PreferSimpleProtocol: true, // disables implicit prepared statement usage
 	}), &gorm.Config{
-		Logger: gormLogger(config, log.New(os.Stdout, "\r\n", log.LstdFlags)),
-		NowFunc: func() time.Time {
-			loc, err := time.LoadLocation(config.Application.Timezone)
-			if err != nil {
-				return time.Now() // Fallback to system default if location loading fails
-			}
-			return time.Now().In(loc)
-		},
+		Logger:  gormLogger(c.Application.Environment, log.New(os.Stdout, "\r\n", log.LstdFlags)),
+		NowFunc: func() time.Time { return time.Now().In(loc) },
 	})
 
 	if err != nil {
@@ -46,16 +46,10 @@ func ConnectToPostgreSQL(config *config.Configuration) (*gorm.DB, error) {
 	}
 
 	// Set connection pool settings
-	sqlDB.SetMaxIdleConns(config.PostgreSQL.MaxIdleConns)
-	sqlDB.SetMaxOpenConns(config.PostgreSQL.MaxOpenConns)
+	sqlDB.SetMaxIdleConns(c.PostgreSQL.MaxIdleConns)
+	sqlDB.SetMaxOpenConns(c.PostgreSQL.MaxOpenConns)
 
-	if config.PostgreSQL.ConnMaxLifetime != "" {
-		lifetime, err := time.ParseDuration(config.PostgreSQL.ConnMaxLifetime)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse conn_max_lifetime: %w", err)
-		}
-		sqlDB.SetConnMaxLifetime(lifetime)
-	}
+	sqlDB.SetConnMaxLifetime(c.PostgreSQL.ConnMaxLifetime)
 
 	if err := sqlDB.Ping(); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
@@ -67,9 +61,9 @@ func ConnectToPostgreSQL(config *config.Configuration) (*gorm.DB, error) {
 // gormLogger silences GORM's built-in logger in production. Elsewhere it logs
 // every statement at Info level, but with placeholders instead of bound
 // values, so password hashes and PII never reach stdout.
-func gormLogger(config *config.Configuration, w logger.Writer) logger.Interface {
+func gormLogger(env config.Environment, w logger.Writer) logger.Interface {
 	level := logger.Info
-	if config.IsProduction() {
+	if env.IsProduction() {
 		level = logger.Silent
 	}
 	return logger.New(w, logger.Config{
@@ -78,13 +72,4 @@ func gormLogger(config *config.Configuration, w logger.Writer) logger.Interface 
 		ParameterizedQueries: true,
 		Colorful:             true,
 	})
-}
-
-func DisconnectFromPostgreSQL(db *gorm.DB) error {
-	pg, err := db.DB()
-	if err != nil {
-		return err
-	}
-
-	return pg.Close()
 }

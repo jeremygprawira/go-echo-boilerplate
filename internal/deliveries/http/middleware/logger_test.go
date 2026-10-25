@@ -6,11 +6,15 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"go-echo-boilerplate/internal/config"
+	"go-echo-boilerplate/internal/config/configtest"
 	httpdelivery "go-echo-boilerplate/internal/deliveries/http"
 	"go-echo-boilerplate/internal/deliveries/http/middleware"
+	"go-echo-boilerplate/internal/models"
 	"go-echo-boilerplate/internal/pkg/errorc"
+	"go-echo-boilerplate/internal/pkg/jwtc"
 	"go-echo-boilerplate/internal/pkg/logger"
 
 	wlogzap "github.com/jeremygprawira/wlog/log/zap"
@@ -25,18 +29,19 @@ import (
 func newObservedServer(t *testing.T) (*echo.Echo, *observer.ObservedLogs) {
 	t.Helper()
 	core, logs := observer.New(zapcore.DebugLevel)
-	cfg := &config.Configuration{}
-	cfg.Application.Name = "boilerplate"
-	cfg.Application.Version = "1.2.3"
-	cfg.Application.Environment = "prod"
-	cfg.Application.MaxBodySize = "1M"
+	cfg := configtest.Valid(func(c *config.Configuration) {
+		c.Application.Name = "boilerplate"
+		c.Application.Version = "1.2.3"
+		c.Application.Environment = "prod"
+		c.Application.MaxBodySize = "1M"
+	})
 	log, err := logger.NewWlog(cfg, wlogzap.Drain(zap.New(core)))
 	require.NoError(t, err)
 
 	e := echo.New()
 	e.HTTPErrorHandler = httpdelivery.ErrorHandler
 	m := middleware.New(e, cfg, log)
-	m.Default(cfg)
+	m.Default()
 
 	e.GET("/ok", func(c echo.Context) error { return c.JSON(http.StatusOK, map[string]string{"status": "ok"}) })
 	e.GET("/missing", func(c echo.Context) error { return errorc.DataNotFound.New().Internal("user 42 not in table") })
@@ -133,13 +138,11 @@ func TestLogging_MasksSecrets(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(`{"email":"a@b.c","password":"hunter2"}`))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 	req.Header.Set(echo.HeaderAuthorization, "Bearer abc.def.ghi")
-	req.Header.Set("X-User-ID", "u-7")
 
 	rec := serve(e, req)
 
 	require.Equal(t, http.StatusNoContent, rec.Code)
 	_, fields := onlyEntry(t, logs)
-	assert.Equal(t, "u-7", group(t, fields, "user")["id"])
 	httpFields := group(t, fields, "http")
 	reqBody := httpFields["request_body"].(map[string]any)
 	assert.Equal(t, "a@b.c", reqBody["email"])
@@ -149,6 +152,37 @@ func TestLogging_MasksSecrets(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotContains(t, string(raw), "hunter2")
 	assert.NotContains(t, string(raw), "abc.def.ghi")
+}
+
+func TestLogging_UserIDComesFromTheVerifiedTokenNotTheHeader(t *testing.T) {
+	e, logs := newObservedServer(t)
+	jwt := &jwtc.Configuration{AccessTokenSecret: "access-secret", AccessTokenDuration: 15 * time.Minute, Issuer: "test"}
+	e.GET("/me", func(c echo.Context) error { return c.NoContent(http.StatusOK) }, middleware.BearerAuthMiddleware(jwt, revokedSet{}))
+	tok, err := jwtc.SignAccessToken(&models.User{ID: 42, AccountNumber: "1"}, jwt)
+	require.NoError(t, err)
+
+	request := func(path, bearer string) *http.Request {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("X-User-ID", "u-7")
+		if bearer != "" {
+			req.Header.Set(echo.HeaderAuthorization, "Bearer "+bearer)
+		}
+		return req
+	}
+
+	require.Equal(t, http.StatusOK, serve(e, request("/ok", "")).Code)
+	_, fields := onlyEntry(t, logs)
+	assert.NotContains(t, fields, "user", "a forged X-User-ID on a public route sets no user id")
+	assert.Equal(t, "u-7", group(t, fields, "http")["request_headers"].(map[string]any)["x-user-id"],
+		"the header stays visible as an unverified request header")
+
+	require.Equal(t, http.StatusUnauthorized, serve(e, request("/me", "not-a-token")).Code)
+	_, fields = onlyEntry(t, logs)
+	assert.NotContains(t, fields, "user", "a forged X-User-ID with a bad token sets no user id")
+
+	require.Equal(t, http.StatusOK, serve(e, request("/me", tok.Token)).Code)
+	_, fields = onlyEntry(t, logs)
+	assert.Equal(t, "42", group(t, fields, "user")["id"], "the user id is the verified token's")
 }
 
 func TestLogging_PanicRendersThroughErrorHandlerAndLogsOnce(t *testing.T) {
@@ -181,14 +215,13 @@ func TestLogging_SkipsHealth(t *testing.T) {
 
 func TestLogging_OversizedBodyStillLogged(t *testing.T) {
 	core, logs := observer.New(zapcore.DebugLevel)
-	cfg := &config.Configuration{}
-	cfg.Application.MaxBodySize = "10B"
+	cfg := configtest.Valid(func(c *config.Configuration) { c.Application.MaxBodySize = "10B" })
 	log, err := logger.NewWlog(cfg, wlogzap.Drain(zap.New(core)))
 	require.NoError(t, err)
 	e := echo.New()
 	e.HTTPErrorHandler = httpdelivery.ErrorHandler
 	m := middleware.New(e, cfg, log)
-	m.Default(cfg)
+	m.Default()
 	e.POST("/x", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
 
 	rec := serve(e, httptest.NewRequest(http.MethodPost, "/x", strings.NewReader("this body is definitely longer than ten bytes")))

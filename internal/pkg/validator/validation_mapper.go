@@ -4,36 +4,32 @@ import (
 	"fmt"
 	"go-echo-boilerplate/internal/models"
 	"strings"
-	"time"
 
 	v10 "github.com/go-playground/validator/v10"
 )
 
 // Validation tag constants for type safety
 const (
-	TagRequired              = "required"
-	TagRequiredWithout       = "required_without"
-	TagRequiredWithoutAll    = "required_without_all"
-	TagOneOf                 = "oneof"
-	TagMin                   = "min"
-	TagMax                   = "max"
-	TagEmail                 = "email"
-	TagNoSpecial             = "nospecial"
-	TagNoStartEndSpaces      = "noStartEndSpaces"
-	TagDate                  = "date"
-	TagDatetime              = "datetime"
-	TagYYYMMDDFormat         = "yyymmddFormat"
-	TagPhoneFormat           = "phoneFormat"
-	TagEmailFormat           = "emailFormat"
-	TagEmailPhoneFormat      = "emailPhoneFormat"
-	TagNumeric               = "numeric"
-	TagDateRange             = "daterange"
-	TagYYYYMMDDNoExceedToday = "yyyymmddNoExceedToday"
-	TagHHMMFormat            = "hhmmFormat"
-	TagEmailOrPhoneField     = "emailOrPhoneField"
-	TagPasswordMinLength     = "passwordMinLength"
-	TagPasswordMaxLength     = "passwordMaxLength"
-	TagPasswordStrength      = "passwordStrength"
+	TagRequired           = "required"
+	TagRequiredWithout    = "required_without"
+	TagRequiredWithoutAll = "required_without_all"
+	TagOneOf              = "oneof"
+	TagMin                = "min"
+	TagMax                = "max"
+	TagEmail              = "email"
+	TagNoSpecial          = "nospecial"
+	TagNoStartEndSpaces   = "noStartEndSpaces"
+	TagDate               = "date"
+	TagDatetime           = "datetime"
+	TagYYYMMDDFormat      = "yyymmddFormat"
+	TagPhoneFormat        = "phoneFormat"
+	TagEmailFormat        = "emailFormat"
+	TagEmailPhoneFormat   = "emailPhoneFormat"
+	TagNumeric            = "numeric"
+	TagEmailOrPhoneField  = "emailOrPhoneField"
+	TagPasswordMinLength  = "passwordMinLength"
+	TagPasswordMaxLength  = "passwordMaxLength"
+	TagPasswordStrength   = "passwordStrength"
 )
 
 // Error code constants
@@ -144,29 +140,9 @@ var validationErrorMap = map[string]validationErrorConfig{
 			return fmt.Sprintf("%s must be a valid number", fe.Field())
 		},
 	},
-	TagDateRange: {
-		Code: ErrorCodeInvalidField,
-		MessageBuilder: func(fe v10.FieldError) string {
-			return fmt.Sprintf("Your date range should be between %s and %s",
-				time.Now().AddDate(0, -6, 0).Format("2006-01-02"),
-				time.Now().Format("2006-01-02"))
-		},
-	},
-	TagYYYYMMDDNoExceedToday: {
-		Code: ErrorCodeInvalidField,
-		MessageBuilder: func(fe v10.FieldError) string {
-			return fmt.Sprintf("%s must be a valid date in YYYY-MM-DD format and not exceed today", fe.Field())
-		},
-	},
-	TagHHMMFormat: {
-		Code: ErrorCodeInvalidField,
-		MessageBuilder: func(fe v10.FieldError) string {
-			return fmt.Sprintf("%s must be a valid time in HH:MM format", fe.Field())
-		},
-	},
 	TagEmailOrPhoneField: {
-		Code:           ErrorCodeMissingField,
-		MessageBuilder: func(fe v10.FieldError) string { return "Email or Phone Number cannot be empty" },
+		Code:           ErrorCodeInvalidField,
+		MessageBuilder: func(fe v10.FieldError) string { return "Fill in exactly one of Email or Phone Number" },
 	},
 	TagPasswordMinLength: {
 		Code: ErrorCodeInvalidField,

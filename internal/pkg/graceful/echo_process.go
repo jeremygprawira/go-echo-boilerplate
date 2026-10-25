@@ -3,18 +3,20 @@ package graceful
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 
 	"github.com/labstack/echo/v4"
 )
 
-// EchoProcess wraps an Echo server to implement the Process interface.
+// EchoProcess runs an Echo server as a Process. Start binds the address and
+// calls ready once the listener is bound, so a port in use is a failed start.
 type EchoProcess struct {
 	server *echo.Echo
 	addr   string
 }
 
-// NewEchoProcess creates a new Echo process wrapper.
+// NewEchoProcess returns an EchoProcess that serves server on addr, such as ":8080".
 func NewEchoProcess(server *echo.Echo, addr string) *EchoProcess {
 	return &EchoProcess{
 		server: server,
@@ -22,30 +24,22 @@ func NewEchoProcess(server *echo.Echo, addr string) *EchoProcess {
 	}
 }
 
-// Start starts the Echo server and blocks until it stops or context is cancelled.
-func (p *EchoProcess) Start(ctx context.Context) error {
-	errChan := make(chan error, 1)
-
-	go func() {
-		if err := p.server.Start(p.addr); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errChan <- err
-		}
-		close(errChan)
-	}()
-
-	// Wait for either server error or context cancellation
-	select {
-	case err := <-errChan:
-		if err != nil {
-			return err
-		}
-		return nil
-	case <-ctx.Done():
-		return nil
+// Start binds the listener, calls ready once it is bound, then serves until ctx
+// is cancelled or the server fails.
+func (p *EchoProcess) Start(ctx context.Context, ready func()) error {
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", p.addr)
+	if err != nil {
+		return err
 	}
+	p.server.Listener = listener
+	ready()
+	if err := p.server.Start(p.addr); !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
 }
 
-// Stop gracefully shuts down the Echo server.
+// Stop drains in-flight requests until ctx expires, then closes the server.
 func (p *EchoProcess) Stop(ctx context.Context) error {
 	return p.server.Shutdown(ctx)
 }

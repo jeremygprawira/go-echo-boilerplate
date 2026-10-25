@@ -11,8 +11,8 @@ type Database struct {
 }
 
 // Connect to database, in case in future we will use another database, we can just add the Connect function
-func Connect(config *config.Configuration) (*Database, error) {
-	postgreDatabase, err := ConnectToPostgreSQL(config)
+func Connect(cfg config.Validated) (*Database, error) {
+	postgreDatabase, err := ConnectToPostgreSQL(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -20,8 +20,4 @@ func Connect(config *config.Configuration) (*Database, error) {
 	return &Database{
 		PostgreDatabase: postgreDatabase,
 	}, nil
-}
-
-func Disconnect(db *Database) error {
-	return DisconnectFromPostgreSQL(db.PostgreDatabase)
 }

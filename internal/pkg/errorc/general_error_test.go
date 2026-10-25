@@ -29,6 +29,7 @@ func TestCatalog(t *testing.T) {
 		{"EmailExists", errorc.EmailExists, "EMAIL_EXISTS", 409, "email already exists"},
 		{"AlreadyExists", errorc.AlreadyExists, "ALREADY_EXISTS", 409, "resource already exists"},
 		{"Validation", errorc.Validation, "VALIDATION_FAILED", 422, "Validation failed for one or more fields."},
+		{"TooManyRequests", errorc.TooManyRequests, "TOO_MANY_REQUESTS", 429, "rate limit exceeded"},
 		{"Internal", errorc.Internal, "INTERNAL_SERVER_ERROR", 500, "Unknown server error occurred."},
 		{"Database", errorc.Database, "DATABASE_ERROR", 500, "Database error occurred."},
 	}

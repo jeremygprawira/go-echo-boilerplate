@@ -24,3 +24,12 @@ func TestSnakeCase(t *testing.T) {
 		}
 	}
 }
+
+func TestTrimAndCase(t *testing.T) {
+	if got := TrimAndLowerCase("  Hello World \n"); got != "hello world" {
+		t.Errorf("TrimAndLowerCase = %q; want %q", got, "hello world")
+	}
+	if got := TrimAndUpperCase("  Hello World \n"); got != "HELLO WORLD" {
+		t.Errorf("TrimAndUpperCase = %q; want %q", got, "HELLO WORLD")
+	}
+}

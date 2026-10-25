@@ -3,13 +3,8 @@ package validator
 // AccountNumberLength defines the total length of the account number including check digit
 const AccountNumberLength = 16
 
-// ValidateAccountNumber validates an account number using the Luhn algorithm
-//
-// Parameters:
-//   - accountNumber: The account number to validate
-//
-// Returns:
-//   - bool: true if valid, false otherwise
+// AccountNumber reports whether accountNumber is AccountNumberLength digits
+// with a valid Luhn check digit.
 func AccountNumber(accountNumber string) bool {
 	if len(accountNumber) != AccountNumberLength {
 		return false

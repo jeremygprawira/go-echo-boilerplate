@@ -63,8 +63,8 @@ func init() {
 
 	// Pre-compile regex patterns for performance
 	noSpecialCharsPattern = regexp.MustCompile(`^[a-zA-Z0-9 ]*$`)
-	datePattern = regexp.MustCompile(`\d{4}-\d{2}-\d{2}`)
-	datetimePattern = regexp.MustCompile(`\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}`)
+	datePattern = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+	datetimePattern = regexp.MustCompile(`^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$`)
 
 	// Register custom validation functions
 	registerNoSpecialCharacters()
@@ -100,7 +100,7 @@ func getStringValue(fl v10.FieldLevel) (string, bool) {
 }
 
 func registerNoSpecialCharacters() {
-	if err := valid.RegisterValidation("nospecial", func(fl v10.FieldLevel) bool {
+	if err := valid.RegisterValidation(TagNoSpecial, func(fl v10.FieldLevel) bool {
 		str, ok := getStringValue(fl)
 		if !ok {
 			return false // Invalid type
@@ -118,7 +118,7 @@ func registerNoSpecialCharacters() {
 }
 
 func registerNoSpacesAtStartOrEnd() {
-	if err := valid.RegisterValidation("noStartEndSpaces", func(fl v10.FieldLevel) bool {
+	if err := valid.RegisterValidation(TagNoStartEndSpaces, func(fl v10.FieldLevel) bool {
 		str, ok := getStringValue(fl)
 		if !ok {
 			return false // Invalid type
@@ -135,7 +135,7 @@ func registerNoSpacesAtStartOrEnd() {
 }
 
 func registerDate() {
-	if err := valid.RegisterValidation("date", func(fl v10.FieldLevel) bool {
+	if err := valid.RegisterValidation(TagDate, func(fl v10.FieldLevel) bool {
 		str, ok := getStringValue(fl)
 		if !ok {
 			return false // Invalid type
@@ -148,7 +148,7 @@ func registerDate() {
 }
 
 func registerDatetime() {
-	if err := valid.RegisterValidation("datetime", func(fl v10.FieldLevel) bool {
+	if err := valid.RegisterValidation(TagDatetime, func(fl v10.FieldLevel) bool {
 		str, ok := getStringValue(fl)
 		if !ok {
 			return false // Invalid type
@@ -161,7 +161,7 @@ func registerDatetime() {
 }
 
 func registerEmailFormat() {
-	if err := valid.RegisterValidation("emailFormat", func(fl v10.FieldLevel) bool {
+	if err := valid.RegisterValidation(TagEmailFormat, func(fl v10.FieldLevel) bool {
 		str, ok := getStringValue(fl)
 		if !ok {
 			return false // Invalid type
@@ -180,7 +180,7 @@ func registerEmailFormat() {
 }
 
 func registerPhoneFormat() {
-	if err := valid.RegisterValidation("phoneFormat", func(fl v10.FieldLevel) bool {
+	if err := valid.RegisterValidation(TagPhoneFormat, func(fl v10.FieldLevel) bool {
 		str, ok := getStringValue(fl)
 		if !ok {
 			return false // Invalid type
@@ -202,7 +202,7 @@ func registerPhoneFormat() {
 }
 
 func registerEmailPhoneFormat() {
-	if err := valid.RegisterValidation("emailPhoneFormat", func(fl v10.FieldLevel) bool {
+	if err := valid.RegisterValidation(TagEmailPhoneFormat, func(fl v10.FieldLevel) bool {
 		str, ok := getStringValue(fl)
 		if !ok {
 			return false // Invalid type
@@ -233,7 +233,7 @@ func registerEmailPhoneFormat() {
 }
 
 func registeryyyymmddFormat() {
-	if err := valid.RegisterValidation("yyymmddFormat", func(fl v10.FieldLevel) bool {
+	if err := valid.RegisterValidation(TagYYYMMDDFormat, func(fl v10.FieldLevel) bool {
 		str, ok := getStringValue(fl)
 		if !ok {
 			return false // Invalid type
@@ -251,35 +251,30 @@ func registeryyyymmddFormat() {
 }
 
 func registerEmailOrPhoneField() {
-	if err := valid.RegisterValidation("emailOrPhoneField", func(fl v10.FieldLevel) bool {
+	if err := valid.RegisterValidation(TagEmailOrPhoneField, func(fl v10.FieldLevel) bool {
 		parent := fl.Parent()
 
-		// Safely get Email field
 		emailField := parent.FieldByName("Email")
 		if !emailField.IsValid() {
 			return false
 		}
 		email := emailField.String()
 
-		// Safely get PhoneNumber field
 		phoneField := parent.FieldByName("PhoneNumber")
 		if !phoneField.IsValid() {
 			return false
 		}
-		phone := phoneField.String()
-
-		// Exactly one of email or phone must be filled
-		if (email != "" && phone == "") || (email == "" && phone != "") {
-			return true
-		}
-
-		// If neither is filled, it's invalid
-		if email == "" && phone == "" {
+		var phone string
+		switch v := phoneField.Interface().(type) {
+		case models.PhoneNumber:
+			phone = v.Number
+		case string:
+			phone = v
+		default:
 			return false
 		}
 
-		// If both are filled, it's valid (you can adjust this logic if needed)
-		return true
+		return (email != "") != (phone != "")
 	}); err != nil {
 		panic(err)
 	}

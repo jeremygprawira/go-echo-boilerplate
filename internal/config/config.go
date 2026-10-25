@@ -2,13 +2,19 @@ package config
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"reflect"
 	"strings"
+	"time"
 
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 )
 
-func Initialize(ctx context.Context) (*Configuration, error) {
+const defaultWriteTimeout = 30 * time.Second
+
+func Initialize(ctx context.Context) (Validated, error) {
 	var configuration Configuration
 
 	viper.AutomaticEnv()
@@ -27,24 +33,44 @@ func Initialize(ctx context.Context) (*Configuration, error) {
 	viper.SetDefault("idempotency.ttl", "10m")
 	viper.SetDefault("application.read_header_timeout", "5s")
 	viper.SetDefault("application.read_timeout", "15s")
-	viper.SetDefault("application.write_timeout", "30s")
+	viper.SetDefault("application.write_timeout", defaultWriteTimeout.String())
 	viper.SetDefault("application.idle_timeout", "60s")
+	viper.SetDefault("application.timezone", "UTC")
 
 	viper.AddConfigPath("./config")
 	viper.SetConfigName(configName)
 	viper.SetConfigType("yaml")
 
 	if err := viper.ReadInConfig(); err != nil {
-		return nil, err
+		return Validated{}, err
 	}
 
-	if err := viper.Unmarshal(&configuration); err != nil {
-		return nil, err
+	if err := viper.Unmarshal(&configuration, viper.DecodeHook(decodeHook)); err != nil {
+		// Drop mapstructure's "decoding failed" header, so each problem prints
+		// on one line, as Validate's do.
+		if problems := errors.Unwrap(err); problems != nil {
+			return Validated{}, problems
+		}
+		return Validated{}, err
 	}
 
-	if err := configuration.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid configuration: %w", err)
+	validated, err := configuration.Validated()
+	if err != nil {
+		return Validated{}, fmt.Errorf("invalid configuration: %w", err)
 	}
-
-	return &configuration, nil
+	return validated, nil
 }
+
+// mapstructure decodes a bare YAML number into a time.Duration as
+// nanoseconds, so `read_timeout: 30` would mean 30ns.
+var decodeHook = mapstructure.ComposeDecodeHookFunc(
+	func(from, to reflect.Type, data any) (any, error) {
+		if to == reflect.TypeFor[time.Duration]() && from.Kind() != reflect.String {
+			return nil, fmt.Errorf("%v is not a duration, write it with a unit such as \"30s\"", data)
+		}
+		return data, nil
+	},
+	mapstructure.TextUnmarshallerHookFunc(),
+	mapstructure.StringToTimeDurationHookFunc(),
+	mapstructure.StringToSliceHookFunc(","),
+)

@@ -1,0 +1,24 @@
+# Unreachable funcs that scripts/check-deadcode.sh accepts. Format:
+#   package: Func  # reason
+go-echo-boilerplate/internal/models: ParsePagination  # cursor pagination input for list endpoints
+go-echo-boilerplate/internal/pkg/response: SuccessPagination  # envelope for paginated list endpoints
+go-echo-boilerplate/internal/pkg/boolc: And  # boolean helpers for multi-condition checks
+go-echo-boilerplate/internal/pkg/boolc: Nand  # boolean helpers for multi-condition checks
+go-echo-boilerplate/internal/pkg/boolc: Nor  # boolean helpers for multi-condition checks
+go-echo-boilerplate/internal/pkg/boolc: Not  # boolean helpers for multi-condition checks
+go-echo-boilerplate/internal/pkg/boolc: Or  # boolean helpers for multi-condition checks
+go-echo-boilerplate/internal/pkg/boolc: Xnor  # boolean helpers for multi-condition checks
+go-echo-boilerplate/internal/pkg/boolc: Xor  # boolean helpers for multi-condition checks
+go-echo-boilerplate/internal/pkg/generator: Token  # random tokens for reset links, OAuth state, sessions
+go-echo-boilerplate/internal/pkg/generator: SessionToken  # 32-byte token preset
+go-echo-boilerplate/internal/pkg/generator: APIKey  # 64-byte API key preset
+go-echo-boilerplate/internal/pkg/generator: NeedsRehash  # upgrade password hashes after a bcrypt cost change
+go-echo-boilerplate/internal/pkg/openauth: NewGoogleOAuth  # optional Google sign-in, unwired by default
+go-echo-boilerplate/internal/pkg/openauth: newGoogleOAuth  # optional Google sign-in, unwired by default
+go-echo-boilerplate/internal/pkg/openauth: GoogleOAuth.AuthURL  # optional Google sign-in, unwired by default
+go-echo-boilerplate/internal/pkg/openauth: GoogleOAuth.Callback  # optional Google sign-in, unwired by default
+go-echo-boilerplate/internal/pkg/stringc: TrimAndLowerCase  # pair of TrimAndUpperCase
+go-echo-boilerplate/internal/pkg/validator: AccountNumber  # checks numbers that generator.AccountNumber makes
+go-echo-boilerplate/internal/pkg/validator: Luhn  # check-digit rule behind AccountNumber
+go-echo-boilerplate/internal/config/configtest: Valid  # test fixture: a validated config with the Initialize defaults
+go-echo-boilerplate/internal/pkg/logger: Error  # error field for the plain startup and shutdown logger

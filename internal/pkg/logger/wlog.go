@@ -22,14 +22,14 @@ var sensitiveKeys = []string{
 
 // NewWlog builds the request wide-event logger. It writes nothing itself: every event
 // goes to drain as one entry.
-func NewWlog(configuration *config.Configuration, drain wlog.Drain) (*wlog.Logger, error) {
+func NewWlog(cfg config.Validated, drain wlog.Drain) (*wlog.Logger, error) {
 	redactor, err := redact.New(redact.AddKeys(sensitiveKeys...))
 	if err != nil {
 		return nil, err
 	}
-	app := configuration.Application
+	app := cfg.Get().Application
 	return wlog.New(
-		wlog.WithService(app.Name, app.Version, app.Environment),
+		wlog.WithService(app.Name, app.Version, string(app.Environment)),
 		wlog.WithSilent(),
 		wlog.WithDrains(drain),
 		wlog.WithErrorExtractor(wlogherr.Extractor()),

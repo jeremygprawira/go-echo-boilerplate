@@ -25,13 +25,3 @@ func NewLoggerAdapter(log logger.Logger, ctx context.Context) *LoggerAdapter {
 func (l *LoggerAdapter) Infof(format string, args ...interface{}) {
 	l.log.Info(l.ctx, fmt.Sprintf(format, args...))
 }
-
-// Debugf logs a debug message.
-func (l *LoggerAdapter) Debugf(format string, args ...interface{}) {
-	l.log.Debug(l.ctx, fmt.Sprintf(format, args...))
-}
-
-// Errorf logs an error message.
-func (l *LoggerAdapter) Errorf(format string, args ...interface{}) {
-	l.log.Error(l.ctx, fmt.Sprintf(format, args...))
-}

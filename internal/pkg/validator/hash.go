@@ -7,12 +7,12 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// Verify is a package-level convenience function that verifies a password against a hash.
-// This allows you to verify passwords without creating a hasher instance first.
+// Hash reports whether password matches the bcrypt hashedPassword. A mismatch
+// is (false, nil). A malformed hash is an error.
 //
 // Example:
 //
-//	match, err := generator.Verify("MyPassword123", storedHash)
+//	match, err := validator.Hash("MyPassword123", storedHash)
 //	if err != nil {
 //	    log.Fatal(err)
 //	}

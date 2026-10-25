@@ -17,6 +17,11 @@ const docTemplate = `{
     "paths": {
         "/api/v1/users": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Register a new user with email, phone number, and password. Auto-generates account number. Optionally pass an Idempotency-Key header to make a retried request safe: a repeated request with the same key returns the original response instead of re-executing.",
                 "consumes": [
                     "application/json"
@@ -95,6 +100,7 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
+                        "ApiKeyAuth": [],
                         "BearerAuth": []
                     }
                 ],
@@ -139,6 +145,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
+                        "ApiKeyAuth": [],
                         "BearerAuth": []
                     }
                 ],
@@ -195,6 +202,11 @@ const docTemplate = `{
         },
         "/api/v1/users/tokens": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Get tokens for a user",
                 "consumes": [
                     "application/json"
@@ -265,6 +277,11 @@ const docTemplate = `{
         },
         "/api/v1/users/tokens/refresh": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Exchange a valid, non-revoked refresh token for a new access+refresh pair. The token may be supplied in the body or via the refresh_token cookie set at login; the body takes precedence. The presented refresh token is revoked, so a retry with it gets 401 and the client must log in again.",
                 "consumes": [
                     "application/json"
@@ -654,17 +671,30 @@ const docTemplate = `{
                 }
             }
         }
+    },
+    "securityDefinitions": {
+        "ApiKeyAuth": {
+            "type": "apiKey",
+            "name": "X-API-Key",
+            "in": "header"
+        },
+        "BearerAuth": {
+            "description": "Type \"Bearer\" followed by a space and the access token.",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
     }
 }`
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
-	Version:          "",
+	Version:          "1.0",
 	Host:             "",
-	BasePath:         "",
+	BasePath:         "/",
 	Schemes:          []string{},
-	Title:            "",
-	Description:      "",
+	Title:            "GO-ECHO-BOILERPLATE API DOCUMENTATION",
+	Description:      "This is a go-echo-boilerplate api docs.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

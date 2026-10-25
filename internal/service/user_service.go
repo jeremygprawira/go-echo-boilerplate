@@ -7,16 +7,13 @@ import (
 	"go-echo-boilerplate/internal/pkg/errorc"
 	"go-echo-boilerplate/internal/pkg/formatter"
 	"go-echo-boilerplate/internal/pkg/generator"
+	"go-echo-boilerplate/internal/pkg/jwtc"
 	"go-echo-boilerplate/internal/pkg/validator"
+	"time"
 
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jeremygprawira/herr"
 	"github.com/jeremygprawira/wlog"
 )
-
-// pgUniqueViolation is the PostgreSQL error code for a UNIQUE constraint violation.
-// See: https://www.postgresql.org/docs/current/errcodes-appendix.html
-const pgUniqueViolation = "23505"
 
 // dummyPasswordHash is a valid bcrypt hash compared against on the
 // user-not-found path so login timing does not reveal whether an account
@@ -25,23 +22,24 @@ const pgUniqueViolation = "23505"
 //nolint:gosec // G101: not a credential — a fixed decoy hash for constant-time comparison, not a secret.
 const dummyPasswordHash = "$2a$12$BOZVmY4H76pfJnkVfAJEk.m5t0QcXHgphRl4wrKGSl8F7A5PnQRC2" //#nosec G101 -- decoy bcrypt hash for timing-safe login, not a real credential
 
-type UserService interface {
-	Create(ctx context.Context, request *models.CreateUserRequest) (*models.User, error)
-	GetTokens(ctx context.Context, request *models.GetUserTokenRequest) (*models.GetUserTokenResponse, error)
-	GetByAccountNumber(ctx context.Context, accountNumber string) (*models.User, error)
-	RefreshTokens(ctx context.Context, refreshToken string) (*models.GetUserTokenResponse, error)
-	Logout(ctx context.Context, accessJTI string, refreshToken string) error
+type userStore interface {
+	CreateUser(ctx context.Context, user *models.User) error
+	UserCredentials(ctx context.Context, email string, phoneNumber string) (*models.User, error)
+	UserByAccountNumber(ctx context.Context, accountNumber string) (*models.User, error)
+	UserByID(ctx context.Context, id int) (*models.User, error)
+	RevokeToken(ctx context.Context, jti string, expiresAt time.Time) (bool, error)
 }
 
-type userService struct {
-	d *Dependencies
+type UserService struct {
+	store userStore
+	jwt   *jwtc.Configuration
 }
 
-func NewUserService(d *Dependencies) UserService {
-	return &userService{d: d}
+func NewUserService(store userStore, jwt *jwtc.Configuration) *UserService {
+	return &UserService{store: store, jwt: jwt}
 }
 
-func (us *userService) Create(ctx context.Context, request *models.CreateUserRequest) (*models.User, error) {
+func (us *UserService) Create(ctx context.Context, request *models.CreateUserRequest) (*models.User, error) {
 	// Enrich wide event with all known request fields upfront in a single grouped call.
 	wlog.SetGroup(ctx, "user", map[string]any{
 		"operation":          "user.create",
@@ -113,11 +111,10 @@ func (us *userService) Create(ctx context.Context, request *models.CreateUserReq
 	})
 
 	// Persist user to database
-	err = us.d.Repository.User.Create(ctx, user)
+	err = us.store.CreateUser(ctx, user)
 	if err != nil {
 		wlog.SetGroup(ctx, "user", "is_inserted_to_db", false)
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation {
+		if errors.Is(err, models.ErrConflict) {
 			return nil, errorc.AlreadyExists.New().Public(herr.Message("User already exists with that email or phone number")).Wrap(err)
 		}
 		return nil, errorc.Database.New().Internal("failed to create user").Wrap(err)
@@ -126,7 +123,7 @@ func (us *userService) Create(ctx context.Context, request *models.CreateUserReq
 	return user, nil
 }
 
-func (us *userService) GetTokens(ctx context.Context, request *models.GetUserTokenRequest) (*models.GetUserTokenResponse, error) {
+func (us *UserService) GetTokens(ctx context.Context, request *models.GetUserTokenRequest) (*models.GetUserTokenResponse, error) {
 	wlog.SetGroup(ctx, "user", map[string]any{
 		"operation": "user.get_tokens",
 		"email":     request.Email,
@@ -145,8 +142,8 @@ func (us *userService) GetTokens(ctx context.Context, request *models.GetUserTok
 		wlog.SetGroup(ctx, "user", "formatted_phone", request.PhoneNumber.Number)
 	}
 
-	user, err := us.d.Repository.User.GetCredentialsByEmailOrPhoneNumber(ctx, request.Email, request.PhoneNumber.Number)
-	if err != nil {
+	user, err := us.store.UserCredentials(ctx, request.Email, request.PhoneNumber.Number)
+	if err != nil && !errors.Is(err, models.ErrNotFound) {
 		return nil, errorc.Database.New().Internal("failed to get user credentials").Wrap(err)
 	}
 
@@ -172,10 +169,10 @@ func (us *userService) GetTokens(ctx context.Context, request *models.GetUserTok
 
 // issueTokens generates a fresh access+refresh pair for user and shapes the
 // GetUserTokenResponse. Shared by GetTokens (login) and RefreshTokens.
-func (us *userService) issueTokens(user *models.User) (*models.GetUserTokenResponse, error) {
+func (us *UserService) issueTokens(user *models.User) (*models.GetUserTokenResponse, error) {
 	var tokens []models.Token
 
-	accessToken, err := generator.AccessToken(user, us.d.JWTConfig)
+	accessToken, err := jwtc.SignAccessToken(user, us.jwt)
 	if err != nil {
 		return nil, errorc.Internal.New().Internal("failed to generate access token").Wrap(err)
 	}
@@ -186,7 +183,7 @@ func (us *userService) issueTokens(user *models.User) (*models.GetUserTokenRespo
 		ExpiredIn: accessToken.ExpiredIn,
 	})
 
-	refreshToken, err := generator.RefreshToken(user, us.d.JWTConfig)
+	refreshToken, err := jwtc.SignRefreshToken(user, us.jwt)
 	if err != nil {
 		return nil, errorc.Internal.New().Internal("failed to generate refresh token").Wrap(err)
 	}
@@ -217,16 +214,26 @@ func (us *userService) issueTokens(user *models.User) (*models.GetUserTokenRespo
 	}, nil
 }
 
-// RefreshTokens validates a refresh token, claims its JTI (revoking it), and
-// issues a fresh access+refresh pair. The claim is atomic, so of several
-// concurrent requests with one token only the first mints a pair.
-func (us *userService) RefreshTokens(ctx context.Context, refreshToken string) (*models.GetUserTokenResponse, error) {
-	claims, err := validator.RefreshToken(refreshToken, us.d.JWTConfig)
+// RefreshTokens validates a refresh token, looks up its user, claims its JTI
+// (revoking it), and issues a fresh access+refresh pair. The claim is atomic,
+// so of several concurrent requests with one token only the first mints a
+// pair. It runs after the lookup, so a failed lookup leaves the token usable
+// for a retry.
+func (us *UserService) RefreshTokens(ctx context.Context, refreshToken string) (*models.GetUserTokenResponse, error) {
+	claims, err := jwtc.ParseRefreshToken(refreshToken, us.jwt)
 	if err != nil {
 		return nil, errorc.Unauthorized.New().Public(herr.Message("invalid refresh token")).Wrap(err)
 	}
 
-	claimed, err := revoke(ctx, us.d, claims.ID, us.d.JWTConfig.RefreshTokenDuration)
+	user, err := us.store.UserByID(ctx, claims.UserID)
+	if errors.Is(err, models.ErrNotFound) {
+		return nil, errorc.Unauthorized.New().Public(herr.Message("invalid refresh token")).Wrap(err)
+	}
+	if err != nil {
+		return nil, errorc.Database.New().Internal("failed to get user").Wrap(err)
+	}
+
+	claimed, err := us.revoke(ctx, claims, us.jwt.RefreshTokenDuration)
 	if err != nil {
 		return nil, errorc.Internal.New().Internal("failed to revoke refresh token").Wrap(err)
 	}
@@ -234,29 +241,24 @@ func (us *userService) RefreshTokens(ctx context.Context, refreshToken string) (
 		return nil, errorc.Unauthorized.New().Public(herr.Message("refresh token revoked"))
 	}
 
-	user, err := us.d.Repository.User.GetOneByID(ctx, claims.UserID)
-	if err != nil || user == nil {
-		return nil, errorc.Unauthorized.New().Public(herr.Message("invalid refresh token")).Wrap(err)
-	}
-
 	return us.issueTokens(user)
 }
 
-// Logout ends the caller's session: it revokes the access-token JTI so the
-// access token stops being accepted before its natural expiry, and — when a
-// refresh token is presented — revokes the refresh token's JTI too so it can
-// no longer mint new access tokens. An unparseable/expired refresh token is
-// ignored: it cannot be used anyway, and logout must stay idempotent.
-func (us *userService) Logout(ctx context.Context, accessJTI string, refreshToken string) error {
-	if accessJTI != "" {
-		if _, err := revoke(ctx, us.d, accessJTI, us.d.JWTConfig.AccessTokenDuration); err != nil {
+// Logout ends the caller's session: it revokes the access token so it stops
+// being accepted before its natural expiry, and — when a refresh token is
+// presented — revokes the refresh token too so it can no longer mint new
+// access tokens. An unparseable/expired refresh token is ignored: it cannot
+// be used anyway, and logout must stay idempotent.
+func (us *UserService) Logout(ctx context.Context, access jwtc.Claims, refreshToken string) error {
+	if access.ID != "" {
+		if _, err := us.revoke(ctx, &access, us.jwt.AccessTokenDuration); err != nil {
 			return errorc.Internal.New().Internal("failed to revoke access token").Wrap(err)
 		}
 	}
 
 	if refreshToken != "" {
-		if claims, err := validator.RefreshToken(refreshToken, us.d.JWTConfig); err == nil {
-			if _, err := revoke(ctx, us.d, claims.ID, us.d.JWTConfig.RefreshTokenDuration); err != nil {
+		if claims, err := jwtc.ParseRefreshToken(refreshToken, us.jwt); err == nil {
+			if _, err := us.revoke(ctx, claims, us.jwt.RefreshTokenDuration); err != nil {
 				return errorc.Internal.New().Internal("failed to revoke refresh token").Wrap(err)
 			}
 		}
@@ -265,20 +267,27 @@ func (us *userService) Logout(ctx context.Context, accessJTI string, refreshToke
 	return nil
 }
 
-func (us *userService) GetByAccountNumber(ctx context.Context, accountNumber string) (*models.User, error) {
+func (us *UserService) GetByAccountNumber(ctx context.Context, accountNumber string) (*models.User, error) {
 	wlog.SetGroup(ctx, "user", map[string]any{
 		"operation":      "user.get_by_account_number",
 		"account_number": accountNumber,
 	})
 
-	user, err := us.d.Repository.User.GetOneByAccountNumber(ctx, accountNumber)
+	user, err := us.store.UserByAccountNumber(ctx, accountNumber)
+	if errors.Is(err, models.ErrNotFound) {
+		return nil, errorc.DataNotFound.New().Public(herr.Message("User not found")).Wrap(err)
+	}
 	if err != nil {
 		return nil, errorc.Database.New().Internal("failed to get user").Wrap(err)
 	}
 
-	if user == nil {
-		return nil, errorc.DataNotFound.New().Public(herr.Message("User not found"))
-	}
-
 	return user, nil
+}
+
+func (us *UserService) revoke(ctx context.Context, claims *jwtc.Claims, lifetime time.Duration) (first bool, err error) {
+	expiresAt := time.Now().Add(lifetime)
+	if claims.ExpiresAt != nil {
+		expiresAt = claims.ExpiresAt.Time
+	}
+	return us.store.RevokeToken(ctx, claims.ID, expiresAt)
 }

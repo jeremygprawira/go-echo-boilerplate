@@ -9,14 +9,14 @@ import (
 
 type Middleware struct {
 	e      *echo.Echo
-	config *config.Configuration
+	config config.Configuration
 	log    *wlog.Logger
 }
 
-func New(e *echo.Echo, cfg *config.Configuration, log *wlog.Logger) Middleware {
+func New(e *echo.Echo, cfg config.Validated, log *wlog.Logger) Middleware {
 	return Middleware{
 		e:      e,
-		config: cfg,
+		config: cfg.Get(),
 		log:    log,
 	}
 }

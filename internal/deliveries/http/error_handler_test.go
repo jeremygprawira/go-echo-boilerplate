@@ -3,7 +3,7 @@ package http
 import (
 	"encoding/json"
 	"errors"
-	"go-echo-boilerplate/internal/config"
+	"go-echo-boilerplate/internal/config/configtest"
 	"go-echo-boilerplate/internal/pkg/errorc"
 	"go-echo-boilerplate/internal/pkg/logger"
 	nethttp "net/http"
@@ -129,7 +129,7 @@ func TestErrorHandler_GeneratesRequestIDWhenMissing(t *testing.T) {
 
 func TestErrorHandler_RecordsCoercedErrorOnEvent(t *testing.T) {
 	core, logs := observer.New(zapcore.DebugLevel)
-	log, err := logger.NewWlog(&config.Configuration{}, wlogzap.Drain(zap.New(core)))
+	log, err := logger.NewWlog(configtest.Valid(), wlogzap.Drain(zap.New(core)))
 	require.NoError(t, err)
 	ctx, _ := newErrCtx(t)
 	eventCtx, end := wlog.Start(log.WithContext(ctx.Request().Context()), "GET /x")

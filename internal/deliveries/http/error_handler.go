@@ -5,12 +5,11 @@ import (
 	"errors"
 	"go-echo-boilerplate/internal/models"
 	"go-echo-boilerplate/internal/pkg/errorc"
+	"go-echo-boilerplate/internal/pkg/response"
 	"go-echo-boilerplate/internal/pkg/stringc"
 	"net/http"
 	"strconv"
-	"time"
 
-	"github.com/google/uuid"
 	"github.com/jeremygprawira/herr"
 	"github.com/jeremygprawira/wlog"
 	"github.com/labstack/echo/v4"
@@ -54,11 +53,6 @@ func ErrorHandler(err error, ctx echo.Context) {
 		return
 	}
 
-	requestID := ctx.Response().Header().Get(echo.HeaderXRequestID)
-	if requestID == "" {
-		requestID = uuid.New().String()
-	}
-
 	body := decodeWireBody(herrErr)
 
 	if body.RetryAfter > 0 {
@@ -78,19 +72,18 @@ func ErrorHandler(err error, ctx echo.Context) {
 		responseErrors = body.Errors
 	}
 
+	metadata := response.Metadata(ctx)
+	metadata.Retryable = body.Retryable
+	metadata.RetryAfter = body.RetryAfter
+	metadata.TraceId = body.TraceID
+
 	resp := models.Response{
 		Code:      herrErr.HTTPStatus(),
 		Status:    "ERROR",
 		Message:   message,
 		ErrorCode: body.Code,
 		Errors:    responseErrors,
-		Metadata: models.Metadata{
-			RequestId:  requestID,
-			Timestamp:  time.Now().Format(time.RFC3339),
-			Retryable:  body.Retryable,
-			RetryAfter: body.RetryAfter,
-			TraceId:    body.TraceID,
-		},
+		Metadata:  metadata,
 	}
 
 	if writeErr := ctx.JSON(herrErr.HTTPStatus(), resp); writeErr != nil {

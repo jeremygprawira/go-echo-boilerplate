@@ -6,38 +6,30 @@ import (
 	"go-echo-boilerplate/internal/pkg/generator"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func TestHash(t *testing.T) {
 	password := "SecretPassword123!"
 
-	// Test Hashing
 	hashedPassword, err := generator.Hash(password)
-	assert.NoError(t, err)
-	assert.NotEmpty(t, hashedPassword)
-	assert.NotEqual(t, password, hashedPassword)
+	require.NoError(t, err)
+	assert.NoError(t, bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password)))
 
-	// Verify we can verify it (using the standard bcrypt check not available in generator public API directly,
-	// but we can check if it looks like a bcrypt hash)
-	assert.Contains(t, hashedPassword, "$2a$")
+	cost, err := bcrypt.Cost([]byte(hashedPassword))
+	require.NoError(t, err)
+	assert.Equal(t, generator.RecommendedCost, cost)
 }
 
 func TestNeedsRehash(t *testing.T) {
-	password := "SecretPassword123!"
+	current, err := generator.Hash("SecretPassword123!")
+	require.NoError(t, err)
+	assert.False(t, generator.NeedsRehash(current), "a hash at RecommendedCost is current")
 
-	// Create a hash with the compiled-in RecommendedCost
-	// Since we can't easily generate a wrong-cost hash without the internal constants or a custom hasher,
-	// we'll test the happy path primarily.
-	// To fully test NeedsRehash returning true, we'd need to mock or manually create a hash with a different cost.
+	legacy, err := bcrypt.GenerateFromPassword([]byte("SecretPassword123!"), bcrypt.MinCost)
+	require.NoError(t, err)
+	assert.True(t, generator.NeedsRehash(string(legacy)), "a hash at another cost needs a rehash")
 
-	hashedPassword, err := generator.Hash(password)
-	assert.NoError(t, err)
-
-	// Should not need rehash immediately
-	needsRehash := generator.NeedsRehash(hashedPassword)
-	assert.False(t, needsRehash, "Newly hashed password should not need rehash")
-
-	// Create a known hash with a lower cost (MinCost is 4)
-	// We can't import generator.MinCost because it might change, but we know standard bcrypt min is 4.
-	// But to avoid magic strings, we'll just trust the happy path for now or use a known legacy hash if we had one.
+	assert.True(t, generator.NeedsRehash("not-a-bcrypt-hash"), "an unreadable hash needs a rehash")
 }

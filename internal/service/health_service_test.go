@@ -3,7 +3,6 @@ package service_test
 import (
 	"context"
 	"errors"
-	"go-echo-boilerplate/internal/repository"
 	"go-echo-boilerplate/internal/service"
 	"testing"
 
@@ -16,7 +15,7 @@ type MockHealthRepository struct {
 	mock.Mock
 }
 
-func (m *MockHealthRepository) Check(ctx context.Context) error {
+func (m *MockHealthRepository) Ping(ctx context.Context) error {
 	args := m.Called(ctx)
 	return args.Error(0)
 }
@@ -24,16 +23,8 @@ func (m *MockHealthRepository) Check(ctx context.Context) error {
 func TestHealthService_Check(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		mockRepo := new(MockHealthRepository)
-		mockRepo.On("Check", mock.Anything).Return(nil)
-
-		// Construct Dependencies
-		deps := service.Dependencies{
-			Repository: repository.Repository{
-				Health: mockRepo,
-			},
-		}
-
-		svc := service.NewHealthService(&deps)
+		mockRepo.On("Ping", mock.Anything).Return(nil)
+		svc := service.NewHealthService(mockRepo)
 		resp, err := svc.Check(context.Background())
 
 		assert.NoError(t, err)
@@ -47,15 +38,9 @@ func TestHealthService_Check(t *testing.T) {
 
 	t.Run("PostgreSQL Failure", func(t *testing.T) {
 		mockRepo := new(MockHealthRepository)
-		mockRepo.On("Check", mock.Anything).Return(errors.New("connection refused"))
+		mockRepo.On("Ping", mock.Anything).Return(errors.New("connection refused"))
 
-		deps := service.Dependencies{
-			Repository: repository.Repository{
-				Health: mockRepo,
-			},
-		}
-
-		svc := service.NewHealthService(&deps)
+		svc := service.NewHealthService(mockRepo)
 		resp, err := svc.Check(context.Background())
 
 		assert.NoError(t, err)

@@ -4,10 +4,11 @@ import (
 	"context"
 	"go-echo-boilerplate/internal/pkg/errorc"
 	"go-echo-boilerplate/internal/pkg/jwtc"
-	"go-echo-boilerplate/internal/pkg/validator"
+	"strconv"
 	"strings"
 
 	"github.com/jeremygprawira/herr"
+	"github.com/jeremygprawira/wlog"
 	"github.com/labstack/echo/v4"
 )
 
@@ -17,19 +18,11 @@ type RevocationChecker interface {
 	IsRevoked(ctx context.Context, jti string) (bool, error)
 }
 
-// BearerAuthMiddleware validates JWT access tokens from the Authorization header
-// and injects authenticated user claims into the request context.
-//
-// The middleware:
-//   - Extracts the Bearer token from the Authorization header
-//   - Validates the token signature, expiration, and type via validator.AccessToken
-//   - Injects user claims into the context for downstream handlers
-//
-// Context keys set:
-//   - "user_id": int - The authenticated user's ID
-//   - "account_number": string - The user's account number
-//   - "email": string - The user's email address
-//   - "phone_number": string - The user's phone number
+const claimsKey = "claims"
+
+// BearerAuthMiddleware validates the access token in the Authorization header,
+// rejects a revoked one, and keeps its claims for WithClaims. It sets the wide
+// event's user.id from the verified claims.
 func BearerAuthMiddleware(config *jwtc.Configuration, revocation RevocationChecker) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(ctx echo.Context) error {
@@ -48,7 +41,7 @@ func BearerAuthMiddleware(config *jwtc.Configuration, revocation RevocationCheck
 			tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 
 			// Validate access token (handles signature, expiration, type validation)
-			claims, err := validator.AccessToken(tokenString, config)
+			claims, err := jwtc.ParseAccessToken(tokenString, config)
 			if err != nil {
 				return errorc.Unauthorized.New().Wrap(err)
 			}
@@ -61,14 +54,23 @@ func BearerAuthMiddleware(config *jwtc.Configuration, revocation RevocationCheck
 				return errorc.Unauthorized.New().Public(herr.Message("token revoked"))
 			}
 
-			// Inject claims into context for downstream handlers
-			ctx.Set("userID", claims.UserID)
-			ctx.Set("accountNumber", claims.AccountNumber)
-			ctx.Set("email", claims.Email)
-			ctx.Set("phoneNumber", claims.PhoneNumber)
-			ctx.Set("jti", claims.ID)
+			ctx.Set(claimsKey, claims)
+			wlog.SetGroup(ctx.Request().Context(), "user", "id", strconv.Itoa(claims.UserID))
 
 			return next(ctx)
 		}
+	}
+}
+
+// WithClaims hands h the claims that BearerAuthMiddleware verified for this
+// request. Without them it rejects the request, so a handler mounted without
+// the middleware fails closed.
+func WithClaims(h func(c echo.Context, claims jwtc.Claims) error) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		claims, ok := c.Get(claimsKey).(*jwtc.Claims)
+		if !ok {
+			return errorc.Unauthorized.New().Internal("bearer handler ran without verified claims")
+		}
+		return h(c, *claims)
 	}
 }

@@ -1,7 +1,7 @@
 package middleware_test
 
 import (
-	"go-echo-boilerplate/internal/config"
+	"go-echo-boilerplate/internal/config/configtest"
 	httpdelivery "go-echo-boilerplate/internal/deliveries/http"
 	"go-echo-boilerplate/internal/deliveries/http/middleware"
 	"net/http"
@@ -14,14 +14,10 @@ import (
 
 func setupAPIKeyServer(t *testing.T) *echo.Echo {
 	t.Helper()
-	cfg := &config.Configuration{
-		Authorization: config.Authorization{APIKey: "secret-key"},
-	}
-
 	e := echo.New()
 	e.HTTPErrorHandler = httpdelivery.ErrorHandler
-	m := middleware.New(e, cfg, nil)
-	g := e.Group("/api", m.ApiKeyMiddleware(cfg))
+	m := middleware.New(e, configtest.Valid(), nil)
+	g := e.Group("/api", m.ApiKeyMiddleware())
 	g.GET("/ping", func(c echo.Context) error {
 		return c.String(http.StatusOK, "pong")
 	})
@@ -53,7 +49,7 @@ func TestApiKeyMiddleware(t *testing.T) {
 	t.Run("correct key passes through", func(t *testing.T) {
 		e := setupAPIKeyServer(t)
 		req := httptest.NewRequest(http.MethodGet, "/api/ping", nil)
-		req.Header.Set("X-API-Key", "secret-key")
+		req.Header.Set("X-API-Key", configtest.APIKey)
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
 

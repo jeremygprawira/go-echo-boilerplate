@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -83,18 +84,33 @@ func (s *rateLimiterStore) removeLocked(el *list.Element) {
 	s.lru.Remove(el)
 }
 
-// clientIP returns c.RealIP() when it is an IP address. Anything else, such as
-// a raw header value Echo passed through, falls back to the TCP peer, so a
-// store key is never longer than an address.
-func clientIP(c echo.Context) string {
-	if ip := net.ParseIP(c.RealIP()); ip != nil {
+// ipv6ClientMask is the prefix one IPv6 client is assumed to hold. An ISP
+// routinely hands a single subscriber a whole /64, so keying on the full
+// address would give that client 2^64 fresh budgets.
+var ipv6ClientMask = net.CIDRMask(64, 128)
+
+func rateLimitKey(extract echo.IPExtractor, r *http.Request) string {
+	ip := parseIPWithoutZone(extract(r))
+	if ip == nil {
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			return r.RemoteAddr
+		}
+		if ip = parseIPWithoutZone(host); ip == nil {
+			return host
+		}
+	}
+	if ip.To4() != nil {
 		return ip.String()
 	}
-	host, _, err := net.SplitHostPort(c.Request().RemoteAddr)
-	if err != nil {
-		return c.Request().RemoteAddr
-	}
-	return host
+	return ip.Mask(ipv6ClientMask).String() + "/64"
+}
+
+// parseIPWithoutZone drops an IPv6 zone such as the "%eth0" in
+// "fe80::1%eth0", which net.ParseIP rejects.
+func parseIPWithoutZone(s string) net.IP {
+	addr, _, _ := strings.Cut(s, "%")
+	return net.ParseIP(addr)
 }
 
 // evictLoop periodically drops identifiers idle longer than expiresIn so the
@@ -115,42 +131,38 @@ func (s *rateLimiterStore) evictLoop() {
 // RateLimiter returns a per-client-IP rate limiter sized for authentication
 // endpoints (registration, login) to blunt credential brute-forcing. It uses an
 // in-memory store; swap the store for a distributed one when running multiple
-// instances. When cfg.RateLimit.Enabled is false, it returns a no-op middleware
-// so the limiter can be switched off without a code change. This is a
-// deliberate override, not the fail-safe path: config.Initialize defaults
-// rate_limit.enabled to true via viper.SetDefault, so an omitted config key
-// keeps protection on; only an explicit `enabled: false` in YAML disables it.
+// instances. When rate_limit.enabled is false, it returns a no-op middleware.
 //
 // Every response carries X-RateLimit-Limit / X-RateLimit-Remaining so a
 // well-behaved client can back off before being rejected, and a 429 carries
 // Retry-After computed from the token bucket's actual refill delay.
 //
-// The client identity is c.RealIP(). core.BuildHTTPServer sets e.IPExtractor
-// from application.trusted_proxies, so a client cannot pick its own bucket by
-// sending X-Forwarded-For or X-Real-IP.
-func RateLimiter(cfg *appconfig.Configuration) echo.MiddlewareFunc {
-	mw, _ := rateLimiter(cfg)
+// A bucket is keyed by the method, the route and the client: the IPv4 address
+// or the IPv6 /64 that extract reads. One instance mounted on several route
+// rows gives each row its own budget, and clients that share a /64 share a
+// budget. The limiter never reads c.RealIP(), because Echo without an
+// IPExtractor trusts X-Forwarded-For. A nil extract panics.
+func RateLimiter(cfg appconfig.Validated, extract echo.IPExtractor) echo.MiddlewareFunc {
+	mw, _ := rateLimiter(cfg.Get().RateLimit, extract)
 	return mw
 }
 
-func rateLimiter(cfg *appconfig.Configuration) (echo.MiddlewareFunc, *rateLimiterStore) {
-	if cfg == nil || !cfg.RateLimit.Enabled {
+func rateLimiter(cfg appconfig.RateLimit, extract echo.IPExtractor) (echo.MiddlewareFunc, *rateLimiterStore) {
+	if extract == nil {
+		panic("middleware: RateLimiter needs an IP extractor")
+	}
+	if !cfg.Enabled {
 		return func(next echo.HandlerFunc) echo.HandlerFunc {
 			return next
 		}, nil
 	}
 
-	expiresIn, err := time.ParseDuration(cfg.RateLimit.ExpiresIn)
-	if err != nil {
-		expiresIn = 3 * time.Minute
-	}
-
-	store := newRateLimiterStore(rate.Limit(cfg.RateLimit.Rate), cfg.RateLimit.Burst, expiresIn)
-	limitHeader := strconv.Itoa(cfg.RateLimit.Burst)
+	store := newRateLimiterStore(rate.Limit(cfg.Rate), cfg.Burst, cfg.ExpiresIn)
+	limitHeader := strconv.Itoa(cfg.Burst)
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			limiter := store.getLimiter(clientIP(c))
+			limiter := store.getLimiter(c.Request().Method + " " + c.Path() + " " + rateLimitKey(extract, c.Request()))
 
 			reservation := limiter.ReserveN(time.Now(), 1)
 			delay := reservation.Delay()

@@ -1,22 +1,12 @@
-.PHONY: help build build-prod run dev clean test test-coverage test-integration docker-up docker-down docker-logs docker-clean docs lint lint-fix tidy migrate-up migrate-down migrate-status migrate-create check-config install-tools security-scan run-local run-dev run-uat run-prod
+.PHONY: help ci pr-base hooks unhooks build build-prod run dev clean test test-coverage test-integration docker-up docker-down docker-logs docker-clean docs docs-check lint lint-fix tidy migrate-up migrate-down migrate-status migrate-create install-tools security-scan
 
 # Default target
 .DEFAULT_GOAL := help
 
-# For detailed documentation, see docs/MAKEFILE_GUIDE.md
-
-# ============================================================================
-# Configuration Variables
-# ============================================================================
 BINARY_NAME=server
 MAIN_FILE=cmd/http/main.go
 DOCKER_COMPOSE_FILE=docker-compose.yml
-
-# Environment-specific config files
-CONFIG_LOCAL=config/config.local.yaml
-CONFIG_DEV=config/config.dev.yaml
-CONFIG_UAT=config/config.uat.yaml
-CONFIG_PROD=config/config.prod.yaml
+DOCKER_COMPOSE = $(shell docker compose version >/dev/null 2>&1 && echo "docker compose" || echo docker-compose)
 
 # Default environment (can be overridden: make run ENV=dev)
 ENV ?= dev
@@ -25,81 +15,54 @@ ENV ?= dev
 # Override with: make migrate-up DB_DSN="postgres://..."
 DB_DSN ?= postgres://$${DB_USER}:$${DB_PASSWORD}@$${DB_HOST}:$${DB_PORT}/$${DB_NAME}?sslmode=$${DB_SSL_MODE}
 
-# Build flags for production
-BUILD_FLAGS=-ldflags="-s -w -X main.Version=$$(git describe --tags --always --dirty) -X main.BuildTime=$$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+GO_TOOL := go tool -modfile=tools/go.mod
 
-# ============================================================================
-# Help & Documentation
-# ============================================================================
+# Build flags for production
+BUILD_FLAGS=-ldflags="-s -w"
+
 help:
-	@echo "╔════════════════════════════════════════════════════════════════╗"
-	@echo "║          GO-ECHO-BOILERPLATE - Makefile Commands               ║"
-	@echo "║          See docs/MAKEFILE_GUIDE.md for details                ║"
-	@echo "╚════════════════════════════════════════════════════════════════╝"
-	@echo ""
 	@echo "🏗️  Build & Development:"
 	@echo "  make build                    - Build the application binary"
-	@echo "  make build-prod               - Build optimized production binary"
+	@echo "  make build-prod               - Build a stripped static Linux binary"
 	@echo "  make run                      - Run with config (ENV=local|dev|uat|prod)"
 	@echo "  make dev                      - Run with hot-reload (air)"
 	@echo "  make clean                    - Remove binaries and artifacts"
 	@echo "  make tidy                     - Clean and download Go modules"
 	@echo ""
-	@echo "🌍 Environment-Specific Runs:"
-	@echo "  make run-local                - Run with config.local.yaml"
-	@echo "  make run-dev                  - Run with config.dev.yaml"
-	@echo "  make run-uat                  - Run with config.uat.yaml"
-	@echo "  make run-prod                 - Run with config.prod.yaml"
-	@echo ""
 	@echo "📦 Container & Deploy:"
-	@echo "  make docker-up                - Start services with Docker Compose"
+	@echo "  make docker-up                - Start the app and Postgres (needs config/config.dev.yaml)"
 	@echo "  make docker-down              - Stop services"
 	@echo "  make docker-logs              - View container logs"
 	@echo "  make docker-clean             - Remove containers, volumes, and images"
 	@echo ""
 	@echo "🗄️  Database & Migrations:"
-	@echo "  make migrate-up               - Run migrations (ENV=local)"
+	@echo "  make migrate-up               - Apply migrations to the database that .env's DB_* values name"
 	@echo "  make migrate-down             - Rollback migrations"
 	@echo "  make migrate-status           - Check migration status"
 	@echo "  make migrate-create NAME=xxx  - Create new migration file"
 	@echo ""
 	@echo "🧪 Testing & Quality:"
+	@echo "  make ci                       - Run every check CI runs"
+	@echo "  make pr-base PR=<number>      - Check a PR's base branch (needs gh)"
+	@echo "  make hooks                    - Run make ci before every git push"
+	@echo "  make unhooks                  - Turn the pre-push hook off"
 	@echo "  make test                     - Run all tests"
 	@echo "  make test-coverage            - Run tests with coverage report"
-	@echo "  make test-integration         - Run integration tests"
+	@echo "  make test-integration         - Run the integration suite on a throwaway Postgres (needs Docker)"
 	@echo "  make lint                     - Run linter (golangci-lint)"
 	@echo "  make lint-fix                 - Run linter and auto-fix issues"
 	@echo "  make security-scan            - Run security vulnerability scan"
 	@echo ""
 	@echo "📚 Documentation & Tools:"
 	@echo "  make docs                     - Generate Swagger documentation"
+	@echo "  make docs-check               - Fail if the committed Swagger docs are stale"
 	@echo "  make install-tools            - Install development tools"
-	@echo "  make check-config             - Validate config files"
-	@echo "  make check-port               - Check port availability"
 	@echo ""
 	@echo "💡 Examples:"
 	@echo "  make run ENV=dev              - Run with dev config"
-	@echo "  make migrate-up ENV=uat       - Run UAT migrations"
 	@echo "  make test-coverage            - Get test coverage HTML report"
 	@echo ""
-	@echo "🔗 Detailed Guide: docs/MAKEFILE_GUIDE.md"
-	@echo ""
 
-# ============================================================================
-# Configuration Validation
-# ============================================================================
-check-config:
-	@echo "🔍 Checking configuration files..."
-	@if [ ! -f $(CONFIG_LOCAL) ]; then echo "⚠️  $(CONFIG_LOCAL) not found"; fi
-	@if [ -f $(CONFIG_LOCAL) ]; then echo "✅ $(CONFIG_LOCAL) exists"; fi
-	@if [ -f $(CONFIG_DEV) ]; then echo "✅ $(CONFIG_DEV) exists"; fi
-	@if [ -f $(CONFIG_UAT) ]; then echo "✅ $(CONFIG_UAT) exists"; fi
-	@if [ -f $(CONFIG_PROD) ]; then echo "✅ $(CONFIG_PROD) exists"; fi
-	@echo ""
-
-# ============================================================================
-# Build Commands
-# ============================================================================
 build:
 	@echo "🔨 Building $(BINARY_NAME)..."
 	@mkdir -p bin
@@ -113,9 +76,6 @@ build-prod:
 	@echo "✅ Production build complete: bin/$(BINARY_NAME)"
 	@ls -lh bin/$(BINARY_NAME)
 
-# ============================================================================
-# Run Commands (Environment-Specific)
-# ============================================================================
 run:
 	@echo "🚀 Running application with ENV=$(ENV)..."
 	@if [ ! -f config/config.$(ENV).yaml ]; then \
@@ -123,18 +83,6 @@ run:
 		exit 1; \
 	fi
 	@ENV=$(ENV) go run $(MAIN_FILE) | jq -R '. as $$line | try (fromjson) catch $$line'
-
-run-local:
-	@$(MAKE) run ENV=local
-
-run-dev:
-	@$(MAKE) run ENV=dev
-
-run-uat:
-	@$(MAKE) run ENV=uat
-
-run-prod:
-	@$(MAKE) run ENV=prod
 
 # Hot-reload development (requires air: go install github.com/air-verse/air@latest)
 dev:
@@ -147,9 +95,6 @@ dev:
 	fi
 	@ENV=${ENV} air
 
-# ============================================================================
-# Testing Commands
-# ============================================================================
 test:
 	@echo "🧪 Running tests..."
 	@go test -v -race ./...
@@ -163,73 +108,87 @@ test-coverage:
 	@go tool cover -func=coverage/coverage.out | grep total
 
 test-integration:
-	@echo "🧪 Running integration tests..."
-	@go test -v -race -tags=integration ./tests/...
+	@scripts/test-integration.sh
 
-# ============================================================================
-# Code Quality
-# ============================================================================
-lint:
-	@echo "🔍 Running linter..."
-	@if ! command -v golangci-lint > /dev/null; then \
-		echo "⚠️  golangci-lint not installed. Run 'make install-tools'"; \
+ci:
+	go mod tidy -diff
+	cd tools && go mod tidy -diff
+	go build ./...
+	go test -race ./...
+	$(GO_TOOL) golangci-lint run ./...
+	$(GO_TOOL) gosec -quiet ./...
+	scripts/check-repo.sh
+	scripts/check-deadcode.sh
+	@$(MAKE) --no-print-directory docs-check
+
+docs-check:
+	@tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
+		$(GO_TOOL) swag init --quiet -g $(MAIN_FILE) --output "$$tmp/docs" && \
+		for f in docs.go swagger.json swagger.yaml; do \
+			diff -u "docs/$$f" "$$tmp/docs/$$f" || { echo "❌ docs/$$f is stale. Run make docs"; exit 1; }; \
+		done
+
+pr-base:
+	@if [ -z "$(PR)" ]; then \
+		echo "❌ ERROR: Please specify PR=<number>"; \
+		echo "Example: make pr-base PR=14"; \
 		exit 1; \
 	fi
-	@golangci-lint run ./...
+	scripts/check-pr-base.sh "$(PR)"
+
+hooks:
+	git config core.hooksPath .githooks
+	@echo "✅ git push now runs make ci first. Skip once with git push --no-verify"
+
+unhooks:
+	git config --unset core.hooksPath || true
+	@echo "✅ Pre-push hook off"
+
+lint:
+	@echo "🔍 Running linter..."
+	@$(GO_TOOL) golangci-lint run ./...
 
 lint-fix:
 	@echo "🔧 Running linter with auto-fix..."
-	@golangci-lint run --fix ./...
+	@$(GO_TOOL) golangci-lint run --fix ./...
 
 security-scan:
 	@echo "🔒 Running security scan..."
-	@if ! command -v gosec > /dev/null; then \
-		echo "⚠️  Installing gosec..."; \
-		go install github.com/securego/gosec/v2/cmd/gosec@latest; \
-	fi
-	@gosec -fmt=json -out=security-report.json ./... || true
-	@gosec ./...
+	@$(GO_TOOL) gosec -fmt=json -out=security-report.json ./... || true
+	@$(GO_TOOL) gosec ./...
 
-# ============================================================================
-# Documentation
-# ============================================================================
 docs:
 	@echo "📚 Generating Swagger documentation..."
-	@if ! command -v swag > /dev/null; then \
-		echo "⚠️  swag not installed. Installing..."; \
-		go install github.com/swaggo/swag/cmd/swag@latest; \
-	fi
-	@swag init -g $(MAIN_FILE) --output docs
+	@$(GO_TOOL) swag init -g $(MAIN_FILE) --output docs
 	@echo "✅ Swagger docs generated in ./docs"
 
-# ============================================================================
-# Docker Commands
-# ============================================================================
 docker-up:
+	@if [ ! -f config/config.dev.yaml ]; then \
+		echo "❌ ERROR: config/config.dev.yaml not found. Copy config/config.local.example.yaml to it, set environment: dev, and set the postgresql host to pgdb, port 5432"; \
+		if [ -d config/config.dev.yaml ]; then echo "   It is a directory, which Docker makes for a missing file. Remove it with: rmdir config/config.dev.yaml"; fi; \
+		exit 1; \
+	fi
 	@echo "🐳 Starting containers..."
-	@docker-compose -f $(DOCKER_COMPOSE_FILE) up -d --build
-	@echo "✅ Containers started"
-	@docker-compose ps
+	@$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_FILE) up -d --build
+	@echo "✅ Containers started. On a new database, run make migrate-up"
+	@$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_FILE) ps
 
 docker-down:
 	@echo "🐳 Stopping containers..."
-	@docker-compose -f $(DOCKER_COMPOSE_FILE) down
+	@$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_FILE) down
 	@echo "✅ Containers stopped"
 
 docker-logs:
-	@docker-compose -f $(DOCKER_COMPOSE_FILE) logs -f --tail=100
+	@$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_FILE) logs -f --tail=100
 
 docker-clean:
 	@echo "🧹 Cleaning Docker resources..."
-	@docker-compose -f $(DOCKER_COMPOSE_FILE) down -v --remove-orphans
+	@$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_FILE) down -v --remove-orphans
 	@docker system prune -f
 	@echo "✅ Docker cleanup complete"
 
-# ============================================================================
-# Database Migrations
-# ============================================================================
 migrate-up:
-	@echo "📊 Running migrations (ENV=$(ENV))..."
+	@echo "📊 Running migrations on the database that .env names..."
 	@if ! command -v goose > /dev/null; then \
 		echo "⚠️  goose not installed. Run 'make install-tools'"; \
 		exit 1; \
@@ -262,9 +221,6 @@ migrate-create:
 	@goose -dir migration/db/postgre create $(NAME) sql
 	@echo "✅ Migration created in migration/db/postgre"
 
-# ============================================================================
-# Maintenance
-# ============================================================================
 clean:
 	@echo "🧹 Cleaning up..."
 	@rm -rf bin/
@@ -278,22 +234,10 @@ tidy:
 	@go mod verify
 	@echo "✅ Modules tidied"
 
-# ============================================================================
-# Tool Installation
-# ============================================================================
 install-tools:
 	@echo "🔧 Installing development tools..."
 	@echo "Installing air (hot-reload)..."
 	@go install github.com/air-verse/air@latest
-	@echo "Installing golangci-lint..."
-	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-	@echo "Installing swag (Swagger)..."
-	@go install github.com/swaggo/swag/cmd/swag@latest
 	@echo "Installing goose (migrations)..."
 	@go install github.com/pressly/goose/v3/cmd/goose@latest
-	@echo "Installing gosec (security)..."
-	@go install github.com/securego/gosec/v2/cmd/gosec@latest
 	@echo "✅ All tools installed successfully"
-
-check-port:
-	lsof -i :8080

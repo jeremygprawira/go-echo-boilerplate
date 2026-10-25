@@ -4,18 +4,35 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"go-echo-boilerplate/internal/config"
+	"go-echo-boilerplate/internal/config/configtest"
 
 	"github.com/labstack/echo/v4"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+func limiter(rl config.RateLimit) echo.MiddlewareFunc {
+	return RateLimiter(configtest.Valid(func(c *config.Configuration) { c.RateLimit = rl }), echo.ExtractIPDirect())
+}
+
+func TestRateLimiter_ZeroConfigPanics(t *testing.T) {
+	assert.PanicsWithValue(t, "config: zero Validated; build it with config.Initialize or Configuration.Validated", func() {
+		RateLimiter(config.Validated{}, echo.ExtractIPDirect())
+	})
+}
+
+func TestRateLimiter_NilExtractorPanics(t *testing.T) {
+	assert.PanicsWithValue(t, "middleware: RateLimiter needs an IP extractor", func() {
+		RateLimiter(configtest.Valid(), nil)
+	})
+}
+
 func TestRateLimiter_BlocksBurst(t *testing.T) {
 	e := echo.New()
-	cfg := &config.Configuration{}
-	cfg.RateLimit = config.RateLimit{Enabled: true, Rate: 5, Burst: 10, ExpiresIn: "3m"}
-	e.Use(RateLimiter(cfg))
+	e.Use(limiter(config.RateLimit{Enabled: true, Rate: 5, Burst: 10, ExpiresIn: 3 * time.Minute}))
 	e.POST("/login", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
 
 	var lastCode int
@@ -32,9 +49,7 @@ func TestRateLimiter_BlocksBurst(t *testing.T) {
 
 func TestRateLimiter_RespectsConfiguredBurst(t *testing.T) {
 	e := echo.New()
-	cfg := &config.Configuration{}
-	cfg.RateLimit = config.RateLimit{Enabled: true, Rate: 1, Burst: 2, ExpiresIn: "3m"}
-	e.Use(RateLimiter(cfg))
+	e.Use(limiter(config.RateLimit{Enabled: true, Rate: 1, Burst: 2, ExpiresIn: 3 * time.Minute}))
 	e.POST("/login", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
 
 	codes := make([]int, 3)
@@ -51,26 +66,9 @@ func TestRateLimiter_RespectsConfiguredBurst(t *testing.T) {
 	require.Equal(t, http.StatusTooManyRequests, codes[2])
 }
 
-func TestRateLimiter_InvalidExpiresInFallsBackToDefault(t *testing.T) {
-	e := echo.New()
-	cfg := &config.Configuration{}
-	cfg.RateLimit = config.RateLimit{Enabled: true, Rate: 5, Burst: 10, ExpiresIn: "not-a-duration"}
-	e.Use(RateLimiter(cfg))
-	e.POST("/login", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
-
-	req := httptest.NewRequest(http.MethodPost, "/login", nil)
-	req.RemoteAddr = "192.0.2.55:12345"
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-
-	require.Equal(t, http.StatusOK, rec.Code)
-}
-
 func TestRateLimiter_ReportsRemainingQuotaHeaders(t *testing.T) {
 	e := echo.New()
-	cfg := &config.Configuration{}
-	cfg.RateLimit = config.RateLimit{Enabled: true, Rate: 1, Burst: 5, ExpiresIn: "3m"}
-	e.Use(RateLimiter(cfg))
+	e.Use(limiter(config.RateLimit{Enabled: true, Rate: 1, Burst: 5, ExpiresIn: 3 * time.Minute}))
 	e.POST("/login", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
 
 	req := httptest.NewRequest(http.MethodPost, "/login", nil)
@@ -85,9 +83,7 @@ func TestRateLimiter_ReportsRemainingQuotaHeaders(t *testing.T) {
 
 func TestRateLimiter_SetsRetryAfterWhenExceeded(t *testing.T) {
 	e := echo.New()
-	cfg := &config.Configuration{}
-	cfg.RateLimit = config.RateLimit{Enabled: true, Rate: 1, Burst: 1, ExpiresIn: "3m"}
-	e.Use(RateLimiter(cfg))
+	e.Use(limiter(config.RateLimit{Enabled: true, Rate: 1, Burst: 1, ExpiresIn: 3 * time.Minute}))
 	e.POST("/login", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
 
 	newReq := func() *http.Request {
@@ -109,9 +105,7 @@ func TestRateLimiter_SetsRetryAfterWhenExceeded(t *testing.T) {
 
 func TestRateLimiter_DisabledPassesThrough(t *testing.T) {
 	e := echo.New()
-	cfg := &config.Configuration{}
-	cfg.RateLimit.Enabled = false
-	e.Use(RateLimiter(cfg))
+	e.Use(RateLimiter(configtest.Valid(func(c *config.Configuration) { c.RateLimit.Enabled = false }), echo.ExtractIPDirect()))
 	e.POST("/login", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
 
 	var lastCode int
@@ -124,4 +118,48 @@ func TestRateLimiter_DisabledPassesThrough(t *testing.T) {
 	}
 
 	require.Equal(t, http.StatusOK, lastCode)
+}
+
+func TestRateLimiter_KeysIPv4OnTheAddressAndIPv6OnThe64(t *testing.T) {
+	e := echo.New()
+	e.Use(limiter(config.RateLimit{Enabled: true, Rate: 0.001, Burst: 1, ExpiresIn: 3 * time.Minute}))
+	e.POST("/login", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
+
+	code := func(remoteAddr string) int {
+		req := httptest.NewRequest(http.MethodPost, "/login", nil)
+		req.RemoteAddr = remoteAddr
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	require.Equal(t, http.StatusOK, code("192.0.2.1:1234"))
+	require.Equal(t, http.StatusTooManyRequests, code("[::ffff:192.0.2.1]:1234"), "an IPv4-mapped address is the IPv4 client")
+	require.Equal(t, http.StatusOK, code("192.0.2.2:1234"), "each IPv4 address has its own budget")
+
+	require.Equal(t, http.StatusOK, code("[2001:db8:1:2::1]:1234"))
+	require.Equal(t, http.StatusTooManyRequests, code("[2001:db8:1:2:ffff:ffff:ffff:fffe]:1234"), "addresses in one /64 share a budget")
+	require.Equal(t, http.StatusOK, code("[2001:db8:1:3::1]:1234"), "another /64 has its own budget")
+
+	require.Equal(t, http.StatusOK, code("[fe80::1%eth0]:1234"))
+	require.Equal(t, http.StatusTooManyRequests, code("[fe80::2%eth1]:1234"), "a zoned address is keyed on its /64 without the zone")
+}
+
+func TestRateLimiter_ReadsTheClientFromItsExtractorNotEchoDefaults(t *testing.T) {
+	e := echo.New()
+	e.Use(limiter(config.RateLimit{Enabled: true, Rate: 0.001, Burst: 1, ExpiresIn: 3 * time.Minute}))
+	e.POST("/login", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
+
+	var codes []int
+	for _, xff := range []string{"198.51.100.2", "198.51.100.3"} {
+		req := httptest.NewRequest(http.MethodPost, "/login", nil)
+		req.RemoteAddr = "192.0.2.1:1234"
+		req.Header.Set(echo.HeaderXForwardedFor, xff)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		codes = append(codes, rec.Code)
+	}
+
+	require.Equal(t, []int{http.StatusOK, http.StatusTooManyRequests}, codes,
+		"with no e.IPExtractor set, Echo trusts X-Forwarded-For; the limiter must not")
 }

@@ -1,7 +1,9 @@
 package config
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -10,15 +12,18 @@ import (
 func validCfg() *Configuration {
 	c := &Configuration{}
 	c.Application.Environment = "local"
-	c.Authorization.Access = TokenConfiguration{Secret: "access-secret-0123456789abcdef0123456789", Duration: "15m"}
-	c.Authorization.Refresh = TokenConfiguration{Secret: "refresh-secret-0123456789abcdef012345678", Duration: "168h"}
+	c.Application.Name = "go-echo-boilerplate"
+	c.Application.Port = 8080
+	c.Authorization.Access = TokenConfiguration{Secret: "access-secret-0123456789abcdef0123456789", Duration: 15 * time.Minute}
+	c.Authorization.Refresh = TokenConfiguration{Secret: "refresh-secret-0123456789abcdef012345678", Duration: 168 * time.Hour}
 	c.Authorization.APIKey = "api-key-0123456789abcdef0123456789abcdef"
-	c.RateLimit = RateLimit{Enabled: true, Rate: 5, Burst: 10, ExpiresIn: "3m"}
-	c.Idempotency = Idempotency{TTL: "10m"}
-	c.Application.ReadHeaderTimeout = "5s"
-	c.Application.ReadTimeout = "15s"
-	c.Application.WriteTimeout = "30s"
-	c.Application.IdleTimeout = "60s"
+	c.RateLimit = RateLimit{Enabled: true, Rate: 5, Burst: 10, ExpiresIn: 3 * time.Minute}
+	c.Idempotency = Idempotency{TTL: 10 * time.Minute}
+	c.Application.ReadHeaderTimeout = 5 * time.Second
+	c.Application.ReadTimeout = 15 * time.Second
+	c.Application.WriteTimeout = 30 * time.Second
+	c.Application.IdleTimeout = 60 * time.Second
+	c.Application.Timezone = "UTC"
 	return c
 }
 
@@ -44,23 +49,23 @@ func TestValidate_EmptyAPIKey(t *testing.T) {
 	require.Error(t, c.Validate())
 }
 
-func TestValidate_BadDuration(t *testing.T) {
-	c := validCfg()
-	c.Authorization.Access.Duration = "not-a-duration"
-	require.Error(t, c.Validate())
-}
-
-func TestValidate_BadRateLimitExpiresIn(t *testing.T) {
-	c := validCfg()
-	c.RateLimit.ExpiresIn = "not-a-duration"
-	require.Error(t, c.Validate())
-}
-
-func TestValidate_BadIdempotencyTTL(t *testing.T) {
-	for _, ttl := range []string{"not-a-duration", "", "0s", "-1m"} {
-		c := validCfg()
-		c.Idempotency.TTL = ttl
-		require.Error(t, c.Validate(), ttl)
+func TestValidate_NonPositiveDurations(t *testing.T) {
+	setters := map[string]func(*Configuration, time.Duration){
+		"authorization.access.duration":   func(c *Configuration, v time.Duration) { c.Authorization.Access.Duration = v },
+		"authorization.refresh.duration":  func(c *Configuration, v time.Duration) { c.Authorization.Refresh.Duration = v },
+		"rate_limit.expires_in":           func(c *Configuration, v time.Duration) { c.RateLimit.ExpiresIn = v },
+		"idempotency.ttl":                 func(c *Configuration, v time.Duration) { c.Idempotency.TTL = v },
+		"application.read_header_timeout": func(c *Configuration, v time.Duration) { c.Application.ReadHeaderTimeout = v },
+		"application.read_timeout":        func(c *Configuration, v time.Duration) { c.Application.ReadTimeout = v },
+		"application.write_timeout":       func(c *Configuration, v time.Duration) { c.Application.WriteTimeout = v },
+		"application.idle_timeout":        func(c *Configuration, v time.Duration) { c.Application.IdleTimeout = v },
+	}
+	for name, set := range setters {
+		for _, v := range []time.Duration{0, -time.Second} {
+			c := validCfg()
+			set(c, v)
+			assert.ErrorContains(t, c.Validate(), name+" must be greater than 0", "%s = %v", name, v)
+		}
 	}
 }
 
@@ -110,27 +115,69 @@ func TestValidate_RejectsPlaceholderAndShortSecrets(t *testing.T) {
 	}
 }
 
-func TestValidate_ServerTimeouts(t *testing.T) {
-	setters := map[string]func(*Configuration, string){
-		"read_header_timeout": func(c *Configuration, v string) { c.Application.ReadHeaderTimeout = v },
-		"read_timeout":        func(c *Configuration, v string) { c.Application.ReadTimeout = v },
-		"write_timeout":       func(c *Configuration, v string) { c.Application.WriteTimeout = v },
-		"idle_timeout":        func(c *Configuration, v string) { c.Application.IdleTimeout = v },
-	}
-	for name, set := range setters {
-		for _, v := range []string{"", "soon", "0s", "-1s"} {
-			c := validCfg()
-			set(c, v)
-			assert.Error(t, c.Validate(), "%s = %q", name, v)
-		}
-	}
-}
-
 func TestValidate_ApplicationTimeout(t *testing.T) {
 	c := validCfg()
-	c.Application.Timeout = -1
+	c.Application.Timeout = -time.Second
 	require.Error(t, c.Validate())
 
 	c.Application.Timeout = 0
 	require.NoError(t, c.Validate(), "application.timeout stays optional")
+}
+
+func TestValidate_TimeoutBelowWriteTimeout(t *testing.T) {
+	c := validCfg()
+	c.Application.Timeout = c.Application.WriteTimeout
+	require.ErrorContains(t, c.Validate(), "application.timeout (30s) must be less than application.write_timeout (30s, its default)")
+
+	c.Application.Timeout = c.Application.WriteTimeout - time.Second
+	require.NoError(t, c.Validate())
+
+	c.Application.WriteTimeout = 40 * time.Second
+	c.Application.Timeout = 40 * time.Second
+	err := c.Validate()
+	require.ErrorContains(t, err, "application.timeout (40s) must be less than application.write_timeout (40s)")
+	assert.NotContains(t, err.Error(), "default")
+}
+
+func TestValidate_ZeroWriteTimeoutReportsOnlyItself(t *testing.T) {
+	c := validCfg()
+	c.Application.Timeout = 25 * time.Second
+	c.Application.WriteTimeout = 0
+	require.EqualError(t, c.Validate(), "application.write_timeout must be greater than 0")
+}
+
+func TestValidate_Timezone(t *testing.T) {
+	for _, zone := range []string{"UTC", "Asia/Jakarta"} {
+		c := validCfg()
+		c.Application.Timezone = zone
+		assert.NoError(t, c.Validate(), "timezone %q", zone)
+	}
+
+	c := validCfg()
+	c.Application.Timezone = "Asia/Jakart"
+	require.ErrorContains(t, c.Validate(), `application.timezone "Asia/Jakart" is not a time zone`)
+
+	for _, zone := range []string{"", "Local"} {
+		c := validCfg()
+		c.Application.Timezone = zone
+		assert.ErrorContains(t, c.Validate(), fmt.Sprintf("application.timezone %q must name a zone, such as UTC or Asia/Jakarta", zone))
+	}
+}
+
+func TestValidate_PortAndName(t *testing.T) {
+	for _, port := range []int{1, 8080, 65535} {
+		c := validCfg()
+		c.Application.Port = port
+		assert.NoError(t, c.Validate(), "port %d", port)
+	}
+	for _, port := range []int{0, -1, 65536} {
+		c := validCfg()
+		c.Application.Port = port
+		assert.EqualError(t, c.Validate(), fmt.Sprintf("application.port %d must be between 1 and 65535", port))
+	}
+	for _, name := range []string{"", "  "} {
+		c := validCfg()
+		c.Application.Name = name
+		assert.EqualError(t, c.Validate(), "application.name must not be empty", "name %q", name)
+	}
 }

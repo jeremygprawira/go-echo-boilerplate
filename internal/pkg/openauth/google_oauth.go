@@ -2,86 +2,87 @@ package openauth
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"go-echo-boilerplate/internal/config"
-	"io"
+	"net/http"
 
 	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/endpoints"
 )
 
+// Google is the sign-in flow. The caller makes a random state for each login
+// (generator.SessionToken works), keeps it in a cookie, and hands both that
+// state and the one on the callback to Callback.
 type Google interface {
-	Redirect() string
-	Fetch(state, code string) (*GoogleUser, error)
+	AuthURL(state string) string
+	Callback(ctx context.Context, wantState, gotState, code string) (*GoogleUser, error)
 }
+
+var _ Google = (*GoogleOAuth)(nil)
 
 type GoogleOAuth struct {
-	authState    string
-	clientId     string
-	clientSecret string
-	redirectUrl  string
+	config      oauth2.Config
+	userInfoURL string
 }
 
-var oauth = &oauth2.Config{}
+func NewGoogleOAuth(cfg config.Google) (*GoogleOAuth, error) {
+	return newGoogleOAuth(cfg, endpoints.Google)
+}
 
-func InitializeGoogleOAuth(config *config.Configuration) (*GoogleOAuth, error) {
-	if config.Google.State == "" {
-		return nil, errors.New("empty signing key")
+func newGoogleOAuth(cfg config.Google, endpoint oauth2.Endpoint) (*GoogleOAuth, error) {
+	if cfg.ClientID == "" || cfg.ClientSecret == "" || cfg.RedirectURI == "" || cfg.UserInfoURL == "" {
+		return nil, errors.New("google oauth: client_id, client_secret, redirect_uri and user_info_url are required")
 	}
 
 	return &GoogleOAuth{
-		authState:    config.Google.State,
-		clientId:     config.Google.ClientID,
-		clientSecret: config.Google.ClientSecret,
-		redirectUrl:  config.Google.RedirectURI,
+		config: oauth2.Config{
+			ClientID:     cfg.ClientID,
+			ClientSecret: cfg.ClientSecret,
+			RedirectURL:  cfg.RedirectURI,
+			Endpoint:     endpoint,
+			Scopes:       []string{"profile", "email"},
+		},
+		userInfoURL: cfg.UserInfoURL,
 	}, nil
 }
 
-func (g *GoogleOAuth) Redirect() string {
-	oauth = &oauth2.Config{
-		ClientID:     g.clientId,
-		ClientSecret: g.clientSecret,
-		RedirectURL:  g.redirectUrl,
-		Scopes:       []string{"profile", "email"},
-	}
-
-	url := oauth.AuthCodeURL(g.authState)
-	return url
+func (g *GoogleOAuth) AuthURL(state string) string {
+	return g.config.AuthCodeURL(state)
 }
 
-func (g *GoogleOAuth) Fetch(config *config.Configuration, state string, code string) (*GoogleUser, error) {
-	if state != g.authState {
-		return nil, errors.New("state are not the same")
+func (g *GoogleOAuth) Callback(ctx context.Context, wantState, gotState, code string) (*GoogleUser, error) {
+	if wantState == "" || subtle.ConstantTimeCompare([]byte(wantState), []byte(gotState)) != 1 {
+		return nil, errors.New("google oauth: state mismatch")
 	}
 
-	token, err := oauth.Exchange(context.Background(), code)
+	token, err := g.config.Exchange(ctx, code)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("google oauth: exchange code: %w", err)
 	}
 
-	client := oauth.Client(context.Background(), token)
-	response, err := client.Get(config.Google.UserInfoURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, g.userInfoURL, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("google oauth: build userinfo request: %w", err)
 	}
-
-	defer response.Body.Close()
-
-	byteData, err := io.ReadAll(response.Body)
+	resp, err := g.config.Client(ctx, token).Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("google oauth: userinfo: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("google oauth: userinfo status %d", resp.StatusCode)
 	}
 
-	var data map[string]interface{}
-	err = json.Unmarshal(byteData, &data)
-	if err != nil {
-		return nil, err
+	var user GoogleUser
+	if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
+		return nil, fmt.Errorf("google oauth: decode userinfo: %w", err)
 	}
-
-	user := &GoogleUser{
-		Email: data["email"].(string),
-		Name:  data["name"].(string),
+	if user.Email == "" {
+		return nil, errors.New("google oauth: userinfo has no email")
 	}
-
-	return user, nil
+	return &user, nil
 }
